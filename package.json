@@ -1,0 +1,48 @@
+{
+  "name": "sapjs",
+  "version": "0.1.0",
+  "description": "A reactive HTML library where the DOM is the only state store. Structure-first, one write path, transient rebuild. An Alpine alternative built for malleable, self-saving HTML.",
+  "type": "module",
+  "main": "src/sap.js",
+  "exports": {
+    ".": "./src/sap.js"
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node build/bundle.mjs",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "serve": "node build/bundle.mjs && python3 -m http.server 8123"
+  },
+  "keywords": [
+    "reactive",
+    "html",
+    "dom",
+    "alpine",
+    "hyperclay",
+    "malleable",
+    "no-build"
+  ],
+  "author": "panphora",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/panphora/sapjs.git"
+  },
+  "homepage": "https://github.com/panphora/sapjs#readme",
+  "bugs": {
+    "url": "https://github.com/panphora/sapjs/issues"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/preset-env": "^7.24.0",
+    "babel-jest": "^29.7.0",
+    "esbuild": "^0.21.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  }
+}
