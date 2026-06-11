@@ -1,0 +1,213 @@
+import { mount, type, Sap } from "./helpers/mount.js";
+
+const TODO = `
+  <main app>
+    <form trigger-add="todos"><input bind="draft"></form>
+    <ul items="todos">
+      <li item template>
+        <input type="checkbox" bind="done">
+        <span bind="title"></span>
+        <button trigger-remove>x</button>
+      </li>
+      <li item>
+        <input type="checkbox" bind="done" checked>
+        <span bind="title">First</span>
+        <button trigger-remove>x</button>
+      </li>
+      <li item>
+        <input type="checkbox" bind="done">
+        <span bind="title">Second</span>
+        <button trigger-remove>x</button>
+      </li>
+    </ul>
+    <output text="count(state.todos, t => !t.done) + ' open'"></output>
+    <button id="addbtn" trigger-add="todos">add</button>
+  </main>`;
+
+describe("collections", () => {
+  test("list intake + aggregate over rows", () => {
+    const root = mount(TODO);
+    expect(root.querySelector("output").textContent).toBe("1 open");
+  });
+
+  test("trigger-add clones the template, never the live rows", async () => {
+    const root = mount(TODO);
+    root.querySelector("#addbtn").click();
+    await flush();
+    const rows = root.querySelectorAll("[item]:not([template])");
+    expect(rows.length).toBe(3);
+    expect(rows[2].hasAttribute("template")).toBe(false);
+    expect(rows[2].querySelector("span").textContent).toBe("");
+  });
+
+  test("a form trigger-add fires on submit (Enter)", async () => {
+    const root = mount(TODO);
+    root.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    expect(root.querySelectorAll("[item]:not([template])").length).toBe(3);
+  });
+
+  test("trigger-remove removes the clicked row", async () => {
+    const root = mount(TODO);
+    root.querySelectorAll("[item]:not([template]) button")[0].click();
+    await flush();
+    expect(root.querySelectorAll("[item]:not([template])").length).toBe(1);
+  });
+
+  test("detail lens projects the selected row and edits write through", async () => {
+    const root = mount(`
+      <main app state="selected">
+        <ul items="contacts">
+          <li item template set:selected="item.$key"><span bind="name"></span></li>
+          <li item id="p1" set:selected="item.$key"><span bind="name">Alice</span></li>
+          <li item id="p2" set:selected="item.$key"><span bind="name">Bob</span></li>
+        </ul>
+        <form detail="contacts by state.selected">
+          <input bind="name" id="dn">
+          <button type="button" id="del" onclick="Sap(this).$remove()">delete</button>
+        </form>
+      </main>`);
+    root.querySelector("#p2").click();
+    await flush();
+    expect(root.querySelector("#dn").value).toBe("Bob");
+    root.querySelector("#dn").value = "Bobby";
+    root.querySelector("#dn").dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+    expect(root.querySelector("#p2 span").textContent).toBe("Bobby");
+    // $remove() inside the detail removes the source row
+    root.querySelector("#del").click();
+    await flush();
+    expect(root.querySelector("#p2")).toBeNull();
+  });
+
+  test("sort: stable-sorts by a field and toggles direction", async () => {
+    const root = mount(`
+      <main app>
+        <button sort:n id="s">sort</button>
+        <ul items="nums">
+          <li item template><span bind="n"></span></li>
+          <li item><span bind="n">3</span></li>
+          <li item><span bind="n">1</span></li>
+          <li item><span bind="n">2</span></li>
+        </ul>
+      </main>`);
+    const vals = () => [...root.querySelectorAll("[item]:not([template]) span")].map((s) => s.textContent);
+    root.querySelector("#s").click();
+    await flush();
+    expect(vals()).toEqual(["1", "2", "3"]);
+    root.querySelector("#s").click();
+    await flush();
+    expect(vals()).toEqual(["3", "2", "1"]);
+  });
+
+  test("move:up / move:down reorder a row", async () => {
+    const root = mount(`
+      <main app>
+        <ul items="xs">
+          <li item template><span bind="v"></span><button move:up>u</button></li>
+          <li item><span bind="v">a</span><button move:up>u</button></li>
+          <li item><span bind="v">b</span><button move:up>u</button></li>
+        </ul>
+      </main>`);
+    root.querySelectorAll("[item]:not([template]) button")[1].click();
+    await flush();
+    expect([...root.querySelectorAll("[item]:not([template]) span")].map((s) => s.textContent)).toEqual(["b", "a"]);
+  });
+
+  test("move:to moves a row to another list", async () => {
+    const root = mount(`
+      <main app>
+        <ul items="todo">
+          <li item template><span bind="t"></span><button move:to="done">→</button></li>
+          <li item id="card"><span bind="t">task</span><button move:to="done">→</button></li>
+        </ul>
+        <ul items="done"><li item template><span bind="t"></span></li></ul>
+      </main>`);
+    root.querySelector("#card button").click();
+    await flush();
+    const doneList = root.querySelectorAll("[items=done] [item]:not([template])");
+    expect(doneList.length).toBe(1);
+    expect(root.querySelectorAll("[items=todo] [item]:not([template])").length).toBe(0);
+  });
+
+  test("nested kanban: clone a column and add a card at depth 2", async () => {
+    const root = mount(`
+      <main app items="columns">
+        <section item template scope="board">
+          <h2 bind="title"></h2>
+          <ul items="cards"><li item template bind="name"></li></ul>
+          <button class="ac" onclick="Sap(this).$add('cards')">+ card</button>
+        </section>
+        <section item id="c1" scope="board">
+          <h2 bind="title">To Do</h2>
+          <ul items="cards"><li item template bind="name"></li><li item bind="name">milk</li></ul>
+          <button class="ac" onclick="Sap(this).$add('cards')">+ card</button>
+        </section>
+        <button id="addcol" onclick="const c = Sap(this).$add('columns'); c.title = 'Doing'"></button>
+      </main>`);
+    root.querySelector("#addcol").click();
+    await flush();
+    const cols = root.querySelectorAll('[scope="board"]:not([template])');
+    expect(cols.length).toBe(2);
+    expect(cols[1].querySelector("h2").textContent).toBe("Doing");
+    cols[1].querySelector(".ac").click();
+    await flush();
+    expect(cols[1].querySelectorAll("[item]:not([template])").length).toBe(1);
+  });
+
+  test("filter doctrine: calc:match + show hides rows, aggregate still sees them", async () => {
+    const root = mount(`
+      <main app>
+        <input bind="q" value="">
+        <ul items="people">
+          <li item template calc:match="state.q === '' || item.name.toLowerCase().includes(state.q)" show="item.match"><span bind="name"></span><b bind="age"></b></li>
+          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q)" show="item.match"><span bind="name">Alice</span><b bind="age">30</b></li>
+          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q)" show="item.match"><span bind="name">Bob</span><b bind="age">40</b></li>
+        </ul>
+        <output text="sum(state.people, 'age')"></output>
+      </main>`);
+    expect(root.querySelector("output").textContent).toBe("70");
+    type(root.querySelector("[bind=q]"), "ali");
+    await flush();
+    const rows = [...root.querySelectorAll("[item]:not([template])")];
+    expect(rows[0].hidden).toBe(false);
+    expect(rows[1].hidden).toBe(true);
+    expect(root.querySelector("output").textContent).toBe("70"); // hidden rows still summed
+  });
+
+  test("Sap.batch bulk-removes picked rows", async () => {
+    const root = mount(`
+      <main app>
+        <ul items="inbox">
+          <li item template><input type="checkbox" bind="picked"></li>
+          <li item><input type="checkbox" bind="picked" checked></li>
+          <li item><input type="checkbox" bind="picked"></li>
+          <li item><input type="checkbox" bind="picked" checked></li>
+        </ul>
+        <button id="del" onclick="Sap.batch('Delete', () => Sap(this).inbox.filter(m => m.picked).forEach(m => m.$remove()))"></button>
+      </main>`);
+    root.querySelector("#del").click();
+    await flush();
+    expect(root.querySelectorAll("[item]:not([template])").length).toBe(1);
+  });
+
+  test("confirm gates an action; a declined confirm does nothing", async () => {
+    const root = mount(`
+      <main app>
+        <ul items="xs">
+          <li item template><button trigger-remove confirm="Sure?">x</button></li>
+          <li item><button trigger-remove confirm="Sure?">x</button></li>
+        </ul>
+      </main>`);
+    const orig = window.confirm;
+    window.confirm = () => false;
+    root.querySelector("[item]:not([template]) button").click();
+    await flush();
+    expect(root.querySelectorAll("[item]:not([template])").length).toBe(1);
+    window.confirm = () => true;
+    root.querySelector("[item]:not([template]) button").click();
+    await flush();
+    expect(root.querySelectorAll("[item]:not([template])").length).toBe(0);
+    window.confirm = orig;
+  });
+});
