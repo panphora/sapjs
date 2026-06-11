@@ -170,6 +170,35 @@ export function createActions(runtime, accessor) {
     runAction(actionEl, appRec);
   }
 
+  function clearControl(c) {
+    const cr = carrierFor(c);
+    const def = c.getAttribute("default");
+    if (cr.kind === "checkbox") cr.write(def === "" || def === "true");
+    else cr.write(def != null ? def : "");
+  }
+
+  // A <form trigger-add="list"> composes the new row from its own fields: clone
+  // the template, copy each of the form's bound controls into the new row's
+  // field of the same name, clear the form, and refocus for rapid entry.
+  function addFromForm(formEl, appRec, listName) {
+    const proxy = Sap(formEl);
+    if (!proxy) return;
+    const newRow = proxy.$add(listName);
+    if (!newRow) return;
+    const composers = [];
+    walkOwned(formEl, (el) => { if (el.hasAttribute("bind")) composers.push(el); });
+    for (const c of composers) {
+      const target = ownedBind(newRow.$el, c.getAttribute("bind"));
+      if (target) carrierFor(target).write(carrierFor(c).read());
+    }
+    composers.forEach(clearControl);
+    if (composers.length) {
+      if (typeof composers[0].focus === "function") composers[0].focus();
+    } else {
+      focusFirstEditable(newRow.$el);
+    }
+  }
+
   function onSubmit(e) {
     const form = e.target;
     if (!form || !form.hasAttribute || !form.hasAttribute("trigger-add")) return;
@@ -177,9 +206,7 @@ export function createActions(runtime, accessor) {
     if (!appRec) return;
     e.preventDefault();
     if (!confirmGate(form, appRec)) return;
-    const proxy = Sap(form);
-    const row = proxy && proxy.$add(form.getAttribute("trigger-add"));
-    if (row) focusFirstEditable(row.$el);
+    addFromForm(form, appRec, form.getAttribute("trigger-add"));
   }
 
   function onReset(e) {

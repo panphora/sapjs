@@ -47,6 +47,44 @@ describe("collections", () => {
     expect(root.querySelectorAll("[item]:not([template])").length).toBe(3);
   });
 
+  test("a form trigger-add composes the new row from its matching fields and clears", async () => {
+    const root = mount(`
+      <main app>
+        <form trigger-add="todos"><input bind="title"></form>
+        <ul items="todos"><li item template><input type="checkbox" bind="done"><span bind="title"></span></li></ul>
+      </main>`);
+    const input = root.querySelector("form [bind=title]");
+    type(input, "Buy milk");
+    root.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    const rows = root.querySelectorAll("[item]:not([template])");
+    expect(rows.length).toBe(1);
+    expect(rows[0].querySelector("span").textContent).toBe("Buy milk");
+    expect(input.value).toBe(""); // the form cleared itself
+
+    // a second add appends another row and does not touch the first
+    type(input, "Walk dog");
+    root.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    const after = root.querySelectorAll("[item]:not([template])");
+    expect(after.length).toBe(2);
+    expect([...after].map((r) => r.querySelector("span").textContent)).toEqual(["Buy milk", "Walk dog"]);
+  });
+
+  test("a form trigger-add ignores fields the row does not declare", async () => {
+    const root = mount(`
+      <main app>
+        <form trigger-add="todos"><input bind="draft"></form>
+        <ul items="todos"><li item template><span bind="title"></span></li></ul>
+      </main>`);
+    type(root.querySelector("form [bind=draft]"), "anything");
+    root.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    const rows = root.querySelectorAll("[item]:not([template])");
+    expect(rows.length).toBe(1);
+    expect(rows[0].querySelector("span").textContent).toBe(""); // no "draft" field on the row
+  });
+
   test("trigger-remove removes the clicked row", async () => {
     const root = mount(TODO);
     root.querySelectorAll("[item]:not([template]) button")[0].click();

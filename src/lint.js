@@ -142,6 +142,15 @@ export function lintApp(root, diag) {
         if (t === "password" && !el.hasAttribute("transient")) {
           halt("E31", el, { attr: "bind", problem: "a password must never serialize into a world-readable file", fix: "add transient to the password input" });
         }
+      } else if (el.tagName !== "SELECT" && el.tagName !== "TEXTAREA") {
+        // A bind on a leaf reads/writes textContent. On a container (element
+        // children) that is not contenteditable, the first write would wipe the
+        // subtree — that is never a valid two-way control.
+        const ce = el.getAttribute("contenteditable");
+        const editable = ce != null && ce !== "false";
+        if (!editable && el.children.length > 0) {
+          halt("E20", el, { attr: "bind", problem: "bind on a container element is not a control; a write would overwrite its children", fix: "bind a control (input/select/textarea), a contenteditable, or an empty text leaf" });
+        }
       }
     }
 

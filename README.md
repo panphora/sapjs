@@ -64,14 +64,14 @@ npm install sapjs
 
 ## Quickstart
 
-A complete todo app. Copy it into a `.html` file and open it.
+A complete todo app, with no JavaScript at all. Copy it into a `.html` file and open it.
 
 ```html
 <script src="https://unpkg.com/sapjs"></script>
 
 <main app>
   <form trigger-add="todos">
-    <input bind="draft" placeholder="What needs doing?" autofocus>
+    <input bind="title" placeholder="What needs doing?" required autofocus>
   </form>
 
   <ul items="todos">
@@ -84,19 +84,9 @@ A complete todo app. Copy it into a `.html` file and open it.
 
   <output text="plural(count(state.todos, t => !t.done), 'task', 'tasks') + ' left'"></output>
 </main>
-
-<script>
-  // wire the form's draft into a new row's title
-  document.querySelector("form").addEventListener("submit", () => {
-    const s = Sap(document.querySelector("[app]"));
-    const draft = s.draft.trim();
-    if (draft) s.todos[s.todos.length - 1].title = draft;
-    s.draft = "";
-  });
-</script>
 ```
 
-`trigger-add` on a `<form>` fires on Enter. `count(...)` sees every row live. Nothing is stored anywhere but the DOM.
+The form's input is named `title`, the same as the row's field. On Enter, `trigger-add` clones the template, copies the form's matching fields into the new row, and clears the box. `required` lets the browser block empty submits natively. `count(...)` sees every row live. Nothing is stored anywhere but the DOM.
 
 ---
 
@@ -155,7 +145,7 @@ A throwing paint writes nothing: the DOM keeps its last-good value, the element 
 | Attribute | Does |
 |---|---|
 | `set:field="expr"` | write a field on click |
-| `trigger-add="list"` | clone the row template (on a `<form>`, fires on Enter) |
+| `trigger-add="list"` | add a row. On a `<form>` it fires on Enter, fills the new row from the form's matching-named fields, then clears them |
 | `trigger-remove` | remove the nearest row |
 | `trigger-reset` | reset the scope to its defaults |
 | `move:up` / `move:down` | reorder a row |
@@ -169,11 +159,11 @@ A throwing paint writes nothing: the DOM keeps its last-good value, the element 
 `Sap(el)` returns a live, write-through proxy onto the scope or row that owns `el`. Reads come from the DOM; writes go through the one write path.
 
 ```html
-<button onclick="const s = Sap(this); s.$add('todos').title = s.draft.trim(); s.draft = ''">Add</button>
+<button onclick="['Buy milk', 'Walk dog'].forEach(t => Sap(this).$add('todos').title = t)">Add starter tasks</button>
 <button onclick="Sap(this).inbox.filter(m => m.picked).forEach(m => m.$remove())">Delete selected</button>
 ```
 
-Row proxies carry `$key`, `$index`, `$el`, and `$add(list)`, `$reset()`, `$remove()`, `$move(listOrPath)`.
+Reach for the verbs when an attribute can't express the work: bulk adds, filtered removes, transforms. For a single "add one row from a form", prefer `<form trigger-add>` (above). `$add(list)` returns the new row's proxy. Row proxies carry `$key`, `$index`, `$el`, and `$add(list)`, `$reset()`, `$remove()`, `$move(listOrPath)`.
 
 ---
 

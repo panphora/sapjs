@@ -3,7 +3,7 @@
 // between passes except the compile cache.
 
 import {
-  walkOwned, rowsOf, parseStateDecl, parseTyped, ensureId,
+  walkOwned, rowsOf, parseStateDecl, parseTyped, ensureId, readTransient,
 } from "./dom.js";
 import { compile, run, topoSort } from "./compile.js";
 import { carrierFor } from "./carrier.js";
@@ -39,6 +39,10 @@ export function runPass(app, opts = {}) {
         obj[d.name] = el.hasAttribute(d.name); // presence semantics (e.g. <details open>)
         continue;
       }
+      if (d.transient) {
+        obj[d.name] = readTransient(el, d); // runtime-only; never serialized
+        continue;
+      }
       let raw = el.getAttribute(d.name);
       if (raw == null) raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
       obj[d.name] = parseTyped(raw, d.type);
@@ -55,6 +59,10 @@ export function runPass(app, opts = {}) {
       if (el.checked) owner[field] = el.value;
     } else {
       owner[field] = c.read();
+    }
+    if (el.hasAttribute("transient")) {
+      el.removeAttribute("value"); // the live property carries it; the file never does
+      el.removeAttribute("checked");
     }
   }
 

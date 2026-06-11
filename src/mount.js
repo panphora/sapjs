@@ -46,5 +46,11 @@ export function mountApp(root) {
   runPass(appRec, { trigger: "mount" });
   appRec._mountMs = now() - t0;
   appRec._mountWrites = appRec._stats ? appRec._stats.writes : 0;
+  if (appRec._mountWrites > 0) {
+    diag.warn("W30", root, {
+      problem: `${appRec._mountWrites} paint(s) ran at mount; the saved file was out of sync with its declared state`,
+      fix: "re-save once so the file mounts clean (a settled file writes nothing)",
+    });
+  }
   return appRec;
 }

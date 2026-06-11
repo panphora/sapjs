@@ -80,7 +80,14 @@ function writeBy(el, kind, v) {
 }
 
 // Mirror the live value to a serializable attribute so the saved DOM reflects state.
+// A transient control (search boxes, passwords) is never serialized: its value
+// lives only in the live property, so we strip the attribute instead of writing it.
 function mirror(el, kind) {
+  if (el.hasAttribute("transient")) {
+    el.removeAttribute("value");
+    el.removeAttribute("checked");
+    return;
+  }
   switch (kind) {
     case "checkbox":
     case "radio":

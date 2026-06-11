@@ -188,6 +188,20 @@ var Sap = (() => {
     if (type === "bool") return value ? "true" : "false";
     return value == null ? "" : String(value);
   }
+  function readTransient(el, decl) {
+    const store = el._sapTransient || (el._sapTransient = {});
+    if (!(decl.name in store)) {
+      let raw = el.getAttribute(decl.name);
+      if (raw == null) raw = decl.default != null ? decl.default : decl.type === "num" ? "0" : decl.type === "bool" ? "false" : "";
+      store[decl.name] = parseTyped(raw, decl.type);
+    }
+    if (el.hasAttribute(decl.name)) el.removeAttribute(decl.name);
+    return store[decl.name];
+  }
+  function writeTransient(el, decl, value) {
+    (el._sapTransient || (el._sapTransient = {}))[decl.name] = value;
+    if (el.hasAttribute(decl.name)) el.removeAttribute(decl.name);
+  }
   function resolveListEl(appRoot, fromEl, path) {
     const segs = String(path).split(".");
     const listName = segs[segs.length - 1];
@@ -458,6 +472,11 @@ ${src}` : `"use strict"; return (${src});`;
     }
   }
   function mirror(el, kind) {
+    if (el.hasAttribute("transient")) {
+      el.removeAttribute("value");
+      el.removeAttribute("checked");
+      return;
+    }
     switch (kind) {
       case "checkbox":
       case "radio":
@@ -726,6 +745,10 @@ ${src}` : `"use strict"; return (${src});`;
           obj[d.name] = el.hasAttribute(d.name);
           continue;
         }
+        if (d.transient) {
+          obj[d.name] = readTransient(el, d);
+          continue;
+        }
         let raw = el.getAttribute(d.name);
         if (raw == null) raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
         obj[d.name] = parseTyped(raw, d.type);
@@ -741,6 +764,10 @@ ${src}` : `"use strict"; return (${src});`;
         if (el.checked) owner[field] = el.value;
       } else {
         owner[field] = c.read();
+      }
+      if (el.hasAttribute("transient")) {
+        el.removeAttribute("value");
+        el.removeAttribute("checked");
       }
     }
     function collectEl(el, ctx) {
@@ -1146,6 +1173,12 @@ ${src}` : `"use strict"; return (${src});`;
           if (t === "password" && !el.hasAttribute("transient")) {
             halt("E31", el, { attr: "bind", problem: "a password must never serialize into a world-readable file", fix: "add transient to the password input" });
           }
+        } else if (el.tagName !== "SELECT" && el.tagName !== "TEXTAREA") {
+          const ce = el.getAttribute("contenteditable");
+          const editable = ce != null && ce !== "false";
+          if (!editable && el.children.length > 0) {
+            halt("E20", el, { attr: "bind", problem: "bind on a container element is not a control; a write would overwrite its children", fix: "bind a control (input/select/textarea), a contenteditable, or an empty text leaf" });
+          }
         }
       }
       if (el.hasAttribute("item") && !el.hasAttribute("template")) {
@@ -1211,6 +1244,12 @@ ${src}` : `"use strict"; return (${src});`;
     runPass(appRec, { trigger: "mount" });
     appRec._mountMs = now() - t0;
     appRec._mountWrites = appRec._stats ? appRec._stats.writes : 0;
+    if (appRec._mountWrites > 0) {
+      diag.warn("W30", root, {
+        problem: `${appRec._mountWrites} paint(s) ran at mount; the saved file was out of sync with its declared state`,
+        fix: "re-save once so the file mounts clean (a settled file writes nothing)"
+      });
+    }
     return appRec;
   }
 
@@ -1268,13 +1307,31 @@ ${src}` : `"use strict"; return (${src});`;
       const sub = ownedScope(ctxEl, field);
       if (sub) return makeProxy(sub, appRec, false);
       const decl = declarerOf(ctxEl, appRec.root, field);
-      if (decl) return parseTyped(decl.el.getAttribute(field), decl.decl.type);
+      if (decl) {
+        if (decl.decl.transient) return readTransient(decl.el, decl.decl);
+        return parseTyped(decl.el.getAttribute(field), decl.decl.type);
+      }
       const snap = ctxEl._sapScope;
       return snap ? snap[field] : void 0;
     }
-    function setStateAttr(el, field, value, type, appRec) {
-      el.setAttribute(field, serializeTyped(value, type));
+    function setStateAttr(el, field, value, decl, appRec) {
+      if (decl.transient) writeTransient(el, decl, value);
+      else el.setAttribute(field, serializeTyped(value, decl.type));
       runtime2.schedule(appRec, "set:" + field);
+    }
+    function knownFieldsFor(ctxEl, appRoot) {
+      const names = /* @__PURE__ */ new Set();
+      let cur = nearestScopeEl(ctxEl) || appRoot;
+      while (cur) {
+        for (const d of parseStateDecl(cur.getAttribute("state") || "")) names.add(d.name);
+        if (cur.hasAttribute("app")) break;
+        cur = nearestScopeEl(cur.parentElement);
+      }
+      walkOwned(ctxEl, (el) => {
+        const b = el.getAttribute("bind");
+        if (b) names.add(b);
+      });
+      return names;
     }
     function writeField(ctxEl, appRec, field, value) {
       const control = ownedBind(ctxEl, field);
@@ -1295,7 +1352,22 @@ ${src}` : `"use strict"; return (${src});`;
       }
       const decl = declarerOf(ctxEl, appRec.root, field);
       if (decl) {
-        setStateAttr(decl.el, field, value, decl.decl.type, appRec);
+        setStateAttr(decl.el, field, value, decl.decl, appRec);
+        return;
+      }
+      const known = knownFieldsFor(ctxEl, appRec.root);
+      known.delete(field);
+      const guess = field.length >= 4 ? didYouMean(field, [...known]) : null;
+      if (guess) {
+        appRec.diag.error("E12", ctxEl, { key: field, problem: `unknown state key "${field}"`, didYouMean: guess });
+        return;
+      }
+      if (RESERVED.has(field) || HTML_GLOBALS.has(field)) {
+        appRec.diag.error("E15", ctxEl, {
+          key: field,
+          problem: `cannot write undeclared field "${field}" \u2014 it is a reserved/global name and cannot become state`,
+          fix: "pick a different field name, or declare it explicitly in a state= attribute"
+        });
         return;
       }
       const root = appRec.root;
@@ -1303,7 +1375,7 @@ ${src}` : `"use strict"; return (${src});`;
       const decls = root.getAttribute("state") || "";
       const token = type === "string" ? field : `${field}:${type}`;
       root.setAttribute("state", decls ? `${decls} ${token}` : token);
-      setStateAttr(root, field, value, type, appRec);
+      setStateAttr(root, field, value, { name: field, type, transient: false }, appRec);
     }
     function freshIds(rootClone) {
       const stamp = (el) => {
@@ -1349,7 +1421,8 @@ ${src}` : `"use strict"; return (${src});`;
       });
       for (const d of parseStateDecl(ctxEl.getAttribute("state") || "")) {
         const dflt = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
-        ctxEl.setAttribute(d.name, dflt);
+        if (d.transient) writeTransient(ctxEl, d, parseTyped(dflt, d.type));
+        else ctxEl.setAttribute(d.name, dflt);
       }
       runtime2.schedule(appRec, "trigger-reset");
     }
@@ -1578,6 +1651,32 @@ ${src}` : `"use strict"; return (${src});`;
       if (!actionEl) return;
       runAction(actionEl, appRec);
     }
+    function clearControl(c) {
+      const cr = carrierFor(c);
+      const def = c.getAttribute("default");
+      if (cr.kind === "checkbox") cr.write(def === "" || def === "true");
+      else cr.write(def != null ? def : "");
+    }
+    function addFromForm(formEl, appRec, listName) {
+      const proxy = Sap2(formEl);
+      if (!proxy) return;
+      const newRow = proxy.$add(listName);
+      if (!newRow) return;
+      const composers = [];
+      walkOwned(formEl, (el) => {
+        if (el.hasAttribute("bind")) composers.push(el);
+      });
+      for (const c of composers) {
+        const target = ownedBind(newRow.$el, c.getAttribute("bind"));
+        if (target) carrierFor(target).write(carrierFor(c).read());
+      }
+      composers.forEach(clearControl);
+      if (composers.length) {
+        if (typeof composers[0].focus === "function") composers[0].focus();
+      } else {
+        focusFirstEditable(newRow.$el);
+      }
+    }
     function onSubmit(e) {
       const form = e.target;
       if (!form || !form.hasAttribute || !form.hasAttribute("trigger-add")) return;
@@ -1585,9 +1684,7 @@ ${src}` : `"use strict"; return (${src});`;
       if (!appRec) return;
       e.preventDefault();
       if (!confirmGate(form, appRec)) return;
-      const proxy = Sap2(form);
-      const row = proxy && proxy.$add(form.getAttribute("trigger-add"));
-      if (row) focusFirstEditable(row.$el);
+      addFromForm(form, appRec, form.getAttribute("trigger-add"));
     }
     function onReset(e) {
       const form = e.target;

@@ -6,10 +6,11 @@
 import {
   nearestScopeEl, nearestItemEl, isInsideDetail, ensureId,
   ownedBind, ownedItems, rowsOf, templateOf, resolveListEl,
-  parseStateDecl, parseTyped, serializeTyped,
+  parseStateDecl, parseTyped, serializeTyped, readTransient, writeTransient,
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
 import { walkOwned } from "./dom.js";
+import { RESERVED, HTML_GLOBALS, didYouMean } from "./errors.js";
 
 function ownedScope(scopeEl, name) {
   let found = null;
@@ -71,14 +72,35 @@ export function createAccessor(runtime) {
     const sub = ownedScope(ctxEl, field);
     if (sub) return makeProxy(sub, appRec, false);
     const decl = declarerOf(ctxEl, appRec.root, field);
-    if (decl) return parseTyped(decl.el.getAttribute(field), decl.decl.type);
+    if (decl) {
+      if (decl.decl.transient) return readTransient(decl.el, decl.decl);
+      return parseTyped(decl.el.getAttribute(field), decl.decl.type);
+    }
     const snap = ctxEl._sapScope;
     return snap ? snap[field] : undefined;
   }
 
-  function setStateAttr(el, field, value, type, appRec) {
-    el.setAttribute(field, serializeTyped(value, type));
+  function setStateAttr(el, field, value, decl, appRec) {
+    if (decl.transient) writeTransient(el, decl, value);
+    else el.setAttribute(field, serializeTyped(value, decl.type));
     runtime.schedule(appRec, "set:" + field);
+  }
+
+  // Writable field names a typo could have meant: state declarations up the scope
+  // chain plus controls bound in the current scope.
+  function knownFieldsFor(ctxEl, appRoot) {
+    const names = new Set();
+    let cur = nearestScopeEl(ctxEl) || appRoot;
+    while (cur) {
+      for (const d of parseStateDecl(cur.getAttribute("state") || "")) names.add(d.name);
+      if (cur.hasAttribute("app")) break;
+      cur = nearestScopeEl(cur.parentElement);
+    }
+    walkOwned(ctxEl, (el) => {
+      const b = el.getAttribute("bind");
+      if (b) names.add(b);
+    });
+    return names;
   }
 
   function writeField(ctxEl, appRec, field, value) {
@@ -100,16 +122,36 @@ export function createAccessor(runtime) {
     }
     const decl = declarerOf(ctxEl, appRec.root, field);
     if (decl) {
-      setStateAttr(decl.el, field, value, decl.decl.type, appRec);
+      setStateAttr(decl.el, field, value, decl.decl, appRec);
       return;
     }
-    // auto-declare on the app root (DOM-as-truth: the write creates the field)
+    // Undeclared field. A near-match to a known field is almost certainly a typo,
+    // so fail loud (E12) instead of auto-declaring a phantom field. A reserved or
+    // global HTML name can never be a valid state field (E15). Anything else is a
+    // genuinely new field: auto-declare on the app root (DOM-as-truth).
+    const known = knownFieldsFor(ctxEl, appRec.root);
+    known.delete(field);
+    // Short names are inherently ambiguous (x, qty), so only flag a likely typo
+    // when the name is long enough for an edit-distance match to mean something.
+    const guess = field.length >= 4 ? didYouMean(field, [...known]) : null;
+    if (guess) {
+      appRec.diag.error("E12", ctxEl, { key: field, problem: `unknown state key "${field}"`, didYouMean: guess });
+      return;
+    }
+    if (RESERVED.has(field) || HTML_GLOBALS.has(field)) {
+      appRec.diag.error("E15", ctxEl, {
+        key: field,
+        problem: `cannot write undeclared field "${field}" — it is a reserved/global name and cannot become state`,
+        fix: "pick a different field name, or declare it explicitly in a state= attribute",
+      });
+      return;
+    }
     const root = appRec.root;
     const type = inferType(value);
     const decls = root.getAttribute("state") || "";
     const token = type === "string" ? field : `${field}:${type}`;
     root.setAttribute("state", decls ? `${decls} ${token}` : token);
-    setStateAttr(root, field, value, type, appRec);
+    setStateAttr(root, field, value, { name: field, type, transient: false }, appRec);
   }
 
   function freshIds(rootClone) {
@@ -158,7 +200,8 @@ export function createAccessor(runtime) {
     });
     for (const d of parseStateDecl(ctxEl.getAttribute("state") || "")) {
       const dflt = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
-      ctxEl.setAttribute(d.name, dflt);
+      if (d.transient) writeTransient(ctxEl, d, parseTyped(dflt, d.type));
+      else ctxEl.setAttribute(d.name, dflt);
     }
     runtime.schedule(appRec, "trigger-reset");
   }

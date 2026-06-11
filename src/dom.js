@@ -133,6 +133,25 @@ export function serializeTyped(value, type) {
   return value == null ? "" : String(value);
 }
 
+// Transient state fields (state="x:transient") live on a runtime-only property,
+// never an attribute, so they drive the app but are stripped from the saved DOM.
+// The value attribute is removed on read; the state= declaration itself stays.
+export function readTransient(el, decl) {
+  const store = el._sapTransient || (el._sapTransient = {});
+  if (!(decl.name in store)) {
+    let raw = el.getAttribute(decl.name);
+    if (raw == null) raw = decl.default != null ? decl.default : decl.type === "num" ? "0" : decl.type === "bool" ? "false" : "";
+    store[decl.name] = parseTyped(raw, decl.type);
+  }
+  if (el.hasAttribute(decl.name)) el.removeAttribute(decl.name);
+  return store[decl.name];
+}
+
+export function writeTransient(el, decl, value) {
+  (el._sapTransient || (el._sapTransient = {}))[decl.name] = value;
+  if (el.hasAttribute(decl.name)) el.removeAttribute(decl.name);
+}
+
 // Find the list element a path points at, resolving nearest-scope-first.
 // "cards" -> nearest owned items=cards; "doing.cards" -> [scope=doing] > [items=cards].
 export function resolveListEl(appRoot, fromEl, path) {
