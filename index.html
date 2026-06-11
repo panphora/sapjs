@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sap · reactive HTML in attributes</title>
+<meta name="description" content="Sap is a tiny reactive layer for hand-written HTML. Declare state, formulas, and paints as plain attributes. The DOM is the only store, so the file you save is the app.">
+<script src="./dist/sap.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --panel: #11151c;
+    --panel-2: #161b24;
+    --border: #232b38;
+    --border-2: #2e3848;
+    --text: #d8dee9;
+    --muted: #8b97a8;
+    --faint: #5d6776;
+    --accent: #6ee7a8;
+    --accent-dim: #3aa776;
+    --warn: #f0b86e;
+    --bad: #f0726f;
+    --code-bg: #0c0f15;
+    --mono: "Berkeley Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre, .mono { font-family: var(--mono); }
+
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 56px 0; border-top: 1px solid var(--border); }
+  section:first-of-type { border-top: none; }
+
+  h1, h2, h3 { line-height: 1.2; letter-spacing: -0.01em; }
+  h2 { font-size: 27px; margin: 0 0 6px; }
+  h2 .num { color: var(--accent-dim); font-family: var(--mono); font-size: 16px; margin-right: 10px; }
+  .lead { color: var(--muted); font-size: 16px; max-width: 70ch; margin: 0 0 28px; }
+  p { max-width: 74ch; }
+
+  /* Header / hero */
+  header { padding: 64px 0 8px; }
+  .brand { font-family: var(--mono); font-weight: 700; font-size: 17px; letter-spacing: 0.02em; }
+  .brand .dot { color: var(--accent); }
+  nav.top { display: flex; gap: 22px; align-items: center; justify-content: space-between; padding: 18px 0; }
+  nav.top .links { display: flex; gap: 20px; font-size: 13.5px; color: var(--muted); }
+  nav.top .links a { color: var(--muted); }
+  nav.top .links a:hover { color: var(--text); text-decoration: none; }
+
+  .hero h1 { font-size: 54px; margin: 18px 0 14px; letter-spacing: -0.03em; }
+  .hero h1 .mono { color: var(--accent); }
+  .hero .tagline { font-size: 21px; color: var(--text); max-width: 30ch; margin: 0 0 10px; font-weight: 500; }
+  .hero .sub { font-size: 16px; color: var(--muted); max-width: 64ch; margin: 0 0 26px; }
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .btn {
+    display: inline-block; padding: 9px 16px; border-radius: 8px; font-size: 14px; font-weight: 500;
+    border: 1px solid var(--border-2); color: var(--text); background: var(--panel-2);
+  }
+  .btn:hover { border-color: var(--accent-dim); text-decoration: none; }
+  .btn.primary { background: var(--accent); color: #04130c; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.06); }
+
+  /* Demo cards */
+  .demo { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; margin: 18px 0; overflow: hidden; }
+  .demo-head { padding: 14px 18px 0; }
+  .demo-head h3 { margin: 0; font-size: 15.5px; }
+  .demo-head p { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+  .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  @media (max-width: 760px) { .demo-grid { grid-template-columns: 1fr; } }
+  .live { padding: 18px; border-right: 1px solid var(--border); }
+  @media (max-width: 760px) { .live { border-right: none; border-bottom: 1px solid var(--border); } }
+  pre.code {
+    margin: 0; padding: 16px 18px; background: var(--code-bg); color: #aeb9cc; overflow-x: auto;
+    font-size: 12.5px; line-height: 1.55; white-space: pre; tab-size: 2;
+  }
+  .greenline {
+    display: block; padding: 8px 18px; background: var(--panel-2); border-top: 1px solid var(--border);
+    color: var(--accent-dim); font-size: 11.5px; white-space: nowrap; overflow-x: auto;
+  }
+  .greenline.bad { color: var(--bad); }
+
+  /* Demo widget styling (the rendered apps) */
+  .live input[type=text], .live input[type=number], .live input[type=email], .live input[type=password],
+  .live input[type=search], .live input:not([type]), .live textarea, .live select {
+    background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text);
+    border-radius: 7px; padding: 7px 9px; font: inherit; font-size: 14px; width: 100%; margin: 2px 0;
+  }
+  .live input[type=number] { width: 92px; }
+  .live input:focus, .live select:focus, .live textarea:focus { outline: none; border-color: var(--accent-dim); }
+  .live label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 2px; }
+  .live label.inline { display: inline-flex; align-items: center; gap: 6px; }
+  .live button {
+    background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text);
+    border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 13.5px; cursor: pointer;
+  }
+  .live button:hover { border-color: var(--accent-dim); }
+  .live ul, .live ol { list-style: none; margin: 6px 0; padding: 0; }
+  .live li[item] { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; margin: 5px 0; background: var(--panel-2); }
+  .live output, .live .out { font-family: var(--mono); }
+  .live .big { font-size: 28px; font-weight: 600; color: var(--accent); font-family: var(--mono); }
+  .live table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .live th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); padding: 4px 6px; }
+  .live th button { background: none; border: none; color: var(--muted); padding: 2px; cursor: pointer; font: inherit; }
+  .live th button:hover { color: var(--accent); }
+  .live td { padding: 5px 6px; border-bottom: 1px solid var(--border); font-family: var(--mono); }
+  .live [item].active, .live .row.active { border-color: var(--accent-dim); }
+  .live .cols { display: flex; gap: 12px; }
+  .live .col { flex: 1; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-height: 90px; }
+  .live .col h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .live .card { background: var(--panel); border: 1px solid var(--border-2); border-radius: 6px; padding: 6px 8px; margin: 4px 0; font-size: 13px; display: flex; justify-content: space-between; gap: 6px; }
+  .live .muted { color: var(--muted); }
+  .live form:invalid button[type=submit] { opacity: 0.45; pointer-events: none; }
+  .live .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border-2); cursor: pointer; color: var(--muted); }
+  .live .pill.active { background: var(--accent); color: #04130c; border-color: var(--accent); }
+  .live .err { color: var(--bad); font-size: 12px; min-height: 1.2em; }
+
+  /* Reference tables */
+  table.ref { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 4px 0 8px; }
+  table.ref th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-2); color: var(--muted); font-weight: 500; }
+  table.ref td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.ref td:first-child { white-space: nowrap; }
+  table.ref code { color: var(--accent); font-size: 12.5px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .card-plain { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+  .card-plain h3 { margin: 0 0 6px; font-size: 15px; }
+  .card-plain p { color: var(--muted); font-size: 13.5px; margin: 0; }
+
+  pre.block { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #aeb9cc; }
+  .runes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 8px 0; }
+  @media (max-width: 700px) { .runes { grid-template-columns: 1fr; } }
+  .rune { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .rune .k { font-family: var(--mono); color: var(--accent); font-size: 13px; }
+  .rune h4 { margin: 6px 0 4px; font-size: 15px; }
+  .rune p { margin: 0; color: var(--muted); font-size: 13px; }
+  .rune code { color: var(--text); font-size: 12px; }
+
+  .console { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; }
+  .console-bar { display: flex; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .console-bar button { background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text); border-radius: 6px; padding: 5px 11px; font: inherit; font-size: 12.5px; cursor: pointer; font-family: var(--mono); }
+  .console-bar button:hover { border-color: var(--accent-dim); }
+  pre.console-out { margin: 0; padding: 14px 16px; font-size: 12px; color: var(--accent-dim); white-space: pre-wrap; max-height: 320px; overflow: auto; min-height: 60px; }
+
+  footer { padding: 48px 0 64px; color: var(--faint); font-size: 13px; }
+  footer .brand { color: var(--muted); }
+  .kbd { font-family: var(--mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 5px; padding: 1px 6px; color: var(--muted); }
+  hr.soft { border: none; border-top: 1px solid var(--border); margin: 26px 0; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav class="top">
+    <span class="brand">sap<span class="dot">·</span></span>
+    <span class="links">
+      <a href="#quickstart">Quickstart</a>
+      <a href="#demos">Demos</a>
+      <a href="#reference">Reference</a>
+      <a href="#agents">For agents</a>
+      <a href="https://github.com/panphora/sapjs">GitHub</a>
+    </span>
+  </nav>
+</div>
+
+<header class="wrap hero">
+  <h1>Reactive HTML, in <span class="mono">attributes</span>.</h1>
+  <p class="tagline">Declare it. Don't wire it.</p>
+  <p class="sub">
+    Sap is a tiny reactive layer for hand-written HTML files. You write state, formulas, and paints as
+    plain attributes; Sap rebuilds everything from the live DOM on every change. The DOM is the only
+    store, so the file you save <em>is</em> the app. No build step. No virtual DOM. No state object.
+  </p>
+  <div class="cta">
+    <a class="btn primary" href="#quickstart">Get started</a>
+    <a class="btn" href="#demos">See it move</a>
+    <a class="btn" href="https://github.com/panphora/sapjs">npm i sapjs</a>
+  </div>
+</header>
+
+<!-- HERO DEMO -->
+<section class="wrap" style="padding-top: 28px; border-top: none;">
+  <div class="demo">
+    <div class="demo-head">
+      <h3>The whole idea, in six lines</h3>
+      <p>Type in either field. The total recomputes and formats itself. There is no JavaScript here.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app>
+        <label>Quantity <input type="number" bind="qty" value="3"></label>
+        <label>Unit price <input type="number" bind="price" value="10"></label>
+        <p>Total: <span class="big" calc:total="state.qty * state.price" text:usd="state.total">$30</span></p>
+      </main>
+    </script>
+  </div>
+</section>
+
+<!-- MENTAL MODEL -->
+<section class="wrap" id="model">
+  <h2><span class="num">01</span>The whole model in three words</h2>
+  <p class="lead">Everything in Sap is one of three things. Learn these and you know the library.</p>
+  <div class="runes">
+    <div class="rune">
+      <div class="k">structure</div>
+      <h4>Declared state</h4>
+      <p>Fields live on the DOM: <code>state=</code> attributes, <code>bind</code> on controls, <code>items</code> for lists.</p>
+    </div>
+    <div class="rune">
+      <div class="k">compute</div>
+      <h4>Derived values</h4>
+      <p>Formulas that read state and produce values: <code>calc:</code>, sorted by dependency, not document order.</p>
+    </div>
+    <div class="rune">
+      <div class="k">paint</div>
+      <h4>Output + effects</h4>
+      <p>Write to the page: <code>text</code>, <code>show</code>, <code>attr:</code>, <code>class:</code>, <code>css:</code>, and <code>effect=</code>.</p>
+    </div>
+  </div>
+  <p style="color:var(--muted); font-size:14px; margin-top:14px;">
+    Reads are expressions over <code class="mono">state</code> (the nearest scope) and <code class="mono">item</code> (the nearest row).
+    Writes go through <code class="mono">Sap(el)</code> in your handlers, or the action attributes. One write path, always.
+  </p>
+</section>
+
+<!-- QUICKSTART -->
+<section class="wrap" id="quickstart">
+  <h2><span class="num">02</span>Quickstart</h2>
+  <p class="lead">One script tag, then write HTML. Sap auto-mounts every <code class="mono">[app]</code> on load.</p>
+  <pre class="block">&lt;script src="https://unpkg.com/sapjs"&gt;&lt;/script&gt;
+
+&lt;main app&gt;
+  &lt;input type="number" bind="qty" value="3"&gt;
+  &lt;input type="number" bind="price" value="10"&gt;
+  &lt;output calc:total="state.qty * state.price" text:usd="state.total"&gt;&lt;/output&gt;
+&lt;/main&gt;</pre>
+  <p style="color:var(--muted); font-size:14px;">
+    Save it as a <code class="mono">.html</code> file. Open it. It runs. The saved markup already shows the right
+    numbers, because every paint targets a real attribute, so view-source is correct before JS even loads.
+  </p>
+</section>
+
+<!-- DEMOS -->
+<section class="wrap" id="demos">
+  <h2><span class="num">03</span>Live demos</h2>
+  <p class="lead">Every demo below runs the real, unminified-in-spirit library on this page. The
+    green line under each is its machine-readable mount contract, printed live.</p>
+
+  <!-- BIND MATRIX -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>Two-way binding, by control type</h3>
+      <p>The control <em>is</em> the contract. No modifiers, ever. Every input feeds one live object.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app>
+        <label>Name <input bind="name" value="Ada"></label>
+        <label>Age <input type="number" bind="age" value="36"></label>
+        <label class="inline"><input type="checkbox" bind="member" checked> Member</label>
+        <label>Plan
+          <select bind="plan">
+            <option value="free">Free</option>
+            <option value="pro" selected>Pro</option>
+          </select>
+        </label>
+        <p class="out" text="state.name + ' · ' + state.age + ' · ' + (state.member ? state.plan : 'guest')"></p>
+      </main>
+    </script>
+  </div>
+
+  <!-- TODO -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>A todo list, in attributes</h3>
+      <p><code>items</code> for the list, <code>trigger-add</code> / <code>trigger-remove</code> for rows, an aggregate that counts live.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app>
+        <form onsubmit="const s=Sap(this); const t=s.draft.trim(); if(t){s.$add('todos').title=t; s.draft=''} return false">
+          <input bind="draft" placeholder="What needs doing? (Enter)">
+        </form>
+        <ul items="todos">
+          <li item template>
+            <input type="checkbox" bind="done">
+            <span bind="title" style="flex:1"></span>
+            <button trigger-remove>✕</button>
+          </li>
+          <li item>
+            <input type="checkbox" bind="done" checked>
+            <span bind="title" style="flex:1">Ship sap</span>
+            <button trigger-remove>✕</button>
+          </li>
+          <li item>
+            <input type="checkbox" bind="done">
+            <span bind="title" style="flex:1">Write the homepage</span>
+            <button trigger-remove>✕</button>
+          </li>
+        </ul>
+        <p class="muted" text="plural(count(state.todos, t => !t.done), 'task', 'tasks') + ' left'"></p>
+      </main>
+    </script>
+  </div>
+
+  <!-- SORT -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>Stateless column sort</h3>
+      <p><code>sort:FIELD</code> reorders the rows and toggles direction. The row order is the entire sort state.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app>
+        <table>
+          <thead><tr>
+            <th><button sort:name>Item ▲▼</button></th>
+            <th><button sort:price>Price ▲▼</button></th>
+          </tr></thead>
+          <tbody items="rows">
+            <tr item template state="price:num"><td bind="name"></td><td text:usd2="item.price"></td></tr>
+            <tr item state="price:num=89"><td bind="name">Keyboard</td><td text:usd2="item.price"></td></tr>
+            <tr item state="price:num=340"><td bind="name">Monitor</td><td text:usd2="item.price"></td></tr>
+            <tr item state="price:num=12"><td bind="name">Cable</td><td text:usd2="item.price"></td></tr>
+          </tbody>
+        </table>
+      </main>
+    </script>
+  </div>
+
+  <!-- MASTER-DETAIL -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>Master–detail, no framework</h3>
+      <p><code>detail="LIST by KEYEXPR"</code> projects the selected row. Edits in the panel write back to the source row.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app state="selected">
+        <ul items="contacts">
+          <li item template set:selected="item.$key" class:active="state.selected === item.$key">
+            <span bind="name" style="flex:1"></span>
+          </li>
+          <li item id="ct-1" set:selected="item.$key" class:active="state.selected === item.$key">
+            <span bind="name" style="flex:1">Grace Hopper</span>
+            <input type="hidden" bind="email" value="grace@navy.mil">
+          </li>
+          <li item id="ct-2" set:selected="item.$key" class:active="state.selected === item.$key">
+            <span bind="name" style="flex:1">Alan Turing</span>
+            <input type="hidden" bind="email" value="alan@bletchley.uk">
+          </li>
+        </ul>
+        <form detail="contacts by state.selected" style="margin-top:10px">
+          <label>Name <input bind="name"></label>
+          <label>Email <input type="email" bind="email"></label>
+        </form>
+        <p class="muted" show="!state.selected">Pick a contact to edit it.</p>
+      </main>
+    </script>
+  </div>
+
+  <!-- FILTER -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>Live filter (hide, never remove)</h3>
+      <p>A per-row <code>calc:match</code> drives <code>show</code>. Hidden rows still count in the total, like a spreadsheet.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app>
+        <input type="search" bind="q" transient placeholder="Filter fruit…">
+        <ul items="fruit">
+          <li item template
+              calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())"
+              show="item.match">
+            <span bind="name" style="flex:1"></span><b text:int="num(item.cal)"></b>
+          </li>
+          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())" show="item.match"><span bind="name" style="flex:1">Apple</span><b text:int="num(item.cal)"></b><input type="hidden" bind="cal" value="95"></li>
+          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())" show="item.match"><span bind="name" style="flex:1">Banana</span><b text:int="num(item.cal)"></b><input type="hidden" bind="cal" value="105"></li>
+          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())" show="item.match"><span bind="name" style="flex:1">Apricot</span><b text:int="num(item.cal)"></b><input type="hidden" bind="cal" value="48"></li>
+        </ul>
+        <p class="muted">Total (all rows): <b text:int="sum(state.fruit, 'cal')"></b> cal</p>
+      </main>
+    </script>
+  </div>
+
+  <!-- KANBAN -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>Move between lists</h3>
+      <p><code>move:to="list"</code> moves a row to another list. The DOM move <em>is</em> the write. Works for keyboard users with zero extra code.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app>
+        <div class="cols">
+          <div class="col">
+            <h4>To do</h4>
+            <ul items="todo">
+              <li item template class="card"><span bind="t"></span><button move:to="doing">→</button></li>
+              <li item class="card"><span bind="t">Design</span><button move:to="doing">→</button></li>
+              <li item class="card"><span bind="t">Build</span><button move:to="doing">→</button></li>
+            </ul>
+          </div>
+          <div class="col">
+            <h4>Doing</h4>
+            <ul items="doing">
+              <li item template class="card"><button move:to="todo">←</button><span bind="t"></span></li>
+              <li item class="card"><button move:to="todo">←</button><span bind="t">Ship</span></li>
+            </ul>
+          </div>
+        </div>
+      </main>
+    </script>
+  </div>
+
+  <!-- VALIDATION -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>Cross-field validation, natively</h3>
+      <p><code>invalid="expr"</code> sets a custom validity message. The submit button disables itself with pure CSS — no Sap attribute.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app>
+        <form onsubmit="alert('Account created'); return false">
+          <label>Password <input type="password" bind="pw" required minlength="8" transient></label>
+          <label>Confirm
+            <input type="password" bind="pw2" required transient
+                   invalid="state.pw2 && state.pw2 !== state.pw && 'Passwords do not match'">
+          </label>
+          <p class="err" show="state.pw2 && state.pw2 !== state.pw">Passwords do not match.</p>
+          <button type="submit">Create account</button>
+        </form>
+      </main>
+    </script>
+  </div>
+
+  <!-- TABS / SET -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>Tabs with <code>set:</code></h3>
+      <p>A click writes a field; <code>show</code> reads it back. No toggle state stored anywhere but the DOM.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app state="tab=overview">
+        <div style="display:flex; gap:8px; margin-bottom:10px">
+          <span class="pill" set:tab="'overview'" class:active="state.tab === 'overview'">Overview</span>
+          <span class="pill" set:tab="'pricing'" class:active="state.tab === 'pricing'">Pricing</span>
+          <span class="pill" set:tab="'faq'" class:active="state.tab === 'faq'">FAQ</span>
+        </div>
+        <p show="state.tab === 'overview'">Sap rebuilds state from the DOM every pass.</p>
+        <p show="state.tab === 'pricing'">Free and open source. MIT licensed.</p>
+        <p show="state.tab === 'faq'">Yes, it works in a single saved HTML file.</p>
+      </main>
+    </script>
+  </div>
+
+  <!-- BULK + BATCH -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>Bulk operations as one-liners</h3>
+      <p>Row proxies compose with array methods. <code>Sap.batch</code> groups them into a single undo entry.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app>
+        <ul items="inbox">
+          <li item template><input type="checkbox" bind="sel"><span bind="subject" style="flex:1"></span></li>
+          <li item><input type="checkbox" bind="sel" checked><span bind="subject" style="flex:1">Invoice #1042</span></li>
+          <li item><input type="checkbox" bind="sel"><span bind="subject" style="flex:1">Welcome aboard</span></li>
+          <li item><input type="checkbox" bind="sel" checked><span bind="subject" style="flex:1">Re: launch</span></li>
+        </ul>
+        <button confirm="Delete selected messages?"
+                onclick="Sap.batch('Delete selected', () => Sap(this).inbox.filter(m => m.sel).forEach(m => m.$remove()))">
+          Delete selected (<output text="count(state.inbox, m => m.sel)"></output>)
+        </button>
+      </main>
+    </script>
+  </div>
+
+  <!-- ACCORDION -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>Where <code>open</code> really is state</h3>
+      <p>A native <code>&lt;details&gt;</code> declares <code>state="open"</code> with presence semantics. The open panel serializes and renders pre-JS.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app>
+        <details name="acc" open scope="secA" state="open">
+          <summary>Section A <span class="muted" text="state.open ? '— open' : '— collapsed'"></span></summary>
+          <p>Its <code>open</code> attribute is real DOM state: it serializes and renders before JS.</p>
+        </details>
+        <details name="acc" scope="secB" state="open">
+          <summary>Section B <span class="muted" text="state.open ? '— open' : '— collapsed'"></span></summary>
+          <p>A capture-phase toggle listener recomputes on open/close.</p>
+        </details>
+      </main>
+    </script>
+  </div>
+</section>
+
+<!-- CONSOLE CONTRACT -->
+<section class="wrap" id="console">
+  <h2><span class="num">04</span>Every app is inspectable</h2>
+  <p class="lead">Sap prints a machine-readable green line on mount and answers structured questions on demand.
+    Run these against the demos above (open your devtools console to see the formatted blocks too).</p>
+  <div class="console">
+    <div class="console-bar">
+      <button onclick="runConsole('status')">Sap.status()</button>
+      <button onclick="runConsole('report')">Sap.report()</button>
+      <button onclick="runConsole('doctor')">Sap.doctor()</button>
+      <button onclick="runConsole('clear')">clear</button>
+    </div>
+    <pre class="console-out" id="console-out">// click a button — output appears here and in the devtools console</pre>
+  </div>
+  <table class="ref" style="margin-top:18px">
+    <tr><td><code>Sap.status()</code></td><td>JSON twin of the green line: fields, calcs, paints, rows, mount writes, last pass.</td></tr>
+    <tr><td><code>Sap.report()</code></td><td>Every error as <code>{code, el, expr, problem, fix}</code> — searchable, copy-pasteable.</td></tr>
+    <tr><td><code>Sap.why(el)</code></td><td>How a field resolves: its declaring element, carrier, raw value, last paint.</td></tr>
+    <tr><td><code>Sap.doctor()</code></td><td>Full-page audit: dead state, duplicate ids, drift, long expressions.</td></tr>
+    <tr><td><code>Sap.refresh()</code></td><td>One synchronous pass. Set state, refresh, read the painted DOM on the next line.</td></tr>
+  </table>
+</section>
+
+<!-- REFERENCE -->
+<section class="wrap" id="reference">
+  <h2><span class="num">05</span>Reference</h2>
+  <p class="lead">The complete v1 vocabulary. Reads are frozen expressions; writes go through <code class="mono">Sap(el)</code> or actions.</p>
+
+  <h3 style="margin:18px 0 6px; font-size:15px; color:var(--muted)">Declare &amp; bind</h3>
+  <table class="ref">
+    <tr><td><code>app</code></td><td>Marks a mount root. Apps are isolated; lint stops at the boundary.</td></tr>
+    <tr><td><code>state="a b:num c:bool d=x"</code></td><td>Attribute-carried fields. Bare = string, <code>:num</code>, <code>:bool</code>, <code>name=default</code>.</td></tr>
+    <tr><td><code>bind="field"</code></td><td>Two-way bind on a control or text leaf. The control type is the value contract.</td></tr>
+    <tr><td><code>items="name"</code></td><td>A list field; <code>[item template]</code> child is the row prototype, cloned by add.</td></tr>
+    <tr><td><code>scope="name"</code></td><td>A nested state object, read as <code>state.name</code> from the parent.</td></tr>
+    <tr><td><code>transient</code></td><td>Keep this control out of the saved file (search boxes, passwords).</td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 6px; font-size:15px; color:var(--muted)">Compute &amp; paint</h3>
+  <table class="ref">
+    <tr><td><code>calc:name="expr"</code></td><td>Computed field on the nearest scope, ordered by dependency. Cycles hard-error.</td></tr>
+    <tr><td><code>text</code> / <code>text:FMT</code></td><td>Paint textContent, optionally formatted (<code>usd</code>, <code>pct</code>, <code>int</code>, <code>date</code>, <code>clock</code>…).</td></tr>
+    <tr><td><code>show="expr"</code></td><td>Toggle the native <code>hidden</code> attribute.</td></tr>
+    <tr><td><code>attr:NAME="expr"</code></td><td>Paint an attribute. Native booleans (<code>disabled</code>…) toggle by presence.</td></tr>
+    <tr><td><code>class:NAME</code> / <code>css:NAME</code></td><td>Toggle a class / write a <code>--NAME</code> custom property.</td></tr>
+    <tr><td><code>effect="stmt"</code></td><td>A statement run after each paint: charts, <code>document.title</code>, third-party sync.</td></tr>
+    <tr><td><code>invalid="expr"</code></td><td>Truthy string → <code>setCustomValidity</code>; gates native form submission.</td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 6px; font-size:15px; color:var(--muted)">Act</h3>
+  <table class="ref">
+    <tr><td><code>set:field="expr"</code></td><td>Write a field on click.</td></tr>
+    <tr><td><code>trigger-add="list"</code></td><td>Clone the row template; on a <code>&lt;form&gt;</code>, fires on Enter.</td></tr>
+    <tr><td><code>trigger-remove</code> / <code>trigger-reset</code></td><td>Remove the nearest row / reset the scope to defaults.</td></tr>
+    <tr><td><code>move:up</code> / <code>down</code> / <code>to="list"</code></td><td>Reorder a row, or move it to another list.</td></tr>
+    <tr><td><code>sort:FIELD</code></td><td>Stable column sort; direction toggles statelessly.</td></tr>
+    <tr><td><code>confirm="msg"</code></td><td>Gate any action behind <code>window.confirm</code>.</td></tr>
+    <tr><td><code>detail="LIST by KEY"</code></td><td>Project the selected row into a panel; edits route back to the source.</td></tr>
+    <tr><td><code>Sap(el).field = v</code></td><td>Live write-through proxy. Verbs: <code>$add</code>, <code>$remove</code>, <code>$move</code>, <code>$reset</code>.</td></tr>
+  </table>
+
+  <div class="grid2" style="margin-top:18px">
+    <div class="card-plain">
+      <h3>Helpers in every expression</h3>
+      <p style="margin-bottom:8px"><code class="mono">num · sum · count · avg · min · max · plural · days</code></p>
+      <p><code class="mono">sum(state.lines, 'linetotal')</code> reads like a spreadsheet formula. Field-string forms are lint-checkable against your declared row fields.</p>
+    </div>
+    <div class="card-plain">
+      <h3>Loud, attributed failures</h3>
+      <p style="margin-bottom:8px">A throwing paint keeps its last-good value, sets a <code class="mono">sap-error</code> beacon, and logs one error. Structural contradictions halt the app at mount, so the file stays byte-frozen.</p>
+      <p><code class="mono">E01</code> foreign dialect · <code class="mono">E07</code> calc cycle · <code class="mono">E22</code> bad format · <code class="mono">E31</code> bare password.</p>
+    </div>
+  </div>
+</section>
+
+<!-- FOR AGENTS -->
+<section class="wrap" id="agents">
+  <h2><span class="num">06</span>Built for agents</h2>
+  <p class="lead">Sap files are easy for an LLM to write and verify, because every mistake answers back with a code,
+    the exact element, and a copy-pasteable fix.</p>
+  <pre class="block">// A typo'd field name doesn't fail silently — it teaches:
+
+sap ✗ E12 unknown-state-key
+  at &lt;output text="state.totl"&gt; — main[app] &gt; p &gt; output
+  problem: no field "totl" is declared in this scope. Declared: total, qty, price
+  did you mean: state.total
+  fix: text="state.total"</pre>
+  <p style="color:var(--muted); font-size:14px;">
+    Foreign-dialect attributes (<code class="mono">x-text</code>, <code class="mono">v-if</code>, <code class="mono">@click</code>, <code class="mono">:class</code>) each map to their Sap
+    spelling. The definition of done is four shell lines: zero <code class="mono">sap ✗</code>, <code class="mono">Sap.status().ok</code>,
+    zero <code class="mono">[sap-error]</code> elements, and an empty <code class="mono">Sap.doctor()</code>.
+  </p>
+</section>
+
+<footer class="wrap">
+  <hr class="soft">
+  <p><span class="brand">sap<span style="color:var(--accent)">·</span></span> — reactive HTML in attributes. The DOM is the only state store.</p>
+  <p>
+    <a href="https://github.com/panphora/sapjs">GitHub</a> ·
+    <a href="https://www.npmjs.com/package/sapjs">npm</a> ·
+    <a href="https://hyperclay.com">Hyperclay</a> ·
+    MIT licensed
+  </p>
+</footer>
+
+<script>
+  function dedent(s) {
+    let lines = s.replace(/\t/g, "  ").split("\n");
+    while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    const widths = lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
+    const indent = widths.length ? Math.min.apply(null, widths) : 0;
+    return lines.map((l) => l.slice(indent)).join("\n");
+  }
+
+  document.querySelectorAll(".demo").forEach((demo) => {
+    const tpl = demo.querySelector('script[type="text/html"]');
+    if (!tpl) return;
+    const src = dedent(tpl.textContent);
+    demo.querySelector(".live").innerHTML = src;
+    const code = demo.querySelector(".code");
+    if (code) code.textContent = src;
+  });
+
+  // mount everything we just injected, then print each app's green line
+  Sap.mount();
+  document.querySelectorAll(".demo").forEach((demo) => {
+    const app = demo.querySelector("[app]");
+    const gl = demo.querySelector(".greenline");
+    if (!app || !gl) return;
+    const rec = Sap._registry.get(app);
+    if (!rec) return;
+    const line = Sap.greenLine(rec);
+    gl.textContent = line;
+    if (line.indexOf("✗") > -1) gl.classList.add("bad");
+  });
+
+  // console panel
+  window.runConsole = function (which) {
+    const out = document.getElementById("console-out");
+    if (which === "clear") { out.textContent = "// cleared"; return; }
+    let result;
+    if (which === "status") result = Sap.status();
+    else if (which === "report") result = Sap.report();
+    else if (which === "doctor") result = { findings: Sap.doctor() };
+    out.textContent = "Sap." + which + "() →\n\n" + JSON.stringify(result, null, 2);
+    console.log("Sap." + which + "()", result);
+  };
+</script>
+
+</body>
+</html>
