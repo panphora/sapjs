@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>sap · reactive HTML in attributes</title>
 <meta name="description" content="Sap is a tiny reactive layer for hand-written HTML. Declare state, formulas, and paints as plain attributes. The DOM is the only store, so the file you save is the app.">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<script>window.Prism = window.Prism || {}; window.Prism.manual = true;</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
 <script src="./dist/sap.min.js"></script>
 <style>
   :root {
@@ -44,7 +48,7 @@
   section:first-of-type { border-top: none; }
 
   h1, h2, h3 { line-height: 1.2; letter-spacing: -0.01em; }
-  h2 { font-size: 27px; margin: 0 0 6px; }
+  h2 { font-size: 27px; margin: 34px 0 6px; }
   h2 .num { color: var(--accent-dim); font-family: var(--mono); font-size: 16px; margin-right: 10px; }
   .lead { color: var(--muted); font-size: 16px; max-width: 70ch; margin: 0 0 28px; }
   p { max-width: 74ch; }
@@ -82,13 +86,21 @@
   @media (max-width: 760px) { .live { border-right: none; border-bottom: 1px solid var(--border); } }
   pre.code {
     margin: 0; padding: 16px 18px; background: var(--code-bg); color: #aeb9cc; overflow-x: auto;
-    font-size: 12.5px; line-height: 1.55; white-space: pre; tab-size: 2;
+    font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; tab-size: 2;
   }
   .greenline {
     display: block; padding: 8px 18px; background: var(--panel-2); border-top: 1px solid var(--border);
     color: var(--accent-dim); font-size: 11.5px; white-space: nowrap; overflow-x: auto;
   }
   .greenline.bad { color: var(--bad); }
+
+  /* Prism syntax highlighting — sap-themed tokens */
+  pre.code code, pre.block code { background: none; font-family: inherit; padding: 0; }
+  .token.tag { color: var(--accent); }
+  .token.attr-name { color: var(--warn); }
+  .token.attr-value { color: #aeb9cc; }
+  .token.punctuation { color: var(--faint); }
+  .token.comment { color: var(--faint); font-style: italic; }
 
   /* Demo widget styling (the rendered apps) */
   .live input[type=text], .live input[type=number], .live input[type=email], .live input[type=password],
@@ -203,9 +215,16 @@
     <code class="greenline"></code>
     <script type="text/html">
       <main app>
-        <label>Quantity <input type="number" bind="qty" value="3"></label>
-        <label>Unit price <input type="number" bind="price" value="10"></label>
-        <p>Total: <span class="big" calc:total="state.qty * state.price" text:usd="state.total">$30</span></p>
+        <label>Quantity
+          <input type="number" bind="qty" value="3"></label>
+        <label>Unit price
+          <input type="number" bind="price" value="10"></label>
+        <p>
+          Total:
+          <span class="big"
+                calc:total="state.qty * state.price"
+                text:usd="state.total">$30</span>
+        </p>
       </main>
     </script>
   </div>
@@ -242,13 +261,13 @@
 <section class="wrap" id="quickstart">
   <h2><span class="num">02</span>Quickstart</h2>
   <p class="lead">One script tag, then write HTML. Sap auto-mounts every <code class="mono">[app]</code> on load.</p>
-  <pre class="block">&lt;script src="https://unpkg.com/sapjs"&gt;&lt;/script&gt;
+  <pre class="block"><code class="language-markup">&lt;script src="https://unpkg.com/sapjs"&gt;&lt;/script&gt;
 
 &lt;main app&gt;
   &lt;input type="number" bind="qty" value="3"&gt;
   &lt;input type="number" bind="price" value="10"&gt;
   &lt;output calc:total="state.qty * state.price" text:usd="state.total"&gt;&lt;/output&gt;
-&lt;/main&gt;</pre>
+&lt;/main&gt;</code></pre>
   <p style="color:var(--muted); font-size:14px;">
     Save it as a <code class="mono">.html</code> file. Open it. It runs. The saved markup already shows the right
     numbers, because every paint targets a real attribute, so view-source is correct before JS even loads.
@@ -275,15 +294,18 @@
     <script type="text/html">
       <main app>
         <label>Name <input bind="name" value="Ada"></label>
-        <label>Age <input type="number" bind="age" value="36"></label>
-        <label class="inline"><input type="checkbox" bind="member" checked> Member</label>
+        <label>Age
+          <input type="number" bind="age" value="36"></label>
+        <label class="inline">
+          <input type="checkbox" bind="member" checked> Member</label>
         <label>Plan
           <select bind="plan">
             <option value="free">Free</option>
             <option value="pro" selected>Pro</option>
           </select>
         </label>
-        <p class="out" text="state.name + ' · ' + state.age + ' · ' + (state.member ? state.plan : 'guest')"></p>
+        <p class="out"
+           text="state.name + ' · ' + state.age + ' · ' + (state.member ? state.plan : 'guest')"></p>
       </main>
     </script>
   </div>
@@ -292,7 +314,7 @@
   <div class="demo">
     <div class="demo-head">
       <h3>A todo list, in attributes</h3>
-      <p><code>items</code> for the list, <code>trigger-add</code> / <code>trigger-remove</code> for rows, an aggregate that counts live.</p>
+      <p>The form's <code>bind="title"</code> matches the row's <code>title</code>, so <code>trigger-add</code> fills the new row and clears the box. No JavaScript.</p>
     </div>
     <div class="demo-grid">
       <div class="live"></div>
@@ -301,8 +323,9 @@
     <code class="greenline"></code>
     <script type="text/html">
       <main app>
-        <form onsubmit="const s=Sap(this); const t=s.draft.trim(); if(t){s.$add('todos').title=t; s.draft=''} return false">
-          <input bind="draft" placeholder="What needs doing? (Enter)">
+        <form trigger-add="todos">
+          <input bind="title"
+                 placeholder="What needs doing? (Enter)" required>
         </form>
         <ul items="todos">
           <li item template>
@@ -321,7 +344,8 @@
             <button trigger-remove>✕</button>
           </li>
         </ul>
-        <p class="muted" text="plural(count(state.todos, t => !t.done), 'task', 'tasks') + ' left'"></p>
+        <p class="muted"
+           text="plural(count(state.todos, t => !t.done), 'task', 'tasks') + ' left'"></p>
       </main>
     </script>
   </div>
@@ -345,10 +369,22 @@
             <th><button sort:price>Price ▲▼</button></th>
           </tr></thead>
           <tbody items="rows">
-            <tr item template state="price:num"><td bind="name"></td><td text:usd2="item.price"></td></tr>
-            <tr item state="price:num=89"><td bind="name">Keyboard</td><td text:usd2="item.price"></td></tr>
-            <tr item state="price:num=340"><td bind="name">Monitor</td><td text:usd2="item.price"></td></tr>
-            <tr item state="price:num=12"><td bind="name">Cable</td><td text:usd2="item.price"></td></tr>
+            <tr item template state="price:num">
+              <td bind="name"></td>
+              <td text:usd2="item.price"></td>
+            </tr>
+            <tr item state="price:num=89">
+              <td bind="name">Keyboard</td>
+              <td text:usd2="item.price"></td>
+            </tr>
+            <tr item state="price:num=340">
+              <td bind="name">Monitor</td>
+              <td text:usd2="item.price"></td>
+            </tr>
+            <tr item state="price:num=12">
+              <td bind="name">Cable</td>
+              <td text:usd2="item.price"></td>
+            </tr>
           </tbody>
         </table>
       </main>
@@ -369,19 +405,26 @@
     <script type="text/html">
       <main app state="selected">
         <ul items="contacts">
-          <li item template set:selected="item.$key" class:active="state.selected === item.$key">
+          <li item template
+              set:selected="item.$key"
+              class:active="state.selected === item.$key">
             <span bind="name" style="flex:1"></span>
           </li>
-          <li item id="ct-1" set:selected="item.$key" class:active="state.selected === item.$key">
+          <li item id="ct-1"
+              set:selected="item.$key"
+              class:active="state.selected === item.$key">
             <span bind="name" style="flex:1">Grace Hopper</span>
             <input type="hidden" bind="email" value="grace@navy.mil">
           </li>
-          <li item id="ct-2" set:selected="item.$key" class:active="state.selected === item.$key">
+          <li item id="ct-2"
+              set:selected="item.$key"
+              class:active="state.selected === item.$key">
             <span bind="name" style="flex:1">Alan Turing</span>
             <input type="hidden" bind="email" value="alan@bletchley.uk">
           </li>
         </ul>
-        <form detail="contacts by state.selected" style="margin-top:10px">
+        <form detail="contacts by state.selected"
+              style="margin-top:10px">
           <label>Name <input bind="name"></label>
           <label>Email <input type="email" bind="email"></label>
         </form>
@@ -410,11 +453,31 @@
               show="item.match">
             <span bind="name" style="flex:1"></span><b text:int="num(item.cal)"></b>
           </li>
-          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())" show="item.match"><span bind="name" style="flex:1">Apple</span><b text:int="num(item.cal)"></b><input type="hidden" bind="cal" value="95"></li>
-          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())" show="item.match"><span bind="name" style="flex:1">Banana</span><b text:int="num(item.cal)"></b><input type="hidden" bind="cal" value="105"></li>
-          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())" show="item.match"><span bind="name" style="flex:1">Apricot</span><b text:int="num(item.cal)"></b><input type="hidden" bind="cal" value="48"></li>
+          <li item
+              calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())"
+              show="item.match">
+            <span bind="name" style="flex:1">Apple</span>
+            <b text:int="num(item.cal)"></b>
+            <input type="hidden" bind="cal" value="95">
+          </li>
+          <li item
+              calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())"
+              show="item.match">
+            <span bind="name" style="flex:1">Banana</span>
+            <b text:int="num(item.cal)"></b>
+            <input type="hidden" bind="cal" value="105">
+          </li>
+          <li item
+              calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())"
+              show="item.match">
+            <span bind="name" style="flex:1">Apricot</span>
+            <b text:int="num(item.cal)"></b>
+            <input type="hidden" bind="cal" value="48">
+          </li>
         </ul>
-        <p class="muted">Total (all rows): <b text:int="sum(state.fruit, 'cal')"></b> cal</p>
+        <p class="muted">
+          Total (all rows): <b text:int="sum(state.fruit, 'cal')"></b> cal
+        </p>
       </main>
     </script>
   </div>
@@ -436,16 +499,31 @@
           <div class="col">
             <h4>To do</h4>
             <ul items="todo">
-              <li item template class="card"><span bind="t"></span><button move:to="doing">→</button></li>
-              <li item class="card"><span bind="t">Design</span><button move:to="doing">→</button></li>
-              <li item class="card"><span bind="t">Build</span><button move:to="doing">→</button></li>
+              <li item template class="card">
+                <span bind="t"></span>
+                <button move:to="doing">→</button>
+              </li>
+              <li item class="card">
+                <span bind="t">Design</span>
+                <button move:to="doing">→</button>
+              </li>
+              <li item class="card">
+                <span bind="t">Build</span>
+                <button move:to="doing">→</button>
+              </li>
             </ul>
           </div>
           <div class="col">
             <h4>Doing</h4>
             <ul items="doing">
-              <li item template class="card"><button move:to="todo">←</button><span bind="t"></span></li>
-              <li item class="card"><button move:to="todo">←</button><span bind="t">Ship</span></li>
+              <li item template class="card">
+                <button move:to="todo">←</button>
+                <span bind="t"></span>
+              </li>
+              <li item class="card">
+                <button move:to="todo">←</button>
+                <span bind="t">Ship</span>
+              </li>
             </ul>
           </div>
         </div>
@@ -467,12 +545,15 @@
     <script type="text/html">
       <main app>
         <form onsubmit="alert('Account created'); return false">
-          <label>Password <input type="password" bind="pw" required minlength="8" transient></label>
+          <label>Password
+            <input type="password" bind="pw"
+                   required minlength="8" transient></label>
           <label>Confirm
             <input type="password" bind="pw2" required transient
                    invalid="state.pw2 && state.pw2 !== state.pw && 'Passwords do not match'">
           </label>
-          <p class="err" show="state.pw2 && state.pw2 !== state.pw">Passwords do not match.</p>
+          <p class="err"
+             show="state.pw2 && state.pw2 !== state.pw">Passwords do not match.</p>
           <button type="submit">Create account</button>
         </form>
       </main>
@@ -493,9 +574,15 @@
     <script type="text/html">
       <main app state="tab=overview">
         <div style="display:flex; gap:8px; margin-bottom:10px">
-          <span class="pill" set:tab="'overview'" class:active="state.tab === 'overview'">Overview</span>
-          <span class="pill" set:tab="'pricing'" class:active="state.tab === 'pricing'">Pricing</span>
-          <span class="pill" set:tab="'faq'" class:active="state.tab === 'faq'">FAQ</span>
+          <span class="pill"
+                set:tab="'overview'"
+                class:active="state.tab === 'overview'">Overview</span>
+          <span class="pill"
+                set:tab="'pricing'"
+                class:active="state.tab === 'pricing'">Pricing</span>
+          <span class="pill"
+                set:tab="'faq'"
+                class:active="state.tab === 'faq'">FAQ</span>
         </div>
         <p show="state.tab === 'overview'">Sap rebuilds state from the DOM every pass.</p>
         <p show="state.tab === 'pricing'">Free and open source. MIT licensed.</p>
@@ -518,10 +605,22 @@
     <script type="text/html">
       <main app>
         <ul items="inbox">
-          <li item template><input type="checkbox" bind="sel"><span bind="subject" style="flex:1"></span></li>
-          <li item><input type="checkbox" bind="sel" checked><span bind="subject" style="flex:1">Invoice #1042</span></li>
-          <li item><input type="checkbox" bind="sel"><span bind="subject" style="flex:1">Welcome aboard</span></li>
-          <li item><input type="checkbox" bind="sel" checked><span bind="subject" style="flex:1">Re: launch</span></li>
+          <li item template>
+            <input type="checkbox" bind="sel">
+            <span bind="subject" style="flex:1"></span>
+          </li>
+          <li item>
+            <input type="checkbox" bind="sel" checked>
+            <span bind="subject" style="flex:1">Invoice #1042</span>
+          </li>
+          <li item>
+            <input type="checkbox" bind="sel">
+            <span bind="subject" style="flex:1">Welcome aboard</span>
+          </li>
+          <li item>
+            <input type="checkbox" bind="sel" checked>
+            <span bind="subject" style="flex:1">Re: launch</span>
+          </li>
         </ul>
         <button confirm="Delete selected messages?"
                 onclick="Sap.batch('Delete selected', () => Sap(this).inbox.filter(m => m.sel).forEach(m => m.$remove()))">
@@ -545,11 +644,15 @@
     <script type="text/html">
       <main app>
         <details name="acc" open scope="secA" state="open">
-          <summary>Section A <span class="muted" text="state.open ? '— open' : '— collapsed'"></span></summary>
+          <summary>Section A
+            <span class="muted"
+                  text="state.open ? '— open' : '— collapsed'"></span></summary>
           <p>Its <code>open</code> attribute is real DOM state: it serializes and renders before JS.</p>
         </details>
         <details name="acc" scope="secB" state="open">
-          <summary>Section B <span class="muted" text="state.open ? '— open' : '— collapsed'"></span></summary>
+          <summary>Section B
+            <span class="muted"
+                  text="state.open ? '— open' : '— collapsed'"></span></summary>
           <p>A capture-phase toggle listener recomputes on open/close.</p>
         </details>
       </main>
@@ -609,7 +712,7 @@
   <h3 style="margin:18px 0 6px; font-size:15px; color:var(--muted)">Act</h3>
   <table class="ref">
     <tr><td><code>set:field="expr"</code></td><td>Write a field on click.</td></tr>
-    <tr><td><code>trigger-add="list"</code></td><td>Clone the row template; on a <code>&lt;form&gt;</code>, fires on Enter.</td></tr>
+    <tr><td><code>trigger-add="list"</code></td><td>Add a row. On a <code>&lt;form&gt;</code> it fires on Enter, fills the new row from the form's matching-named fields, then clears them.</td></tr>
     <tr><td><code>trigger-remove</code> / <code>trigger-reset</code></td><td>Remove the nearest row / reset the scope to defaults.</td></tr>
     <tr><td><code>move:up</code> / <code>down</code> / <code>to="list"</code></td><td>Reorder a row, or move it to another list.</td></tr>
     <tr><td><code>sort:FIELD</code></td><td>Stable column sort; direction toggles statelessly.</td></tr>
@@ -678,8 +781,14 @@ sap ✗ E12 unknown-state-key
     const src = dedent(tpl.textContent);
     demo.querySelector(".live").innerHTML = src;
     const code = demo.querySelector(".code");
-    if (code) code.textContent = src;
+    if (code) {
+      const c = document.createElement("code");
+      c.className = "language-markup";
+      c.textContent = src;
+      code.appendChild(c);
+    }
   });
+  if (window.Prism) Prism.highlightAll();
 
   // mount everything we just injected, then print each app's green line
   Sap.mount();
