@@ -1,4 +1,4 @@
-// Mount one [app] root: lint, then (if clean) inject the template-hiding CSS and
+// Mount one [app] root: lint, then (if clean) adopt the runtime stylesheet and
 // run the first synchronous pass. A halted app arms no listeners and writes nothing,
 // so its file bytes stay frozen. Returns the app record the scheduler drives.
 
@@ -9,14 +9,37 @@ import { runPass } from "./pass.js";
 const STYLE_ID = "sap-styles";
 const STYLE_TEXT =
   "[item][template]{display:none!important}" +
+  "[hidden]{display:none!important}" +
   "[sap-error]{outline:2px solid #e5484d;outline-offset:1px}";
 
+const styledDocs = new WeakSet();
+
+// Apply Sap's presentation rules without leaving a node in the saved file:
+// adoptedStyleSheets live in the CSSOM, not the DOM tree, so a Hyperclay save
+// never serializes them. Engines without constructable stylesheets fall back to
+// a <style> node, which does serialize but keeps the rules working everywhere.
 function injectStyles(doc) {
-  if (doc.getElementById(STYLE_ID)) return;
-  const style = doc.createElement("style");
-  style.id = STYLE_ID;
-  style.textContent = STYLE_TEXT;
-  (doc.head || doc.documentElement).appendChild(style);
+  if (styledDocs.has(doc)) return;
+  const view = doc.defaultView;
+  const SheetCtor = view && view.CSSStyleSheet;
+  if (SheetCtor && "adoptedStyleSheets" in doc) {
+    try {
+      const sheet = new SheetCtor();
+      sheet.replaceSync(STYLE_TEXT);
+      doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, sheet];
+      styledDocs.add(doc);
+      return;
+    } catch {
+      // Older engine: fall through to the serialized <style> node.
+    }
+  }
+  if (!doc.getElementById(STYLE_ID)) {
+    const style = doc.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = STYLE_TEXT;
+    (doc.head || doc.documentElement).appendChild(style);
+  }
+  styledDocs.add(doc);
 }
 
 let appSeq = 0;

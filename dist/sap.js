@@ -1207,13 +1207,29 @@ ${src}` : `"use strict"; return (${src});`;
 
   // src/mount.js
   var STYLE_ID = "sap-styles";
-  var STYLE_TEXT = "[item][template]{display:none!important}[sap-error]{outline:2px solid #e5484d;outline-offset:1px}";
+  var STYLE_TEXT = "[item][template]{display:none!important}[hidden]{display:none!important}[sap-error]{outline:2px solid #e5484d;outline-offset:1px}";
+  var styledDocs = /* @__PURE__ */ new WeakSet();
   function injectStyles(doc) {
-    if (doc.getElementById(STYLE_ID)) return;
-    const style = doc.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = STYLE_TEXT;
-    (doc.head || doc.documentElement).appendChild(style);
+    if (styledDocs.has(doc)) return;
+    const view = doc.defaultView;
+    const SheetCtor = view && view.CSSStyleSheet;
+    if (SheetCtor && "adoptedStyleSheets" in doc) {
+      try {
+        const sheet = new SheetCtor();
+        sheet.replaceSync(STYLE_TEXT);
+        doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, sheet];
+        styledDocs.add(doc);
+        return;
+      } catch {
+      }
+    }
+    if (!doc.getElementById(STYLE_ID)) {
+      const style = doc.createElement("style");
+      style.id = STYLE_ID;
+      style.textContent = STYLE_TEXT;
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+    styledDocs.add(doc);
   }
   var appSeq = 0;
   function now() {
