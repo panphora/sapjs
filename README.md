@@ -5,7 +5,7 @@
 Sap is a tiny reactive layer for hand-written HTML files. You declare state, formulas, and paints as plain attributes; Sap rebuilds everything from the live DOM on every change. The DOM is the only store, so the file you save *is* the app: open it in any browser, it runs.
 
 ```html
-<script src="https://unpkg.com/sapjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"></script>
 
 <main app>
   <input type="number" bind="qty" value="3">
@@ -47,7 +47,7 @@ Reads are expressions over `state` (the nearest scope) and `item` (the nearest r
 Drop-in (auto-mounts every `[app]` on load):
 
 ```html
-<script src="https://unpkg.com/sapjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"></script>
 ```
 
 Or as a module:
@@ -67,7 +67,7 @@ npm install sapjs
 A complete todo app, with no JavaScript at all. Copy it into a `.html` file and open it.
 
 ```html
-<script src="https://unpkg.com/sapjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"></script>
 
 <main app>
   <form trigger-add="todos">
@@ -87,6 +87,18 @@ A complete todo app, with no JavaScript at all. Copy it into a `.html` file and 
 ```
 
 The form's input is named `title`, the same as the row's field. On Enter, `trigger-add` clones the template, copies the form's matching fields into the new row, and clears the box. `required` lets the browser block empty submits natively. `count(...)` sees every row live. Nothing is stored anywhere but the DOM.
+
+---
+
+## How it works
+
+**Every change triggers one pass.** A pass throws away all in-memory state and rebuilds it by reading the DOM top to bottom: every `state=`, `bind`, and `items=` is read into a fresh object, `calc:` fields compute, then paints write only what changed. The objects are then discarded. There is no retained JS state to drift from the DOM, which is why a hand-edit in devtools, a console paste, or a live-sync morph all just work: each is simply the next pass's input.
+
+**Passes are batched.** A burst of writes coalesces into one pass on the next microtask, so reading painted output on the line right after a write sees the old DOM. Call `Sap.refresh()` for an immediate synchronous pass when you must read painted output now.
+
+**One write path, three steps.** A write (1) sets the control's live value, (2) mirrors it into a serializable attribute so view-source and save reflect it, then (3) fires synthetic `input` + `change` events. Because a programmatic write looks exactly like typing, autosave, undo, and recompute all observe it the same way. Two consequences follow: paints write silently (no event, to avoid feedback loops), and undo/redo replay needs the Hyperclay bridge, since replaying an attribute fires no event.
+
+**Scopes and rows.** `app`, `scope=`, `items=`/`item`, and `detail=` are the boundaries that form the state tree. A field belongs to its nearest enclosing scope, and to the **row** object when it sits inside an `[item]`, so the same `bind="title"` lands in a different owner depending on nesting. `scope="cart"` reads as `state.cart.field`; `root` always points at the app scope.
 
 ---
 
@@ -117,6 +129,8 @@ The control is the contract. No modifiers, ever.
 
 `type=file` and `type=password` without `transient` are mount errors (files and passwords never serialize).
 
+Note: `<select>` and `[contenteditable]`/text-leaf bindings are **not** mirrored to an attribute the way checkbox/radio/number/text are; they persist only because the live DOM is saved as-is, so a programmatic `<select>` change may not survive a save unless you set its `selected` attribute yourself.
+
 ### `calc:` — computed fields
 
 ```html
@@ -124,7 +138,7 @@ The control is the contract. No modifiers, ever.
 <dd calc:total="state.subtotal + state.tax" text:usd2="state.total"></dd>
 ```
 
-Place the formula beside the cell that shows it. Order is by dependency, not document position; `total` waits for `subtotal` automatically. Cycles are a hard error naming the chain.
+Place the formula beside the cell that shows it. Order is by dependency, not document position; `total` waits for `subtotal` automatically. A cycle logs `E07` naming the chain, then falls back to source-order evaluation: the values may be wrong, but the app keeps running.
 
 ### Paints
 
@@ -139,6 +153,10 @@ Place the formula beside the cell that shows it. Order is by dependency, not doc
 | `invalid="expr"` | `setCustomValidity(msg)` for native form gating |
 
 A throwing paint writes nothing: the DOM keeps its last-good value, the element gets a `sap-error` beacon, and the console logs one attributed error.
+
+`effect=` is for side effects only: touch `el`, set `document.title`, call a chart library. Assigning to `state.*` inside an effect does nothing, since it mutates a per-pass snapshot that is then discarded; and writing `value=` or `checked=` on a bound control inside an effect halts the app at mount (`E30`). Write state through `onclick` + `Sap(this)` instead.
+
+`invalid=` is the one expression that fails quiet: if it throws, the field is treated as **valid** and nothing is logged, unlike `text`/`calc`/`effect`. Guard `invalid` expressions against undefined, or a bug there silently disables the gate.
 
 ### Actions (attributes)
 
@@ -181,6 +199,8 @@ The compile signature is frozen forever:
 
 Expressions are **read-only**. Writing happens through `Sap(el)` or the action attributes.
 
+`num(v)` coerces any non-number (`"12px"`, `"abc"`, blank) to `0`, never `NaN`, and `sum`/`avg`/`min`/`max` inherit that, so a typo'd field name silently sums to 0 rather than erroring. (A numeric *format* on a non-finite value still throws `E22`; see Formats below.)
+
 ### Formats
 
 `text:usd`, `usd2`, `pct`, `pct1`, `int`, `num`, `num2`, `compact`, `date`, `clock`. Register your own:
@@ -209,7 +229,7 @@ A numeric format applied to `NaN`/`Infinity` throws a loud `E22` instead of sile
 </form>
 ```
 
-Click a row to select it; the detail panel projects that row. Edits in the panel route back to the source row through the proxy. `Sap(this)` inside the panel resolves the selected row, so `$remove()` and `$move()` work. No match hides the panel.
+Click a row to select it; the detail panel projects that row. Edits in the panel route back to the source row through the proxy. `Sap(this)` inside the panel resolves the selected row, so `$remove()` and `$move()` work. No match hides the panel. The panel also hides silently if the `by` key expression throws or the spec is malformed: no error, no beacon. If a panel never appears, check the `by` expression and that the key resolves to the selected row's `$key`.
 
 **Filtering:** hide, never remove, so aggregates still see every row.
 
@@ -217,7 +237,21 @@ Click a row to select it; the detail panel projects that row. Edits in the panel
 <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q)" show="item.match">
 ```
 
-**Nested lists** (kanban): a row that declares `items="cards"` exposes them as `item.cards`. Cloning the row keeps its inner template. See the homepage for the worked board.
+**Nested lists** (kanban). Nesting works past one level: a row that declares `items="cards"` exposes them as `item.cards`, and `Sap(this).$add('cards')` adds a card inside that row. Cloning the row keeps its inner template.
+
+```html
+<main app items="columns">
+  <section item template scope="board">
+    <h2 bind="title"></h2>
+    <ul items="cards">
+      <li item template bind="name"></li>
+    </ul>
+    <button onclick="Sap(this).$add('cards')">+ card</button>
+  </section>
+</main>
+```
+
+The one nesting limit is an `items=` list placed inside a `detail=` panel, which is a mount error (`E17`).
 
 ---
 
@@ -272,7 +306,7 @@ No configuration. The same file works offline and online.
 
 ## What's in v1
 
-The full vocabulary above. Deferred to v1.1: `check:` in-file assertions, `$invalid` (covered by native `:invalid` + CSS), nested collections beyond one level, and a first-class drag surface.
+The full vocabulary above. Deferred to v1.1: `check:` in-file assertions, `$invalid` (covered by native `:invalid` + CSS), and a first-class drag surface.
 
 ---
 
