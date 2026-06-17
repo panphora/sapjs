@@ -151,6 +151,9 @@
   .card-plain p { color: var(--muted); font-size: 13.5px; margin: 0; }
 
   pre.block { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #aeb9cc; }
+  .qs { position: relative; }
+  .copy-btn { position: absolute; top: 10px; right: 10px; z-index: 2; background: var(--panel-2); border: 1px solid var(--border-2); color: var(--muted); border-radius: 6px; padding: 4px 10px; font-family: var(--mono); font-size: 12px; cursor: pointer; }
+  .copy-btn:hover { border-color: var(--accent-dim); color: var(--text); }
   .runes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 8px 0; }
   @media (max-width: 700px) { .runes { grid-template-columns: 1fr; } }
   .rune { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
@@ -177,6 +180,7 @@
   <nav class="top">
     <span class="brand">sap<span class="dot">·</span></span>
     <span class="links">
+      <a href="#why">Why</a>
       <a href="#quickstart">Quickstart</a>
       <a href="#demos">Demos</a>
       <a href="#reference">Reference</a>
@@ -192,12 +196,13 @@
   <p class="sub">
     Sap is a tiny reactive layer for hand-written HTML files. You write state, formulas, and paints as
     plain attributes; Sap rebuilds everything from the live DOM on every change. The DOM is the only
-    store, so the file you save <em>is</em> the app. No build step. No virtual DOM. No state object.
+    store: one copy of your data, nothing to sync, and the file you save <em>is</em> the app. No build
+    step. No virtual DOM. No state object.
   </p>
   <div class="cta">
     <a class="btn primary" href="#quickstart">Get started</a>
     <a class="btn" href="#demos">See it move</a>
-    <a class="btn" href="https://github.com/panphora/sapjs">npm i sapjs</a>
+    <a class="btn" href="https://github.com/panphora/sapjs">GitHub</a>
   </div>
 </header>
 
@@ -206,7 +211,7 @@
   <div class="demo">
     <div class="demo-head">
       <h3>The whole idea, in six lines</h3>
-      <p>Type in either field. The total recomputes and formats itself. There is no JavaScript here.</p>
+      <p>Type in either field. The total recomputes and formats itself. No JavaScript to write.</p>
     </div>
     <div class="demo-grid">
       <div class="live"></div>
@@ -230,9 +235,70 @@
   </div>
 </section>
 
+<!-- WHY -->
+<section class="wrap" id="why">
+  <h2>Why the page is the program</h2>
+  <p class="lead">You just watched an app compute with no JavaScript. Here is why that works, and why you would want it.</p>
+  <p>Most reactive tools keep two copies of your data: one in a JavaScript store, one on the page. Their whole job is keeping the two in step, and that sync is where the bugs live: stale views, hydration mismatches, the store insisting on one thing while the screen shows another.</p>
+  <p>Sap deletes the second copy. The input's value <em>is</em> the quantity. The list items <em>are</em> the rows. When anything changes, Sap reads the page, recomputes, and writes back. One copy, nothing to drift.</p>
+  <div class="runes">
+    <div class="rune">
+      <div class="k">save</div>
+      <h4>Saving is persistence</h4>
+      <p>Saving the file saves the app, data and all. No database, no backend to keep alive: the data lives in the markup.</p>
+    </div>
+    <div class="rune">
+      <div class="k">open</div>
+      <h4>Anything can write</h4>
+      <p>No private store, no privileged writer. A devtools edit, a console paste, a live-sync update from another tab: each is a real change Sap reads on its next pass, same as a keystroke.</p>
+    </div>
+    <div class="rune">
+      <div class="k">honest</div>
+      <h4>View-source is honest</h4>
+      <p>Every paint targets a real attribute, so the saved file renders correctly before a line of JavaScript runs. What you read is what the app shows.</p>
+    </div>
+  </div>
+  <div class="grid2" style="margin-top:16px">
+    <div class="card-plain">
+      <h3>Reach for Sap</h3>
+      <p>Human-scale tools: trackers, calculators, forms with real validation, small CRUD apps, prototypes that fit in one screen of readable HTML. And anything an AI writes, because every mistake answers back with the element and the fix. It competes with Alpine plus a sprinkle of JavaScript, not with React.</p>
+    </div>
+    <div class="card-plain">
+      <h3>Reach for something else</h3>
+      <p>Huge datasets, private data behind permissions, or apps that are mostly a window onto a server. Sap says so out loud instead of pretending otherwise.</p>
+    </div>
+  </div>
+  <p style="color:var(--muted); font-size:14px; margin-top:16px;">Saving is persistence. Copying is forking. View-source is the codebase.</p>
+</section>
+
+<!-- QUICKSTART -->
+<section class="wrap" id="quickstart">
+  <h2><span class="num">01</span>Your first app, in one file</h2>
+  <p class="lead">One script tag, then write HTML. Sap auto-mounts every <code class="mono">[app]</code> on load. This is a whole file: copy it, save it, open it.</p>
+  <div class="qs">
+    <button class="copy-btn" data-copy="qs-code">Copy</button>
+    <pre class="block"><code class="language-markup" id="qs-code">&lt;!doctype html&gt;
+&lt;script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"&gt;&lt;/script&gt;
+
+&lt;main app&gt;
+  &lt;label&gt;Quantity &lt;input type="number" bind="qty" value="3"&gt;&lt;/label&gt;
+  &lt;label&gt;Unit price &lt;input type="number" bind="price" value="10"&gt;&lt;/label&gt;
+  &lt;output calc:total="state.qty * state.price" text:usd="state.total"&gt;$30&lt;/output&gt;
+&lt;/main&gt;</code></pre>
+  </div>
+  <ol style="color:var(--muted); font-size:14px; max-width:74ch;">
+    <li>Copy the block and save it as <code class="mono">app.html</code>.</li>
+    <li>Double-click it. No server, no build step. It runs.</li>
+    <li>Type in either box: the total recomputes and formats as currency. You wrote no app JavaScript.</li>
+  </ol>
+  <p style="color:var(--muted); font-size:14px; max-width:74ch;">
+    The saved markup already reads <code class="mono">$30</code>, because every paint targets a real attribute, so the file is correct before JS even loads. Made a typo? Open the devtools console: Sap names the element, the mistake, and the fix (see <a href="#console">section 04</a>).
+  </p>
+</section>
+
 <!-- MENTAL MODEL -->
 <section class="wrap" id="model">
-  <h2><span class="num">01</span>The whole model in three words</h2>
+  <h2><span class="num">02</span>The whole model in three words</h2>
   <p class="lead">Everything in Sap is one of three things. Learn these and you know the library.</p>
   <div class="runes">
     <div class="rune">
@@ -257,58 +323,12 @@
   </p>
 </section>
 
-<!-- QUICKSTART -->
-<section class="wrap" id="quickstart">
-  <h2><span class="num">02</span>Quickstart</h2>
-  <p class="lead">One script tag, then write HTML. Sap auto-mounts every <code class="mono">[app]</code> on load.</p>
-  <pre class="block"><code class="language-markup">&lt;script src="https://unpkg.com/sapjs"&gt;&lt;/script&gt;
-
-&lt;main app&gt;
-  &lt;input type="number" bind="qty" value="3"&gt;
-  &lt;input type="number" bind="price" value="10"&gt;
-  &lt;output calc:total="state.qty * state.price" text:usd="state.total"&gt;&lt;/output&gt;
-&lt;/main&gt;</code></pre>
-  <p style="color:var(--muted); font-size:14px;">
-    Save it as a <code class="mono">.html</code> file. Open it. It runs. The saved markup already shows the right
-    numbers, because every paint targets a real attribute, so view-source is correct before JS even loads.
-  </p>
-</section>
-
 <!-- DEMOS -->
 <section class="wrap" id="demos">
   <h2><span class="num">03</span>Live demos</h2>
-  <p class="lead">Every demo below runs the real, unminified-in-spirit library on this page. The
-    green line under each is its machine-readable mount contract, printed live.</p>
-
-  <!-- BIND MATRIX -->
-  <div class="demo">
-    <div class="demo-head">
-      <h3>Two-way binding, by control type</h3>
-      <p>The control <em>is</em> the contract. No modifiers, ever. Every input feeds one live object.</p>
-    </div>
-    <div class="demo-grid">
-      <div class="live"></div>
-      <pre class="code"></pre>
-    </div>
-    <code class="greenline"></code>
-    <script type="text/html">
-      <main app>
-        <label>Name <input bind="name" value="Ada"></label>
-        <label>Age
-          <input type="number" bind="age" value="36"></label>
-        <label class="inline">
-          <input type="checkbox" bind="member" checked> Member</label>
-        <label>Plan
-          <select bind="plan">
-            <option value="free">Free</option>
-            <option value="pro" selected>Pro</option>
-          </select>
-        </label>
-        <p class="out"
-           text="state.name + ' · ' + state.age + ' · ' + (state.member ? state.plan : 'guest')"></p>
-      </main>
-    </script>
-  </div>
+  <p class="lead">Every demo below runs the real library, live on this page. New here? The first few are
+    the gentlest. The green line under each is what Sap prints when an app mounts: the fields, calcs, and
+    paints it found, plus the pass time. Section 04 reads it line by line.</p>
 
   <!-- TODO -->
   <div class="demo">
@@ -630,6 +650,36 @@
     </script>
   </div>
 
+  <!-- BIND MATRIX -->
+  <div class="demo">
+    <div class="demo-head">
+      <h3>Two-way binding, by control type</h3>
+      <p>The control <em>is</em> the contract. No modifiers, ever. Every input feeds one live object.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <pre class="code"></pre>
+    </div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main app>
+        <label>Name <input bind="name" value="Ada"></label>
+        <label>Age
+          <input type="number" bind="age" value="36"></label>
+        <label class="inline">
+          <input type="checkbox" bind="member" checked> Member</label>
+        <label>Plan
+          <select bind="plan">
+            <option value="free">Free</option>
+            <option value="pro" selected>Pro</option>
+          </select>
+        </label>
+        <p class="out"
+           text="state.name + ' · ' + state.age + ' · ' + (state.member ? state.plan : 'guest')"></p>
+      </main>
+    </script>
+  </div>
+
   <!-- ACCORDION -->
   <div class="demo">
     <div class="demo-head">
@@ -814,6 +864,30 @@ sap ✗ E12 unknown-state-key
     out.textContent = "Sap." + which + "() →\n\n" + JSON.stringify(result, null, 2);
     console.log("Sap." + which + "()", result);
   };
+
+  // copy buttons
+  document.querySelectorAll(".copy-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const el = document.getElementById(btn.dataset.copy);
+      if (!el) return;
+      const text = el.textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); } catch (e2) {}
+        ta.remove();
+      }
+      const original = btn.textContent;
+      btn.textContent = "Copied";
+      setTimeout(() => { btn.textContent = original; }, 1400);
+    });
+  });
 </script>
 
 </body>

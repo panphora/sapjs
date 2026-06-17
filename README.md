@@ -60,6 +60,8 @@ import Sap from "sapjs";
 npm install sapjs
 ```
 
+Importing the module also auto-mounts every `[app]` on `DOMContentLoaded`. Call `Sap.mount(rootOrSelector)` to mount a root added later, or `Sap.mount()` to rescan; `Sap.app({ formats })` registers custom formats as a config-object alternative to `Sap.formats.x`.
+
 ---
 
 ## Quickstart
@@ -127,7 +129,7 @@ The control is the contract. No modifiers, ever.
 | `select[multiple]` | array of values |
 | `[contenteditable]`, text leaf | textContent |
 
-`type=file` and `type=password` without `transient` are mount errors (files and passwords never serialize).
+Binding a `type=file` is always a mount error (`E32`); files never serialize into an HTML file. Binding a `type=password` halts unless you add `transient` (`E31`). `transient` (the bare attribute, or a `state="field:transient"` suffix) keeps a value in the live DOM only: Sap drives the app from it but strips it from the saved file, so passwords and search boxes never persist.
 
 Note: `<select>` and `[contenteditable]`/text-leaf bindings are **not** mirrored to an attribute the way checkbox/radio/number/text are; they persist only because the live DOM is saved as-is, so a programmatic `<select>` change may not survive a save unless you set its `selected` attribute yourself.
 
