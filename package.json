@@ -1,6 +1,6 @@
 {
   "name": "sapjs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A reactive HTML library where the DOM is the only state store. Structure-first, one write path, transient rebuild. An Alpine alternative built for malleable, self-saving HTML.",
   "type": "module",
   "main": "src/sap.js",

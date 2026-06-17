@@ -1,7 +1,7 @@
 import { mount, Sap } from "./helpers/mount.js";
 
 const APP = `
-  <main app>
+  <main sap>
     <input type="number" bind="qty" value="2">
     <input type="number" bind="price" value="10">
     <output calc:total="state.qty * state.price" text:usd="state.total">$20</output>
@@ -18,7 +18,7 @@ describe("the console surface", () => {
     const s = Sap.status();
     expect(s.ok).toBe(true);
     const a = s.apps[0];
-    expect(a.root).toBe("main[app]");
+    expect(a.root).toBe("main[sap]");
     expect(a.calcs).toBe(1);
     expect(a.lists).toBe(1);
     expect(a.rows).toBe(1);
@@ -34,7 +34,7 @@ describe("the console surface", () => {
   });
 
   test("Sap.report() is a JSON twin with stable codes", () => {
-    mount(`<main app><span x-text="a">hi</span></main>`);
+    mount(`<main sap><span x-text="a">hi</span></main>`);
     const r = Sap.report();
     expect(r.ok).toBe(false);
     expect(r.errors[0]).toMatchObject({ code: "E01", slug: "foreign-dialect" });
@@ -57,7 +57,7 @@ describe("the console surface", () => {
   });
 
   test("Sap.doctor flags dead state", () => {
-    mount(`<main app state="used unused"><output text="state.used"></output></main>`);
+    mount(`<main sap state="used unused"><output text="state.used"></output></main>`);
     const dead = Sap.doctor().filter((f) => /dead state/.test(f.message));
     expect(dead.some((f) => /unused/.test(f.message))).toBe(true);
   });

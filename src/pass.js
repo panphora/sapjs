@@ -377,7 +377,7 @@ function depth(el) {
   let d = 0;
   let c = el;
   while (c) {
-    if (c.hasAttribute && c.hasAttribute("app")) break;
+    if (c.hasAttribute && c.hasAttribute("sap")) break;
     c = c.parentElement;
     d++;
   }

@@ -1,6 +1,6 @@
 // The public entry. Wires the scheduler, the Sap(el) accessor, the delegated
 // action layer, the console surface, and the optional platform bridges, then
-// auto-mounts every [app] root on DOMContentLoaded.
+// auto-mounts every [sap] root on DOMContentLoaded.
 //
 //   Sap(el)          -> live write-through proxy onto el's scope/row
 //   Sap.refresh()    -> synchronous full pass (set state, refresh, read on next line)
@@ -22,7 +22,7 @@ import { createDebug } from "./debug.js";
 import { batch, installBridges } from "./platform.js";
 import { formats } from "./helpers.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 const registry = new Map(); // root element -> appRec
 const order = []; // appRecs in mount order
@@ -32,7 +32,7 @@ const scheduler = createScheduler(runPass);
 function appFor(el) {
   let cur = el;
   while (cur) {
-    if (cur.nodeType === 1 && cur.hasAttribute && cur.hasAttribute("app")) {
+    if (cur.nodeType === 1 && cur.hasAttribute && cur.hasAttribute("sap")) {
       return registry.get(cur) || null;
     }
     cur = cur.parentNode && cur.parentNode.host ? cur.parentNode.host : cur.parentElement;
@@ -80,7 +80,7 @@ function installOnce() {
 
 function mountAll(docRoot = document) {
   installOnce();
-  const roots = docRoot.querySelectorAll("[app]");
+  const roots = docRoot.querySelectorAll("[sap]");
   const fresh = [];
   for (const root of roots) {
     if (registry.has(root)) continue;
@@ -128,8 +128,8 @@ Sap.doctor = debugApi.doctor;
 Sap.greenLine = debugApi.greenLine;
 Sap.formats = formats;
 Sap.mount = mount;
-Sap.app = function app(config = {}) {
-  if (config.formats) Object.assign(formats, config.formats);
+Sap.config = function config(options = {}) {
+  if (options.formats) Object.assign(formats, options.formats);
   return Sap;
 };
 Sap._registry = registry;

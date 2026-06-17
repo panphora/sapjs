@@ -26,7 +26,7 @@ function declarerOf(fromEl, appRoot, field) {
     for (const d of parseStateDecl(cur.getAttribute("state") || "")) {
       if (d.name === field) return { el: cur, decl: d };
     }
-    if (cur.hasAttribute("app")) break;
+    if (cur.hasAttribute("sap")) break;
     cur = nearestScopeEl(cur.parentElement);
   }
   return null;
@@ -93,7 +93,7 @@ export function createAccessor(runtime) {
     let cur = nearestScopeEl(ctxEl) || appRoot;
     while (cur) {
       for (const d of parseStateDecl(cur.getAttribute("state") || "")) names.add(d.name);
-      if (cur.hasAttribute("app")) break;
+      if (cur.hasAttribute("sap")) break;
       cur = nearestScopeEl(cur.parentElement);
     }
     walkOwned(ctxEl, (el) => {
@@ -117,7 +117,7 @@ export function createAccessor(runtime) {
           return;
         }
       }
-      if (probe.hasAttribute("app")) break;
+      if (probe.hasAttribute("sap")) break;
       probe = probe.parentElement;
     }
     const decl = declarerOf(ctxEl, appRec.root, field);

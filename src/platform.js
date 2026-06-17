@@ -13,7 +13,7 @@ export function batch(label, fn) {
 }
 
 // Wire live-sync and undo to a synchronous refresh, and re-mount if a morph
-// replaces the [app] element wholesale (delegated listeners would die silently).
+// replaces the [sap] element wholesale (delegated listeners would die silently).
 export function installBridges(runtime) {
   if (typeof window === "undefined" || typeof document === "undefined") return;
 

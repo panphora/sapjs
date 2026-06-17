@@ -1,10 +1,10 @@
 import Sap from "../../src/sap.js";
 
-// Mount the first [app] in a fresh document body and return its root element.
+// Mount the first [sap] in a fresh document body and return its root element.
 export function mount(html) {
   document.body.innerHTML = html;
   Sap._reset();
-  const root = document.querySelector("[app]");
+  const root = document.querySelector("[sap]");
   Sap.mount(root);
   return root;
 }

@@ -38,10 +38,10 @@ var Sap = (() => {
       ring.push(trigger);
       if (ring.length > 8) ring.shift();
     }
-    function schedule(app2, trigger) {
+    function schedule(app, trigger) {
       note(trigger);
-      if (app2._broken) return;
-      dirty.add(app2);
+      if (app._broken) return;
+      dirty.add(app);
       if (queued) return;
       queued = true;
       queueMicrotask(drain);
@@ -50,33 +50,33 @@ var Sap = (() => {
       queued = false;
       const apps = [...dirty];
       dirty.clear();
-      for (const app2 of apps) runWithBreaker(app2);
+      for (const app of apps) runWithBreaker(app);
     }
-    function runWithBreaker(app2) {
-      if (app2._broken) return;
-      app2._passes = (app2._passes || 0) + 1;
-      if (app2._passes > MAX_PASSES) {
-        app2._broken = true;
-        app2._breakerRing = ring.slice();
-        runPass2(app2, { breaker: true });
+    function runWithBreaker(app) {
+      if (app._broken) return;
+      app._passes = (app._passes || 0) + 1;
+      if (app._passes > MAX_PASSES) {
+        app._broken = true;
+        app._breakerRing = ring.slice();
+        runPass2(app, { breaker: true });
         return;
       }
-      if (!app2._resetArmed) {
-        app2._resetArmed = true;
+      if (!app._resetArmed) {
+        app._resetArmed = true;
         setTimeout(() => {
-          app2._passes = 0;
-          app2._resetArmed = false;
+          app._passes = 0;
+          app._resetArmed = false;
         }, 0);
       }
-      runPass2(app2);
+      runPass2(app);
     }
-    function runNow(app2, trigger) {
+    function runNow(app, trigger) {
       note(trigger);
-      runWithBreaker(app2);
+      runWithBreaker(app);
     }
-    function rearm(app2) {
-      app2._broken = false;
-      app2._passes = 0;
+    function rearm(app) {
+      app._broken = false;
+      app._passes = 0;
     }
     return { schedule, runNow, rearm, ring };
   }
@@ -106,7 +106,7 @@ var Sap = (() => {
   function nearestScopeEl(el) {
     let cur = el;
     while (cur) {
-      if (cur.hasAttribute("app") || cur.hasAttribute("scope") || cur.hasAttribute("item") || cur.hasAttribute("detail")) {
+      if (cur.hasAttribute("sap") || cur.hasAttribute("scope") || cur.hasAttribute("item") || cur.hasAttribute("detail")) {
         return cur;
       }
       cur = cur.parentElement;
@@ -577,7 +577,7 @@ ${src}` : `"use strict"; return (${src});`;
     "type"
   ]);
   var RESERVED = /* @__PURE__ */ new Set([
-    "app",
+    "sap",
     "scope",
     "items",
     "item",
@@ -609,13 +609,13 @@ ${src}` : `"use strict"; return (${src});`;
     let depth2 = 0;
     while (cur && cur.nodeType === 1 && depth2 < 4) {
       let seg = cur.tagName.toLowerCase();
-      if (cur.hasAttribute("app")) seg += "[app]";
+      if (cur.hasAttribute("sap")) seg += "[sap]";
       else if (cur.parentElement) {
         const sibs = [...cur.parentElement.children].filter((c) => c.tagName === cur.tagName);
         if (sibs.length > 1) seg += `:nth-of-type(${sibs.indexOf(cur) + 1})`;
       }
       parts.unshift(seg);
-      if (cur.hasAttribute("app")) break;
+      if (cur.hasAttribute("sap")) break;
       cur = cur.parentElement;
       depth2++;
     }
@@ -721,21 +721,21 @@ ${src}` : `"use strict"; return (${src});`;
 
   // src/pass.js
   var NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
-  function runPass(app2, opts = {}) {
+  function runPass(app, opts = {}) {
     if (opts.breaker) {
-      app2.diag.error("E26", app2.root, {
-        problem: "recompute loop halted after 50 passes; recent triggers: " + (app2._breakerRing || []).join(", ")
+      app.diag.error("E26", app.root, {
+        problem: "recompute loop halted after 50 passes; recent triggers: " + (app._breakerRing || []).join(", ")
       });
-      setBeacon(app2.root, "loop");
+      setBeacon(app.root, "loop");
       return;
     }
-    const root = app2.root;
+    const root = app.root;
     const rootObj = {};
     const calcs = [];
     const paints = [];
     const effects = [];
     const invalids = [];
-    app2.diag.errors = [];
+    app.diag.errors = [];
     const rootCtx = { root: rootObj, state: rootObj, item: null, ownerEl: root, projection: false };
     function readState(el, obj) {
       const decls = parseStateDecl(el.getAttribute("state") || "");
@@ -906,7 +906,7 @@ ${src}` : `"use strict"; return (${src});`;
       try {
         sorted = topoSort(g.list);
       } catch (err) {
-        app2.diag.error("E07", g.list[0].el, { problem: err.message });
+        app.diag.error("E07", g.list[0].el, { problem: err.message });
         sorted = g.list;
       }
       for (const c of sorted) {
@@ -915,26 +915,26 @@ ${src}` : `"use strict"; return (${src});`;
           clearBeacon(c.el);
         } catch (err) {
           c.owner[c.name] = void 0;
-          app2.diag.error("E24", c.el, { attr: "calc:" + c.name, expr: c.entry.src, problem: String(err.message) });
+          app.diag.error("E24", c.el, { attr: "calc:" + c.name, expr: c.entry.src, problem: String(err.message) });
           setBeacon(c.el, err.sapCode || "E24");
         }
       }
     }
     let writes = 0;
-    for (const p of paints) writes += paintOne(p, app2);
-    for (const e of effects) runEffect(e, app2);
+    for (const p of paints) writes += paintOne(p, app);
+    for (const e of effects) runEffect(e, app);
     for (const iv of invalids) runInvalid(iv);
-    app2._state = rootObj;
-    app2._stats = {
+    app._state = rootObj;
+    app._stats = {
       fields: Object.keys(rootObj).filter((k) => typeof rootObj[k] !== "function").length,
       calcs: calcs.length,
       paints: paints.length,
       lists: groups.size,
       writes
     };
-    app2._lastPass = { trigger: opts.trigger || "refresh", writes };
-    if (app2._debug) {
-      console.log(`sap pass \xB7 trigger: ${app2._lastPass.trigger} \xB7 writes ${writes}/${paints.length}`);
+    app._lastPass = { trigger: opts.trigger || "refresh", writes };
+    if (app._debug) {
+      console.log(`sap pass \xB7 trigger: ${app._lastPass.trigger} \xB7 writes ${writes}/${paints.length}`);
     }
   }
   function paintAttrName(p) {
@@ -955,7 +955,7 @@ ${src}` : `"use strict"; return (${src});`;
     }
     return 0;
   }
-  function paintOne(p, app2) {
+  function paintOne(p, app) {
     if (p.kind === "projection") {
       return applyProjection(p.el, p.ctx.item ? p.ctx.item[p.field] : "");
     }
@@ -966,7 +966,7 @@ ${src}` : `"use strict"; return (${src});`;
       clearBeacon(p.el);
       return n2;
     } catch (err) {
-      app2.diag.error(err.sapCode === "E22" ? "E22" : "E24", p.el, {
+      app.diag.error(err.sapCode === "E22" ? "E22" : "E24", p.el, {
         attr: paintAttrName(p),
         expr: p.entry && p.entry.src,
         problem: String(err.message)
@@ -1035,12 +1035,12 @@ ${src}` : `"use strict"; return (${src});`;
         return 0;
     }
   }
-  function runEffect(e, app2) {
+  function runEffect(e, app) {
     try {
       run(e.entry, { state: e.ctx.state, item: e.ctx.item, el: e.el, root: e.ctx.root });
       clearBeacon(e.el);
     } catch (err) {
-      app2.diag.error("E24", e.el, { attr: "effect", expr: e.entry && e.entry.src, problem: String(err.message) });
+      app.diag.error("E24", e.el, { attr: "effect", expr: e.entry && e.entry.src, problem: String(err.message) });
       setBeacon(e.el, "E24");
     }
   }
@@ -1058,7 +1058,7 @@ ${src}` : `"use strict"; return (${src});`;
     let d = 0;
     let c = el;
     while (c) {
-      if (c.hasAttribute && c.hasAttribute("app")) break;
+      if (c.hasAttribute && c.hasAttribute("sap")) break;
       c = c.parentElement;
       d++;
     }
@@ -1236,7 +1236,7 @@ ${src}` : `"use strict"; return (${src});`;
     return typeof performance !== "undefined" && performance.now ? performance.now() : 0;
   }
   function mountApp(root) {
-    const name = root.id || root.getAttribute("app") || `app-${appSeq++}`;
+    const name = root.id || root.getAttribute("sap") || `app-${appSeq++}`;
     const diag = new Diagnostics(name);
     const appRec = {
       root,
@@ -1283,7 +1283,7 @@ ${src}` : `"use strict"; return (${src});`;
       for (const d of parseStateDecl(cur.getAttribute("state") || "")) {
         if (d.name === field) return { el: cur, decl: d };
       }
-      if (cur.hasAttribute("app")) break;
+      if (cur.hasAttribute("sap")) break;
       cur = nearestScopeEl(cur.parentElement);
     }
     return null;
@@ -1340,7 +1340,7 @@ ${src}` : `"use strict"; return (${src});`;
       let cur = nearestScopeEl(ctxEl) || appRoot;
       while (cur) {
         for (const d of parseStateDecl(cur.getAttribute("state") || "")) names.add(d.name);
-        if (cur.hasAttribute("app")) break;
+        if (cur.hasAttribute("sap")) break;
         cur = nearestScopeEl(cur.parentElement);
       }
       walkOwned(ctxEl, (el) => {
@@ -1363,7 +1363,7 @@ ${src}` : `"use strict"; return (${src});`;
             return;
           }
         }
-        if (probe.hasAttribute("app")) break;
+        if (probe.hasAttribute("sap")) break;
         probe = probe.parentElement;
       }
       const decl = declarerOf(ctxEl, appRec.root, field);
@@ -1747,7 +1747,7 @@ ${src}` : `"use strict"; return (${src});`;
   // src/debug.js
   var ACTION_RE = /^(set:|move:|sort:|trigger-add$|trigger-remove$|trigger-reset$)/;
   function rootLabel(root) {
-    return `${root.tagName.toLowerCase()}[app]`;
+    return `${root.tagName.toLowerCase()}[sap]`;
   }
   function countActions(root) {
     let n2 = 0;
@@ -1776,9 +1776,9 @@ ${src}` : `"use strict"; return (${src});`;
     return out;
   }
   function createDebug(runtime2) {
-    function appView(app2) {
-      const s = app2._stats || {};
-      const root = app2.root;
+    function appView(app) {
+      const s = app._stats || {};
+      const root = app.root;
       return {
         root: rootLabel(root),
         fields: s.fields || 0,
@@ -1787,39 +1787,39 @@ ${src}` : `"use strict"; return (${src});`;
         actions: countActions(root),
         lists: (root.hasAttribute("items") ? 1 : 0) + root.querySelectorAll("[items]").length,
         rows: root.querySelectorAll("[item]:not([template])").length,
-        warnings: app2.diag.warnings.length,
-        errors: app2.diag.errors.length,
-        mountWrites: app2._mountWrites || 0,
-        ms: Math.round((app2._mountMs || 0) * 10) / 10,
-        passes: app2._passes || 0,
-        lastPass: app2._lastPass || null,
-        ok: app2.diag.errors.length === 0 && !app2.halted
+        warnings: app.diag.warnings.length,
+        errors: app.diag.errors.length,
+        mountWrites: app._mountWrites || 0,
+        ms: Math.round((app._mountMs || 0) * 10) / 10,
+        passes: app._passes || 0,
+        lastPass: app._lastPass || null,
+        ok: app.diag.errors.length === 0 && !app.halted
       };
     }
     function status() {
       const apps = runtime2.apps().map(appView);
       return { ok: apps.every((a) => a.ok), apps };
     }
-    function greenLine(app2) {
-      const v = appView(app2);
+    function greenLine(app) {
+      const v = appView(app);
       if (!v.ok) {
         return `sap \u2717 ${v.root} \xB7 errors ${v.errors} \xB7 warnings ${v.warnings} \xB7 ${v.ms}ms`;
       }
       return `sap \u2713 ${v.root} \xB7 fields ${v.fields} \xB7 calcs ${v.calcs} \xB7 paints ${v.paints} \xB7 actions ${v.actions} \xB7 lists ${v.lists} \xB7 rows ${v.rows} \xB7 warnings ${v.warnings} \xB7 mount writes ${v.mountWrites} \xB7 ${v.ms}ms`;
     }
     function printGreenLines() {
-      for (const app2 of runtime2.apps()) {
-        const line = greenLine(app2);
-        if (app2.diag.errors.length || app2.halted) console.error(line);
+      for (const app of runtime2.apps()) {
+        const line = greenLine(app);
+        if (app.diag.errors.length || app.halted) console.error(line);
         else console.log(line);
       }
     }
     function report() {
       const errors = [];
       const warnings = [];
-      for (const app2 of runtime2.apps()) {
-        errors.push(...app2.diag.errors);
-        warnings.push(...app2.diag.warnings);
+      for (const app of runtime2.apps()) {
+        errors.push(...app.diag.errors);
+        warnings.push(...app.diag.warnings);
       }
       return { ok: errors.length === 0, errors, warnings, counts: { errors: errors.length, warnings: warnings.length } };
     }
@@ -1855,24 +1855,24 @@ ${src}` : `"use strict"; return (${src});`;
     }
     function debug(flag) {
       const on = flag === void 0 ? true : !!flag;
-      for (const app2 of runtime2.apps()) app2._debug = on;
+      for (const app of runtime2.apps()) app._debug = on;
       console.log(`sap debug ${on ? "on" : "off"} \u2014 per-pass headers will ${on ? "" : "no longer "}log`);
       return on;
     }
     function doctor() {
       const findings = [];
       let checks = 0;
-      for (const app2 of runtime2.apps()) {
-        const root = app2.root;
+      for (const app of runtime2.apps()) {
+        const root = app.root;
         const label = rootLabel(root);
         checks++;
-        const d2 = new Diagnostics(app2.name);
+        const d2 = new Diagnostics(app.name);
         lintApp(root, d2);
         for (const e2 of d2.errors) findings.push({ code: e2.code, severity: "error", message: `${label}: ${e2.code} ${e2.slug} at ${e2.el}` });
         for (const w2 of d2.warnings) findings.push({ code: w2.code, severity: "warn", message: `${label}: ${w2.code} ${w2.slug} at ${w2.el}` });
         checks++;
-        runPass(app2, { trigger: "doctor-dryrun" });
-        const w = app2._stats ? app2._stats.writes : 0;
+        runPass(app, { trigger: "doctor-dryrun" });
+        const w = app._stats ? app._stats.writes : 0;
         if (w > 0) findings.push({ code: "W30", severity: "warn", message: `${label}: dry recompute wrote ${w} cells on a quiet page; an element is stale or non-idempotent` });
         checks++;
         const srcs = exprSources(root).map((s) => s.src).join(" \0 ");
@@ -1925,8 +1925,8 @@ ${src}` : `"use strict"; return (${src});`;
   function installBridges(runtime2) {
     if (typeof window === "undefined" || typeof document === "undefined") return;
     const refreshConnected = () => {
-      for (const app2 of runtime2.apps()) {
-        if (app2.root.isConnected) runtime2.runNow(app2, "platform");
+      for (const app of runtime2.apps()) {
+        if (app.root.isConnected) runtime2.runNow(app, "platform");
         else runtime2.remountIfPresent();
       }
     };
@@ -1947,14 +1947,14 @@ ${src}` : `"use strict"; return (${src});`;
   }
 
   // src/sap.js
-  var VERSION = "0.1.0";
+  var VERSION = "0.2.0";
   var registry = /* @__PURE__ */ new Map();
   var order = [];
   var scheduler = createScheduler(runPass);
   function appFor(el) {
     let cur = el;
     while (cur) {
-      if (cur.nodeType === 1 && cur.hasAttribute && cur.hasAttribute("app")) {
+      if (cur.nodeType === 1 && cur.hasAttribute && cur.hasAttribute("sap")) {
         return registry.get(cur) || null;
       }
       cur = cur.parentNode && cur.parentNode.host ? cur.parentNode.host : cur.parentElement;
@@ -1986,8 +1986,8 @@ ${src}` : `"use strict"; return (${src});`;
   var runtime = {
     apps: () => order.slice(),
     appFor,
-    schedule: (app2, trigger) => scheduler.schedule(app2, trigger),
-    runNow: (app2, trigger) => scheduler.runNow(app2, trigger),
+    schedule: (app, trigger) => scheduler.schedule(app, trigger),
+    runNow: (app, trigger) => scheduler.runNow(app, trigger),
     moveInto,
     placeBefore,
     remountIfPresent: () => mountAll()
@@ -2004,7 +2004,7 @@ ${src}` : `"use strict"; return (${src});`;
   }
   function mountAll(docRoot = document) {
     installOnce();
-    const roots = docRoot.querySelectorAll("[app]");
+    const roots = docRoot.querySelectorAll("[sap]");
     const fresh = [];
     for (const root of roots) {
       if (registry.has(root)) continue;
@@ -2013,9 +2013,9 @@ ${src}` : `"use strict"; return (${src});`;
       order.push(appRec);
       fresh.push(appRec);
     }
-    for (const app2 of fresh) {
-      const line = debugApi.greenLine(app2);
-      if (app2.diag.errors.length || app2.halted) console.error(line);
+    for (const app of fresh) {
+      const line = debugApi.greenLine(app);
+      if (app.diag.errors.length || app.halted) console.error(line);
       else console.log(line);
     }
     return fresh;
@@ -2037,7 +2037,7 @@ ${src}` : `"use strict"; return (${src});`;
   var Sap = accessor.Sap;
   Sap.version = VERSION;
   Sap.refresh = function refresh() {
-    for (const app2 of order) if (app2.root.isConnected) scheduler.runNow(app2, "refresh");
+    for (const app of order) if (app.root.isConnected) scheduler.runNow(app, "refresh");
   };
   Sap.batch = batch;
   Sap.status = debugApi.status;
@@ -2048,8 +2048,8 @@ ${src}` : `"use strict"; return (${src});`;
   Sap.greenLine = debugApi.greenLine;
   Sap.formats = formats;
   Sap.mount = mount;
-  Sap.app = function app(config = {}) {
-    if (config.formats) Object.assign(formats, config.formats);
+  Sap.config = function config(options = {}) {
+    if (options.formats) Object.assign(formats, options.formats);
     return Sap;
   };
   Sap._registry = registry;

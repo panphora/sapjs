@@ -1,4 +1,4 @@
-// Mount one [app] root: lint, then (if clean) adopt the runtime stylesheet and
+// Mount one [sap] root: lint, then (if clean) adopt the runtime stylesheet and
 // run the first synchronous pass. A halted app arms no listeners and writes nothing,
 // so its file bytes stay frozen. Returns the app record the scheduler drives.
 
@@ -49,7 +49,7 @@ function now() {
 }
 
 export function mountApp(root) {
-  const name = root.id || root.getAttribute("app") || `app-${appSeq++}`;
+  const name = root.id || root.getAttribute("sap") || `app-${appSeq++}`;
   const diag = new Diagnostics(name);
   const appRec = {
     root, name, diag,

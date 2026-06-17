@@ -3,7 +3,7 @@ import { mount, type, Sap } from "./helpers/mount.js";
 describe("reactivity: calc, paint, and the one write path", () => {
   test("calc + format paints on mount", () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input type="number" bind="qty" value="2">
         <input type="number" bind="price" value="10">
         <output calc:total="state.qty * state.price" text:usd="state.total"></output>
@@ -13,7 +13,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("a keystroke recomputes through synthetic events", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input type="number" bind="qty" value="2">
         <output calc:d="state.qty * 2" text="state.d"></output>
       </main>`);
@@ -24,7 +24,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("Sap(el) proxy write + Sap.refresh reads on the next line", () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input type="number" bind="qty" value="2">
         <output calc:d="state.qty * 3" text="state.d"></output>
       </main>`);
@@ -35,7 +35,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("calc: evaluates in topological order, not document order", () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input type="number" bind="amt" value="100">
         <dd calc:total="state.subtotal + state.tax" text="state.total"></dd>
         <dd calc:tax="state.subtotal * 0.1"></dd>
@@ -46,7 +46,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("nested scope reads as a field on its parent", () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <section scope="cart">
           <input type="number" bind="qty" value="4">
         </section>
@@ -57,14 +57,14 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("preserve-on-error: a throwing paint keeps last-good and sets a beacon", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input bind="name" value="ok">
         <output text="state.name.toUpperCase()" id="o">OK</output>
       </main>`);
     expect(root.querySelector("#o").textContent).toBe("OK");
     // make the expression throw by feeding a non-string... actually drive a real throw:
     const root2 = mount(`
-      <main app>
+      <main sap>
         <output text="state.missing.deep" id="o2">last</output>
       </main>`);
     expect(root2.querySelector("#o2").textContent).toBe("last");
@@ -73,7 +73,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("attr: on a native boolean paints by presence", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input type="checkbox" bind="agree">
         <button attr:disabled="!state.agree" id="b">go</button>
       </main>`);
@@ -85,7 +85,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("attr: on a non-boolean paints true/false strings", () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input type="checkbox" bind="on" checked>
         <li attr:aria-selected="state.on" id="li"></li>
       </main>`);
@@ -94,7 +94,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("class: toggles and css: writes a custom property", () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input type="number" bind="pct" value="60">
         <div class:hot="state.pct > 50" css:w="state.pct" id="d"></div>
       </main>`);
@@ -104,7 +104,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("show toggles the native hidden attribute", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input type="checkbox" bind="on" checked>
         <p show="state.on" id="p">hi</p>
       </main>`);
@@ -116,7 +116,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("effect= runs a statement body after paint", () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input type="number" bind="n" value="7">
         <div effect="el.dataset.n = state.n" id="d"></div>
       </main>`);
@@ -125,7 +125,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("invalid= drives setCustomValidity and gates the form natively", () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input bind="pw" value="abc">
         <input bind="pw2" value="xyz" id="pw2"
                invalid="state.pw2 !== state.pw && 'Passwords do not match'">
@@ -135,7 +135,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("zero-byte mount: a pre-painted file writes nothing", () => {
     mount(`
-      <main app>
+      <main sap>
         <input type="number" bind="qty" value="2">
         <input type="number" bind="price" value="10">
         <output calc:total="state.qty * state.price" text:usd="state.total">$20</output>
@@ -145,7 +145,7 @@ describe("reactivity: calc, paint, and the one write path", () => {
 
   test("the circuit breaker halts a runaway recompute loop with E26", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input bind="n" value="x" effect="el.dispatchEvent(new Event('input',{bubbles:true}))">
       </main>`);
     // kick off the loop with one real interaction (the mount pass fires before

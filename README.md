@@ -7,7 +7,7 @@ Sap is a tiny reactive layer for hand-written HTML files. You declare state, for
 ```html
 <script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"></script>
 
-<main app>
+<main sap>
   <input type="number" bind="qty" value="3">
   <input type="number" bind="price" value="10">
   <output calc:total="state.qty * state.price" text:usd="state.total"></output>
@@ -44,7 +44,7 @@ Reads are expressions over `state` (the nearest scope) and `item` (the nearest r
 
 ## Install
 
-Drop-in (auto-mounts every `[app]` on load):
+Drop-in (auto-mounts every `[sap]` on load):
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"></script>
@@ -60,7 +60,7 @@ import Sap from "sapjs";
 npm install sapjs
 ```
 
-Importing the module also auto-mounts every `[app]` on `DOMContentLoaded`. Call `Sap.mount(rootOrSelector)` to mount a root added later, or `Sap.mount()` to rescan; `Sap.app({ formats })` registers custom formats as a config-object alternative to `Sap.formats.x`.
+Importing the module also auto-mounts every `[sap]` on `DOMContentLoaded`. Call `Sap.mount(rootOrSelector)` to mount a root added later, or `Sap.mount()` to rescan; `Sap.config({ formats })` registers custom formats as a config-object alternative to `Sap.formats.x`.
 
 ---
 
@@ -71,7 +71,7 @@ A complete todo app, with no JavaScript at all. Copy it into a `.html` file and 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"></script>
 
-<main app>
+<main sap>
   <form trigger-add="todos">
     <input bind="title" placeholder="What needs doing?" required autofocus>
   </form>
@@ -100,7 +100,7 @@ The form's input is named `title`, the same as the row's field. On Enter, `trigg
 
 **One write path, three steps.** A write (1) sets the control's live value, (2) mirrors it into a serializable attribute so view-source and save reflect it, then (3) fires synthetic `input` + `change` events. Because a programmatic write looks exactly like typing, autosave, undo, and recompute all observe it the same way. Two consequences follow: paints write silently (no event, to avoid feedback loops), and undo/redo replay needs the Hyperclay bridge, since replaying an attribute fires no event.
 
-**Scopes and rows.** `app`, `scope=`, `items=`/`item`, and `detail=` are the boundaries that form the state tree. A field belongs to its nearest enclosing scope, and to the **row** object when it sits inside an `[item]`, so the same `bind="title"` lands in a different owner depending on nesting. `scope="cart"` reads as `state.cart.field`; `root` always points at the app scope.
+**Scopes and rows.** `sap`, `scope=`, `items=`/`item`, and `detail=` are the boundaries that form the state tree. A field belongs to its nearest enclosing scope, and to the **row** object when it sits inside an `[item]`, so the same `bind="title"` lands in a different owner depending on nesting. `scope="cart"` reads as `state.cart.field`; `root` always points at the app scope.
 
 ---
 
@@ -109,7 +109,7 @@ The form's input is named `title`, the same as the row's field. On Enter, `trigg
 ### Declaring state
 
 ```html
-<main app state="filter=all step:num=1 done:bool">
+<main sap state="filter=all step:num=1 done:bool">
 ```
 
 `state=` declares attribute-carried fields on a scope. Bare = string, `:num` = number, `:bool` = boolean, `name=value` = default. `bind` declares a field carried by a control. `items` declares a field that is an array of rows. `scope="name"` nests a child state object readable as `state.name`.
@@ -242,7 +242,7 @@ Click a row to select it; the detail panel projects that row. Edits in the panel
 **Nested lists** (kanban). Nesting works past one level: a row that declares `items="cards"` exposes them as `item.cards`, and `Sap(this).$add('cards')` adds a card inside that row. Cloning the row keeps its inner template.
 
 ```html
-<main app items="columns">
+<main sap items="columns">
   <section item template scope="board">
     <h2 bind="title"></h2>
     <ul items="cards">
@@ -262,7 +262,7 @@ The one nesting limit is an `items=` list placed inside a `detail=` panel, which
 Every app prints one machine-readable line on mount:
 
 ```
-sap ✓ main[app] · fields 12 · calcs 4 · paints 18 · actions 6 · lists 2 · rows 7 · warnings 0 · mount writes 0 · 1.8ms
+sap ✓ main[sap] · fields 12 · calcs 4 · paints 18 · actions 6 · lists 2 · rows 7 · warnings 0 · mount writes 0 · 1.8ms
 ```
 
 `mount writes 0` on a previously-saved file is the zero-byte-mount guarantee: Sap touched nothing.
@@ -300,7 +300,7 @@ Sap runs standalone in any HTML file. When `window.hyperclay` is present it ride
 - live-sync morphs trigger a synchronous re-derive (`hyperclay:livesync-applied`),
 - undo/redo replays heal derived paints,
 - `Sap.batch` labels grouped edits in the undo history,
-- a morph that replaces the `[app]` element re-mounts itself.
+- a morph that replaces the `[sap]` element re-mounts itself.
 
 No configuration. The same file works offline and online.
 

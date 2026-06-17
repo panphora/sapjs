@@ -1,7 +1,7 @@
 import { mount, type, Sap } from "./helpers/mount.js";
 
 const TODO = `
-  <main app>
+  <main sap>
     <form trigger-add="todos"><input bind="draft"></form>
     <ul items="todos">
       <li item template>
@@ -49,7 +49,7 @@ describe("collections", () => {
 
   test("a form trigger-add composes the new row from its matching fields and clears", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <form trigger-add="todos"><input bind="title"></form>
         <ul items="todos"><li item template><input type="checkbox" bind="done"><span bind="title"></span></li></ul>
       </main>`);
@@ -73,7 +73,7 @@ describe("collections", () => {
 
   test("a form trigger-add ignores fields the row does not declare", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <form trigger-add="todos"><input bind="draft"></form>
         <ul items="todos"><li item template><span bind="title"></span></li></ul>
       </main>`);
@@ -94,7 +94,7 @@ describe("collections", () => {
 
   test("detail lens projects the selected row and edits write through", async () => {
     const root = mount(`
-      <main app state="selected">
+      <main sap state="selected">
         <ul items="contacts">
           <li item template set:selected="item.$key"><span bind="name"></span></li>
           <li item id="p1" set:selected="item.$key"><span bind="name">Alice</span></li>
@@ -120,7 +120,7 @@ describe("collections", () => {
 
   test("sort: stable-sorts by a field and toggles direction", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <button sort:n id="s">sort</button>
         <ul items="nums">
           <li item template><span bind="n"></span></li>
@@ -140,7 +140,7 @@ describe("collections", () => {
 
   test("move:up / move:down reorder a row", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <ul items="xs">
           <li item template><span bind="v"></span><button move:up>u</button></li>
           <li item><span bind="v">a</span><button move:up>u</button></li>
@@ -154,7 +154,7 @@ describe("collections", () => {
 
   test("move:to moves a row to another list", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <ul items="todo">
           <li item template><span bind="t"></span><button move:to="done">→</button></li>
           <li item id="card"><span bind="t">task</span><button move:to="done">→</button></li>
@@ -170,7 +170,7 @@ describe("collections", () => {
 
   test("nested kanban: clone a column and add a card at depth 2", async () => {
     const root = mount(`
-      <main app items="columns">
+      <main sap items="columns">
         <section item template scope="board">
           <h2 bind="title"></h2>
           <ul items="cards"><li item template bind="name"></li></ul>
@@ -195,7 +195,7 @@ describe("collections", () => {
 
   test("filter doctrine: calc:match + show hides rows, aggregate still sees them", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <input bind="q" value="">
         <ul items="people">
           <li item template calc:match="state.q === '' || item.name.toLowerCase().includes(state.q)" show="item.match"><span bind="name"></span><b bind="age"></b></li>
@@ -215,7 +215,7 @@ describe("collections", () => {
 
   test("Sap.batch bulk-removes picked rows", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <ul items="inbox">
           <li item template><input type="checkbox" bind="picked"></li>
           <li item><input type="checkbox" bind="picked" checked></li>
@@ -231,7 +231,7 @@ describe("collections", () => {
 
   test("confirm gates an action; a declined confirm does nothing", async () => {
     const root = mount(`
-      <main app>
+      <main sap>
         <ul items="xs">
           <li item template><button trigger-remove confirm="Sure?">x</button></li>
           <li item><button trigger-remove confirm="Sure?">x</button></li>

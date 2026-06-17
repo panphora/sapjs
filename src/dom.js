@@ -32,7 +32,7 @@ export function walkOwned(scopeEl, visit) {
 export function nearestScopeEl(el) {
   let cur = el;
   while (cur) {
-    if (cur.hasAttribute("app") || cur.hasAttribute("scope") || cur.hasAttribute("item") || cur.hasAttribute("detail")) {
+    if (cur.hasAttribute("sap") || cur.hasAttribute("scope") || cur.hasAttribute("item") || cur.hasAttribute("detail")) {
       return cur;
     }
     cur = cur.parentElement;
@@ -43,7 +43,7 @@ export function nearestScopeEl(el) {
 export function nearestAppEl(el) {
   let cur = el;
   while (cur) {
-    if (cur.hasAttribute && cur.hasAttribute("app")) return cur;
+    if (cur.hasAttribute && cur.hasAttribute("sap")) return cur;
     cur = cur.parentElement;
   }
   return null;

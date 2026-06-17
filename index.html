@@ -219,7 +219,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app>
+      <main sap>
         <label>Quantity
           <input type="number" bind="qty" value="3"></label>
         <label>Unit price
@@ -274,13 +274,13 @@
 <!-- QUICKSTART -->
 <section class="wrap" id="quickstart">
   <h2><span class="num">01</span>Your first app, in one file</h2>
-  <p class="lead">One script tag, then write HTML. Sap auto-mounts every <code class="mono">[app]</code> on load. This is a whole file: copy it, save it, open it.</p>
+  <p class="lead">One script tag, then write HTML. Sap auto-mounts every <code class="mono">[sap]</code> on load. This is a whole file: copy it, save it, open it.</p>
   <div class="qs">
     <button class="copy-btn" data-copy="qs-code">Copy</button>
     <pre class="block"><code class="language-markup" id="qs-code">&lt;!doctype html&gt;
 &lt;script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"&gt;&lt;/script&gt;
 
-&lt;main app&gt;
+&lt;main sap&gt;
   &lt;label&gt;Quantity &lt;input type="number" bind="qty" value="3"&gt;&lt;/label&gt;
   &lt;label&gt;Unit price &lt;input type="number" bind="price" value="10"&gt;&lt;/label&gt;
   &lt;output calc:total="state.qty * state.price" text:usd="state.total"&gt;$30&lt;/output&gt;
@@ -342,7 +342,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app>
+      <main sap>
         <form trigger-add="todos">
           <input bind="title"
                  placeholder="What needs doing? (Enter)" required>
@@ -382,7 +382,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app>
+      <main sap>
         <table>
           <thead><tr>
             <th><button sort:name>Item ▲▼</button></th>
@@ -423,7 +423,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app state="selected">
+      <main sap state="selected">
         <ul items="contacts">
           <li item template
               set:selected="item.$key"
@@ -465,7 +465,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app>
+      <main sap>
         <input type="search" bind="q" transient placeholder="Filter fruit…">
         <ul items="fruit">
           <li item template
@@ -514,7 +514,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app>
+      <main sap>
         <div class="cols">
           <div class="col">
             <h4>To do</h4>
@@ -563,7 +563,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app>
+      <main sap>
         <form onsubmit="alert('Account created'); return false">
           <label>Password
             <input type="password" bind="pw"
@@ -592,7 +592,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app state="tab=overview">
+      <main sap state="tab=overview">
         <div style="display:flex; gap:8px; margin-bottom:10px">
           <span class="pill"
                 set:tab="'overview'"
@@ -623,7 +623,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app>
+      <main sap>
         <ul items="inbox">
           <li item template>
             <input type="checkbox" bind="sel">
@@ -662,7 +662,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app>
+      <main sap>
         <label>Name <input bind="name" value="Ada"></label>
         <label>Age
           <input type="number" bind="age" value="36"></label>
@@ -692,7 +692,7 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main app>
+      <main sap>
         <details name="acc" open scope="secA" state="open">
           <summary>Section A
             <span class="muted"
@@ -740,7 +740,7 @@
 
   <h3 style="margin:18px 0 6px; font-size:15px; color:var(--muted)">Declare &amp; bind</h3>
   <table class="ref">
-    <tr><td><code>app</code></td><td>Marks a mount root. Apps are isolated; lint stops at the boundary.</td></tr>
+    <tr><td><code>sap</code></td><td>Marks a mount root. Apps are isolated; lint stops at the boundary.</td></tr>
     <tr><td><code>state="a b:num c:bool d=x"</code></td><td>Attribute-carried fields. Bare = string, <code>:num</code>, <code>:bool</code>, <code>name=default</code>.</td></tr>
     <tr><td><code>bind="field"</code></td><td>Two-way bind on a control or text leaf. The control type is the value contract.</td></tr>
     <tr><td><code>items="name"</code></td><td>A list field; <code>[item template]</code> child is the row prototype, cloned by add.</td></tr>
@@ -793,7 +793,7 @@
   <pre class="block">// A typo'd field name doesn't fail silently — it teaches:
 
 sap ✗ E12 unknown-state-key
-  at &lt;output text="state.totl"&gt; — main[app] &gt; p &gt; output
+  at &lt;output text="state.totl"&gt; — main[sap] &gt; p &gt; output
   problem: no field "totl" is declared in this scope. Declared: total, qty, price
   did you mean: state.total
   fix: text="state.total"</pre>
@@ -843,7 +843,7 @@ sap ✗ E12 unknown-state-key
   // mount everything we just injected, then print each app's green line
   Sap.mount();
   document.querySelectorAll(".demo").forEach((demo) => {
-    const app = demo.querySelector("[app]");
+    const app = demo.querySelector("[sap]");
     const gl = demo.querySelector(".greenline");
     if (!app || !gl) return;
     const rec = Sap._registry.get(app);

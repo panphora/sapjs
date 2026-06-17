@@ -39,7 +39,7 @@ export const HTML_GLOBALS = new Set([
 ]);
 
 export const RESERVED = new Set([
-  "app", "scope", "items", "item", "template", "bind", "calc", "text", "show",
+  "sap", "scope", "items", "item", "template", "bind", "calc", "text", "show",
   "attr", "set", "trigger", "move", "sort", "detail", "effect", "invalid",
   "confirm", "transient", "default", "persist", "sortable", "editmode",
 ]);
@@ -52,13 +52,13 @@ export function cssPath(el) {
   let depth = 0;
   while (cur && cur.nodeType === 1 && depth < 4) {
     let seg = cur.tagName.toLowerCase();
-    if (cur.hasAttribute("app")) seg += "[app]";
+    if (cur.hasAttribute("sap")) seg += "[sap]";
     else if (cur.parentElement) {
       const sibs = [...cur.parentElement.children].filter((c) => c.tagName === cur.tagName);
       if (sibs.length > 1) seg += `:nth-of-type(${sibs.indexOf(cur) + 1})`;
     }
     parts.unshift(seg);
-    if (cur.hasAttribute("app")) break;
+    if (cur.hasAttribute("sap")) break;
     cur = cur.parentElement;
     depth++;
   }
