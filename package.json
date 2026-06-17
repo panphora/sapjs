@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "build": "node build/bundle.mjs",
+    "build:docs": "node scripts/build-doc.mjs",
     "copy-to-hyperclayjs": "npm run build && node scripts/copy-to-hyperclayjs.js",
     "test": "jest",
     "test:watch": "jest --watch",

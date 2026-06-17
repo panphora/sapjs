@@ -44,8 +44,7 @@
   code, pre, .mono { font-family: var(--mono); }
 
   .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
-  section { padding: 56px 0; border-top: 1px solid var(--border); }
-  section:first-of-type { border-top: none; }
+  section { padding: 56px 0; }
 
   h1, h2, h3 { line-height: 1.2; letter-spacing: -0.01em; }
   h2 { font-size: 27px; margin: 34px 0 6px; }
@@ -55,8 +54,8 @@
 
   /* Header / hero */
   header { padding: 64px 0 8px; }
-  .brand { font-family: var(--mono); font-weight: 700; font-size: 17px; letter-spacing: 0.02em; }
-  .brand .dot { color: var(--accent); }
+  .brand { font-family: var(--mono); font-weight: 700; font-size: 17px; letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 9px; }
+  .brand .logo { width: 22px; height: 22px; display: block; }
   nav.top { display: flex; gap: 22px; align-items: center; justify-content: space-between; padding: 18px 0; }
   nav.top .links { display: flex; gap: 20px; font-size: 13.5px; color: var(--muted); }
   nav.top .links a { color: var(--muted); }
@@ -170,6 +169,7 @@
 
   footer { padding: 48px 0 64px; color: var(--faint); font-size: 13px; }
   footer .brand { color: var(--muted); }
+  footer .brandline { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
   .kbd { font-family: var(--mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 5px; padding: 1px 6px; color: var(--muted); }
   hr.soft { border: none; border-top: 1px solid var(--border); margin: 26px 0; }
 </style>
@@ -178,7 +178,7 @@
 
 <div class="wrap">
   <nav class="top">
-    <span class="brand">sap<span class="dot">·</span></span>
+    <span class="brand"><img class="logo" src="./favicon.svg" alt="" width="22" height="22">sap</span>
     <span class="links">
       <a href="#why">Why</a>
       <a href="#quickstart">Quickstart</a>
@@ -207,7 +207,7 @@
 </header>
 
 <!-- HERO DEMO -->
-<section class="wrap" style="padding-top: 28px; border-top: none;">
+<section class="wrap" style="padding-top: 28px;">
   <div class="demo">
     <div class="demo-head">
       <h3>The whole idea, in six lines</h3>
@@ -806,7 +806,7 @@ sap ✗ E12 unknown-state-key
 
 <footer class="wrap">
   <hr class="soft">
-  <p><span class="brand">sap<span style="color:var(--accent)">·</span></span> — reactive HTML in attributes. The DOM is the only state store.</p>
+  <p class="brandline"><span class="brand"><img class="logo" src="./favicon.svg" alt="" width="22" height="22">sap</span><span>— reactive HTML in attributes. The DOM is the only state store.</span></p>
   <p>
     <a href="https://github.com/panphora/sapjs">GitHub</a> ·
     <a href="https://www.npmjs.com/package/sapjs">npm</a> ·

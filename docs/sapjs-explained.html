@@ -1,0 +1,3198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How sapjs works · live, source-grounded explainer</title>
+<meta name="description" content="An authoritative, live explainer of the shipped sapjs engine: transient state, rich text, extending sap, every way to set state, and modals. Real demos, no network.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c10'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%236ee7a8' text-anchor='middle'%3Es%3C/text%3E%3C/svg%3E">
+<!-- The REAL sapjs engine (dist/sap.js), inlined. No network, no build, no CDN. -->
+<!-- Self-contained explainer. Content source: docs/sapjs-explained.template.html. Refresh the inlined engine after a dist rebuild with: npm run build:docs -->
+
+<script>var Sap = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // src/sap.js
+  var sap_exports = {};
+  __export(sap_exports, {
+    Sap: () => Sap,
+    default: () => sap_default,
+    mount: () => mount,
+    mountAll: () => mountAll,
+    runtime: () => runtime
+  });
+
+  // src/scheduler.js
+  var MAX_PASSES = 50;
+  function createScheduler(runPass2) {
+    let queued = false;
+    const dirty = /* @__PURE__ */ new Set();
+    const ring = [];
+    function note(trigger) {
+      if (!trigger) return;
+      ring.push(trigger);
+      if (ring.length > 8) ring.shift();
+    }
+    function schedule(app, trigger) {
+      note(trigger);
+      if (app._broken) return;
+      dirty.add(app);
+      if (queued) return;
+      queued = true;
+      queueMicrotask(drain);
+    }
+    function drain() {
+      queued = false;
+      const apps = [...dirty];
+      dirty.clear();
+      for (const app of apps) runWithBreaker(app);
+    }
+    function runWithBreaker(app) {
+      if (app._broken) return;
+      app._passes = (app._passes || 0) + 1;
+      if (app._passes > MAX_PASSES) {
+        app._broken = true;
+        app._breakerRing = ring.slice();
+        runPass2(app, { breaker: true });
+        return;
+      }
+      if (!app._resetArmed) {
+        app._resetArmed = true;
+        setTimeout(() => {
+          app._passes = 0;
+          app._resetArmed = false;
+        }, 0);
+      }
+      runPass2(app);
+    }
+    function runNow(app, trigger) {
+      note(trigger);
+      runWithBreaker(app);
+    }
+    function rearm(app) {
+      app._broken = false;
+      app._passes = 0;
+    }
+    return { schedule, runNow, rearm, ring };
+  }
+
+  // src/dom.js
+  var idSeq = 0;
+  function ensureId(el, prefix = "sap") {
+    if (!el.id) el.id = `${prefix}-${(idSeq++).toString(36)}`;
+    return el.id;
+  }
+  function isScopeBoundary(el) {
+    return el.hasAttribute("scope") || el.hasAttribute("items") || el.hasAttribute("detail");
+  }
+  function isInert(el) {
+    return el.hasAttribute("sap-ignore") || el.hasAttribute("template");
+  }
+  function walkOwned(scopeEl, visit) {
+    for (const child of scopeEl.children) descend(child);
+    function descend(el) {
+      if (el.nodeType !== 1) return;
+      if (isInert(el)) return;
+      const boundary = isScopeBoundary(el);
+      visit(el, boundary);
+      if (!boundary) for (const c of el.children) descend(c);
+    }
+  }
+  function nearestScopeEl(el) {
+    let cur = el;
+    while (cur) {
+      if (cur.hasAttribute("sap") || cur.hasAttribute("scope") || cur.hasAttribute("item") || cur.hasAttribute("detail")) {
+        return cur;
+      }
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+  function nearestItemEl(el) {
+    let cur = el;
+    while (cur) {
+      if (cur.hasAttribute("detail")) return cur;
+      if (cur.hasAttribute("item")) return cur;
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+  function isInsideDetail(el) {
+    let cur = el;
+    while (cur) {
+      if (cur.hasAttribute("detail")) return cur;
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+  function ownedBind(scopeEl, field) {
+    let found = null;
+    walkOwned(scopeEl, (el) => {
+      if (!found && el.getAttribute("bind") === field) found = el;
+    });
+    return found;
+  }
+  function ownedItems(scopeEl, name) {
+    let found = null;
+    walkOwned(scopeEl, (el) => {
+      if (!found && el.getAttribute("items") === name) found = el;
+    });
+    return found;
+  }
+  function rowsOf(listEl) {
+    return [...listEl.children].filter((c) => c.hasAttribute("item") && !c.hasAttribute("template"));
+  }
+  function templateOf(listEl) {
+    return [...listEl.children].find((c) => c.hasAttribute("item") && c.hasAttribute("template")) || null;
+  }
+  function parseStateDecl(str) {
+    const out = [];
+    if (!str) return out;
+    for (const raw of str.trim().split(/\s+/)) {
+      if (!raw) continue;
+      let token = raw;
+      let def;
+      const eq = token.indexOf("=");
+      if (eq >= 0) {
+        def = token.slice(eq + 1);
+        token = token.slice(0, eq);
+      }
+      const parts = token.split(":");
+      const name = parts[0];
+      let type = "string";
+      let transient = false;
+      for (const p of parts.slice(1)) {
+        if (p === "num") type = "num";
+        else if (p === "bool") type = "bool";
+        else if (p === "transient") transient = true;
+      }
+      out.push({ name, type, default: def, transient });
+    }
+    return out;
+  }
+  function parseTyped(value, type) {
+    if (type === "num") {
+      if (value == null || value === "") return 0;
+      const n2 = Number(value);
+      return Number.isNaN(n2) ? 0 : n2;
+    }
+    if (type === "bool") return value === "true" || value === "" || value === "1";
+    return value == null ? "" : value;
+  }
+  function serializeTyped(value, type) {
+    if (type === "bool") return value ? "true" : "false";
+    return value == null ? "" : String(value);
+  }
+  function readTransient(el, decl) {
+    const store = el._sapTransient || (el._sapTransient = {});
+    if (!(decl.name in store)) {
+      let raw = el.getAttribute(decl.name);
+      if (raw == null) raw = decl.default != null ? decl.default : decl.type === "num" ? "0" : decl.type === "bool" ? "false" : "";
+      store[decl.name] = parseTyped(raw, decl.type);
+    }
+    if (el.hasAttribute(decl.name)) el.removeAttribute(decl.name);
+    return store[decl.name];
+  }
+  function writeTransient(el, decl, value) {
+    (el._sapTransient || (el._sapTransient = {}))[decl.name] = value;
+    if (el.hasAttribute(decl.name)) el.removeAttribute(decl.name);
+  }
+  function resolveListEl(appRoot, fromEl, path) {
+    const segs = String(path).split(".");
+    const listName = segs[segs.length - 1];
+    if (segs.length === 1) {
+      const up = findItemsUp(fromEl, listName);
+      if (up) return up;
+      if (appRoot.getAttribute("items") === listName) return appRoot;
+      return appRoot.querySelector(`[items="${listName}"]`);
+    }
+    const scopeName = segs[segs.length - 2];
+    const scopeEl = [...appRoot.querySelectorAll(`[scope="${scopeName}"]`)].find(
+      (s) => ownedItems(s, listName)
+    );
+    return scopeEl ? ownedItems(scopeEl, listName) : null;
+  }
+  function findItemsUp(fromEl, name) {
+    let scope = nearestScopeEl(fromEl);
+    while (scope) {
+      if (scope.getAttribute("items") === name) return scope;
+      const found = ownedItems(scope, name);
+      if (found) return found;
+      scope = nearestScopeEl(scope.parentElement);
+    }
+    return null;
+  }
+
+  // src/helpers.js
+  function num(v) {
+    if (typeof v === "number") return v;
+    if (v == null || v === "") return 0;
+    const n2 = Number(v);
+    return Number.isNaN(n2) ? 0 : n2;
+  }
+  function values(rows, k) {
+    if (!Array.isArray(rows)) return [];
+    if (k == null) return rows;
+    return rows.map((r) => typeof k === "function" ? k(r) : r == null ? void 0 : r[k]);
+  }
+  function sum(rows, k) {
+    return values(rows, k).reduce((a, v) => a + num(v), 0);
+  }
+  function count(rows, pred) {
+    if (!Array.isArray(rows)) return 0;
+    if (pred == null) return rows.length;
+    return rows.reduce((a, r) => a + (pred(r) ? 1 : 0), 0);
+  }
+  function avg(rows, k) {
+    const v = values(rows, k);
+    if (!v.length) return 0;
+    return sum(rows, k) / v.length;
+  }
+  function min(rows, k) {
+    const v = values(rows, k).filter((x) => x != null && x !== "");
+    if (!v.length) return 0;
+    if (v.every((x) => typeof x === "number" || !Number.isNaN(Number(x)))) {
+      return Math.min(...v.map(Number));
+    }
+    return v.reduce((a, b) => String(a) <= String(b) ? a : b);
+  }
+  function max(rows, k) {
+    const v = values(rows, k).filter((x) => x != null && x !== "");
+    if (!v.length) return 0;
+    if (v.every((x) => typeof x === "number" || !Number.isNaN(Number(x)))) {
+      return Math.max(...v.map(Number));
+    }
+    return v.reduce((a, b) => String(a) >= String(b) ? a : b);
+  }
+  function plural(n2, singular, pluralForm) {
+    const word = num(n2) === 1 ? singular : pluralForm != null ? pluralForm : singular + "s";
+    return `${n2} ${word}`;
+  }
+  function days(a, b) {
+    const da = new Date(a);
+    const db = new Date(b);
+    if (Number.isNaN(+da) || Number.isNaN(+db)) return 0;
+    return Math.round((db - da) / 864e5);
+  }
+  function n(v) {
+    return typeof v === "number" ? v : Number(v);
+  }
+  var formats = {
+    usd: (v) => "$" + n(v).toLocaleString("en-US", { maximumFractionDigits: 0 }),
+    usd2: (v) => "$" + n(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    pct: (v) => Math.round(n(v)) + "%",
+    pct1: (v) => n(v).toFixed(1) + "%",
+    int: (v) => Math.round(n(v)).toLocaleString("en-US"),
+    num: (v) => n(v).toLocaleString("en-US"),
+    num2: (v) => n(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    compact: (v) => n(v).toLocaleString("en-US", { notation: "compact" }),
+    date: (v) => {
+      const d = new Date(v);
+      return Number.isNaN(+d) ? String(v) : d.toLocaleDateString("en-US");
+    },
+    clock: (v) => {
+      const ms = n(v);
+      const total = Math.floor(ms / 100);
+      const tenths = total % 10;
+      const secs = Math.floor(total / 10) % 60;
+      const mins = Math.floor(total / 600);
+      return `${mins}:${String(secs).padStart(2, "0")}.${tenths}`;
+    }
+  };
+  var NUMERIC = /* @__PURE__ */ new Set(["usd", "usd2", "pct", "pct1", "int", "num", "num2", "compact", "clock"]);
+  function applyFormat(name, v) {
+    if (!name) return v == null ? "" : String(v);
+    const f = formats[name];
+    if (typeof f !== "function") {
+      const e = new Error(`unknown format "${name}"`);
+      e.sapCode = "E22";
+      throw e;
+    }
+    if (NUMERIC.has(name)) {
+      const x = typeof v === "number" ? v : Number(v);
+      if (!Number.isFinite(x)) {
+        const e = new Error(`format "${name}" received ${typeof v === "string" ? `"${v}"` : v}`);
+        e.sapCode = "E22";
+        throw e;
+      }
+    }
+    return f(v);
+  }
+  function helperBundle() {
+    return [formats, num, sum, count, avg, min, max, plural, days];
+  }
+
+  // src/compile.js
+  var ARGS = ["state", "item", "el", "root", "fmt", "num", "sum", "count", "avg", "min", "max", "plural", "days"];
+  var cache = /* @__PURE__ */ new Map();
+  var STATE_REF = /\bstate\.([a-z][a-z0-9_]*)/g;
+  var ITEM_REF = /\bitem\.([a-z][a-z0-9_]*)/g;
+  function extractDeps(src) {
+    const state = /* @__PURE__ */ new Set();
+    const item = /* @__PURE__ */ new Set();
+    let m;
+    STATE_REF.lastIndex = 0;
+    while (m = STATE_REF.exec(src)) state.add(m[1]);
+    ITEM_REF.lastIndex = 0;
+    while (m = ITEM_REF.exec(src)) item.add(m[1]);
+    return { state, item };
+  }
+  function compile(src, statement = false) {
+    const key = (statement ? "!" : "") + src;
+    let entry = cache.get(key);
+    if (entry) return entry;
+    if (cache.size > 512) cache.clear();
+    try {
+      const body = statement ? `"use strict";
+${src}` : `"use strict"; return (${src});`;
+      const fn = new Function(...ARGS, body);
+      entry = { fn, src, statement, deps: extractDeps(src), error: null };
+    } catch (err) {
+      entry = { fn: null, src, statement, deps: { state: /* @__PURE__ */ new Set(), item: /* @__PURE__ */ new Set() }, error: err };
+    }
+    cache.set(key, entry);
+    return entry;
+  }
+  function run(entry, ctx) {
+    if (entry.error) throw entry.error;
+    return entry.fn(ctx.state, ctx.item, ctx.el ?? null, ctx.root, ...helperBundle());
+  }
+  function topoSort(calcs) {
+    const byName = /* @__PURE__ */ new Map();
+    for (const c of calcs) byName.set(c.name, c);
+    const out = [];
+    const state = /* @__PURE__ */ new Map();
+    const stack = [];
+    function visit(c) {
+      const s = state.get(c.name);
+      if (s === 1) return;
+      if (s === 0) {
+        const cycle = [...stack.slice(stack.indexOf(c.name)), c.name].join(" -> ");
+        const err = new Error(`calc: cycle: ${cycle}`);
+        err.sapCode = "E07";
+        err.cycle = cycle;
+        throw err;
+      }
+      state.set(c.name, 0);
+      stack.push(c.name);
+      for (const dep of c.entry.deps.state) {
+        const d = byName.get(dep);
+        if (d && d !== c) visit(d);
+      }
+      for (const dep of c.entry.deps.item) {
+        const d = byName.get(dep);
+        if (d && d !== c) visit(d);
+      }
+      stack.pop();
+      state.set(c.name, 1);
+      out.push(c);
+    }
+    for (const c of calcs) visit(c);
+    return out;
+  }
+
+  // src/carrier.js
+  function kindOf(el) {
+    const tag = el.tagName;
+    if (tag === "INPUT") {
+      const t = (el.getAttribute("type") || "text").toLowerCase();
+      if (t === "checkbox") return "checkbox";
+      if (t === "radio") return "radio";
+      if (t === "number" || t === "range") return "number";
+      if (t === "hidden") return "hidden";
+      return "text";
+    }
+    if (tag === "TEXTAREA") return "text";
+    if (tag === "SELECT") return el.multiple ? "select-multiple" : "select-one";
+    return "leaf";
+  }
+  function readNumber(el) {
+    if (el.validity && el.validity.badInput) {
+      if (el.hasAttribute("value")) return Number(el.getAttribute("value")) || 0;
+      return el._sapLastGood ?? 0;
+    }
+    if (el.value === "") return 0;
+    const n2 = Number(el.value);
+    if (Number.isNaN(n2)) return el._sapLastGood ?? 0;
+    el._sapLastGood = n2;
+    return n2;
+  }
+  function readBy(el, kind) {
+    switch (kind) {
+      case "checkbox":
+        return el.checked;
+      case "radio":
+        return el.checked ? el.value : void 0;
+      case "number":
+        return readNumber(el);
+      case "select-one":
+        return el.value;
+      case "select-multiple":
+        return [...el.selectedOptions].map((o) => o.value);
+      case "hidden":
+      case "text":
+        return el.value;
+      case "leaf":
+        return el.textContent;
+      default:
+        return el.value;
+    }
+  }
+  function writeBy(el, kind, v) {
+    switch (kind) {
+      case "checkbox":
+        el.checked = !!v;
+        break;
+      case "radio":
+        el.checked = String(el.value) === String(v);
+        break;
+      case "number":
+      case "text":
+      case "hidden":
+        el.value = v == null ? "" : String(v);
+        break;
+      case "select-one":
+        el.value = v == null ? "" : String(v);
+        break;
+      case "select-multiple": {
+        const set = new Set((Array.isArray(v) ? v : [v]).map(String));
+        for (const opt of el.options) opt.selected = set.has(opt.value);
+        break;
+      }
+      case "leaf":
+        el.textContent = v == null ? "" : String(v);
+        break;
+      default:
+        el.value = v == null ? "" : String(v);
+    }
+  }
+  function mirror(el, kind) {
+    if (el.hasAttribute("transient")) {
+      el.removeAttribute("value");
+      el.removeAttribute("checked");
+      return;
+    }
+    switch (kind) {
+      case "checkbox":
+      case "radio":
+        if (el.checked) el.setAttribute("checked", "");
+        else el.removeAttribute("checked");
+        break;
+      case "number":
+      case "text":
+      case "hidden":
+        el.setAttribute("value", el.value);
+        break;
+      default:
+        break;
+    }
+  }
+  function fire(el) {
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  function carrierFor(el) {
+    const kind = kindOf(el);
+    return {
+      el,
+      kind,
+      read() {
+        return readBy(el, kind);
+      },
+      write(v, opts = {}) {
+        writeBy(el, kind, v);
+        if (!opts.noMirror) mirror(el, kind);
+        if (!opts.silent) fire(el);
+      },
+      mirror() {
+        mirror(el, kind);
+      }
+    };
+  }
+
+  // src/errors.js
+  var REGISTRY = {
+    E01: { slug: "foreign-dialect", behavior: "HALT" },
+    E02: { slug: "moustaches-in-text", behavior: "HALT" },
+    E04: { slug: "duplicate-declaration", behavior: "HALT" },
+    E05: { slug: "reserved-name", behavior: "HALT" },
+    E06: { slug: "global-html-name", behavior: "HALT" },
+    E07: { slug: "calc-cycle", behavior: "ERR" },
+    E08: { slug: "expression-syntax", behavior: "HALT" },
+    E10: { slug: "orphan-item", behavior: "HALT" },
+    E12: { slug: "unknown-state-key", behavior: "ERR" },
+    E15: { slug: "write-to-undeclared-key", behavior: "ERR" },
+    E16: { slug: "write-to-computed-field", behavior: "ERR" },
+    E17: { slug: "unresolvable-action-target", behavior: "HALT" },
+    E18: { slug: "paint-on-form-control", behavior: "HALT" },
+    E20: { slug: "bind-on-non-control", behavior: "HALT" },
+    E22: { slug: "format-type", behavior: "ERR" },
+    E24: { slug: "runtime-expression-throw", behavior: "ERR" },
+    E26: { slug: "circuit-breaker", behavior: "HALT" },
+    E30: { slug: "attr-on-bound-control", behavior: "HALT" },
+    E31: { slug: "password-without-transient", behavior: "HALT" },
+    E32: { slug: "file-bind", behavior: "HALT" },
+    E33: { slug: "dialog-state-open", behavior: "HALT" },
+    W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
+    W30: { slug: "nonzero-mount-writes", behavior: "WARN" }
+  };
+  var NATIVE_BOOLEANS = [
+    "disabled",
+    "readonly",
+    "required",
+    "checked",
+    "selected",
+    "multiple",
+    "open",
+    "inert",
+    "autofocus",
+    "novalidate",
+    "hidden"
+  ];
+  var HTML_GLOBALS = /* @__PURE__ */ new Set([
+    "title",
+    "style",
+    "hidden",
+    "lang",
+    "dir",
+    "translate",
+    "class",
+    "id",
+    "nonce",
+    "autofocus",
+    "tabindex",
+    "contenteditable",
+    "spellcheck",
+    "draggable",
+    "role",
+    "slot",
+    "part",
+    "name",
+    "value",
+    "type"
+  ]);
+  var RESERVED = /* @__PURE__ */ new Set([
+    "sap",
+    "scope",
+    "items",
+    "item",
+    "template",
+    "bind",
+    "calc",
+    "text",
+    "show",
+    "attr",
+    "set",
+    "trigger",
+    "move",
+    "sort",
+    "detail",
+    "effect",
+    "invalid",
+    "confirm",
+    "transient",
+    "default",
+    "persist",
+    "sortable",
+    "editmode"
+  ]);
+  function cssPath(el) {
+    if (!el || el.nodeType !== 1) return "?";
+    if (el.id) return `${el.tagName.toLowerCase()}#${el.id}`;
+    const parts = [];
+    let cur = el;
+    let depth2 = 0;
+    while (cur && cur.nodeType === 1 && depth2 < 4) {
+      let seg = cur.tagName.toLowerCase();
+      if (cur.hasAttribute("sap")) seg += "[sap]";
+      else if (cur.parentElement) {
+        const sibs = [...cur.parentElement.children].filter((c) => c.tagName === cur.tagName);
+        if (sibs.length > 1) seg += `:nth-of-type(${sibs.indexOf(cur) + 1})`;
+      }
+      parts.unshift(seg);
+      if (cur.hasAttribute("sap")) break;
+      cur = cur.parentElement;
+      depth2++;
+    }
+    return parts.join(" > ");
+  }
+  function teachForAttr(name) {
+    const n2 = name.toLowerCase();
+    if (/^x-text$|^x-html$/.test(n2)) return `use text="state.x" (Sap paints text only)`;
+    if (/^x-show$|^v-show$|^v-if$/.test(n2)) return `use show="expr" (toggles native hidden)`;
+    if (/^x-model$|^v-model$/.test(n2)) return `use bind="field"`;
+    if (/^@|^x-on:|^v-on:|^on:/.test(n2)) return `use native onclick + Sap(this) (no event directive)`;
+    if (/^:|^x-bind:class$|^v-bind:class$/.test(n2)) return `use class:NAME="expr" or attr:NAME="expr"`;
+    if (/^x-for$|^v-for$/.test(n2)) return `use items="name" on the container and item template on the row`;
+    if (/^x-data$/.test(n2)) return `declare state with state= / bind / items (no JS state object)`;
+    if (/^x-init$/.test(n2)) return `use a <script> or onclick + Sap(this)`;
+    if (/^bind:/.test(n2)) return `use bind="field"; one-way paint is attr:NAME="expr"`;
+    if (/^x-/.test(n2) || /^v-/.test(n2)) return `this is a foreign-dialect attribute; Sap has no x-/v- attributes`;
+    return null;
+  }
+  var Diagnostics = class {
+    constructor(appName) {
+      this.appName = appName;
+      this.errors = [];
+      this.warnings = [];
+      this.halted = false;
+      this.haltReason = null;
+    }
+    block(code, el, info = {}) {
+      const slug = (REGISTRY[code] || {}).slug || "error";
+      const rec = {
+        code,
+        slug,
+        el: cssPath(el),
+        attr: info.attr || null,
+        expr: info.expr || null,
+        key: info.key || null,
+        problem: info.problem || "",
+        didYouMean: info.didYouMean || null,
+        fix: info.fix || null,
+        phase: info.phase || "runtime"
+      };
+      const out = ["\n" + (code[0] === "W" ? "sap \u26A0 " : "sap \u2717 ") + code + " " + slug];
+      out.push(`  at ${rec.el}${rec.attr ? ` \u2014 ${rec.attr}="${rec.expr ?? ""}"` : ""}`);
+      if (rec.problem) out.push(`  problem: ${rec.problem}`);
+      if (rec.didYouMean) out.push(`  did you mean: ${rec.didYouMean}`);
+      if (rec.fix) out.push(`  fix: ${rec.fix}`);
+      console.error(out.join("\n"));
+      return rec;
+    }
+    error(code, el, info = {}) {
+      const rec = this.block(code, el, info);
+      this.errors.push(rec);
+      return rec;
+    }
+    warn(code, el, info = {}) {
+      const rec = this.block(code, el, info);
+      this.warnings.push(rec);
+      return rec;
+    }
+    report() {
+      return {
+        ok: this.errors.length === 0 && !this.halted,
+        app: this.appName,
+        halted: this.halted,
+        haltReason: this.haltReason,
+        errors: this.errors.slice(),
+        warnings: this.warnings.slice()
+      };
+    }
+  };
+  function setBeacon(el, code) {
+    if (el && el.getAttribute("sap-error") !== code) el.setAttribute("sap-error", code);
+  }
+  function clearBeacon(el) {
+    if (el && el.hasAttribute("sap-error")) el.removeAttribute("sap-error");
+  }
+  function didYouMean(name, candidates) {
+    let best = null;
+    let bestD = 3;
+    for (const c of candidates) {
+      const d = lev(name, c);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    return best;
+  }
+  function lev(a, b) {
+    const m = a.length;
+    const n2 = b.length;
+    const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...new Array(n2).fill(0)]);
+    for (let j = 0; j <= n2; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++)
+      for (let j = 1; j <= n2; j++)
+        dp[i][j] = Math.min(
+          dp[i - 1][j] + 1,
+          dp[i][j - 1] + 1,
+          dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+        );
+    return dp[m][n2];
+  }
+
+  // src/pass.js
+  var NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
+  function runPass(app, opts = {}) {
+    if (opts.breaker) {
+      app.diag.error("E26", app.root, {
+        problem: "recompute loop halted after 50 passes; recent triggers: " + (app._breakerRing || []).join(", ")
+      });
+      setBeacon(app.root, "loop");
+      return;
+    }
+    const root = app.root;
+    const rootObj = {};
+    const calcs = [];
+    const paints = [];
+    const effects = [];
+    const invalids = [];
+    app.diag.errors = [];
+    const rootCtx = { root: rootObj, state: rootObj, item: null, ownerEl: root, projection: false };
+    function readState(el, obj) {
+      const decls = parseStateDecl(el.getAttribute("state") || "");
+      el._sapStateDecls = decls;
+      for (const d of decls) {
+        if (d.type === "string" && NATIVE_BOOLEAN_SET.has(d.name) && typeof el[d.name] === "boolean") {
+          obj[d.name] = el.hasAttribute(d.name);
+          continue;
+        }
+        if (d.transient) {
+          obj[d.name] = readTransient(el, d);
+          continue;
+        }
+        let raw = el.getAttribute(d.name);
+        if (raw == null) raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
+        obj[d.name] = parseTyped(raw, d.type);
+      }
+    }
+    function readBindInto(el, ctx) {
+      if (!el.hasAttribute("bind")) return;
+      const field = el.getAttribute("bind");
+      const owner = ctx.item || ctx.state;
+      const c = carrierFor(el);
+      if (c.kind === "radio") {
+        if (!(field in owner)) owner[field] = "";
+        if (el.checked) owner[field] = el.value;
+      } else {
+        owner[field] = c.read();
+      }
+      if (el.hasAttribute("transient")) {
+        el.removeAttribute("value");
+        el.removeAttribute("checked");
+      }
+    }
+    function collectEl(el, ctx) {
+      for (const attr of el.attributes) {
+        const name = attr.name;
+        const val = attr.value;
+        if (name.startsWith("calc:")) {
+          calcs.push({ owner: ctx.item || ctx.state, ownerEl: ctx.ownerEl, name: name.slice(5), entry: compile(val), el, ctx });
+        } else if (name === "text" || name.startsWith("text:")) {
+          paints.push({ el, kind: "text", fmt: name.includes(":") ? name.slice(5) : null, entry: compile(val), ctx });
+        } else if (name === "show") {
+          paints.push({ el, kind: "show", entry: compile(val), ctx });
+        } else if (name.startsWith("attr:")) {
+          paints.push({ el, kind: "attr", arg: name.slice(5), entry: compile(val), ctx });
+        } else if (name.startsWith("class:")) {
+          paints.push({ el, kind: "class", arg: name.slice(6), entry: compile(val), ctx });
+        } else if (name.startsWith("css:")) {
+          paints.push({ el, kind: "css", arg: name.slice(4), entry: compile(val), ctx });
+        } else if (name === "effect") {
+          effects.push({ el, entry: compile(val, true), ctx });
+        } else if (name === "invalid") {
+          invalids.push({ el, entry: compile(val), ctx });
+        }
+      }
+      if (ctx.projection && el.hasAttribute("bind")) {
+        paints.push({ el, kind: "projection", field: el.getAttribute("bind"), ctx });
+      }
+    }
+    function defineRowMeta(rowObj, rowEl, i) {
+      ensureId(rowEl, "row");
+      Object.defineProperty(rowObj, "$key", { value: rowEl.id, enumerable: false });
+      Object.defineProperty(rowObj, "$index", { value: i, enumerable: false });
+      Object.defineProperty(rowObj, "$el", { value: rowEl, enumerable: false });
+    }
+    function enterScope(el, obj, ctx) {
+      readState(el, obj);
+      el._sapScope = obj;
+      if (!ctx.projection && el.hasAttribute("bind")) readBindInto(el, ctx);
+      collectEl(el, ctx);
+      if (el.hasAttribute("items")) handleItems(el, obj, ctx);
+      else walkScope(el, obj, ctx);
+    }
+    function walkScope(scopeEl, scopeObj, ctx) {
+      walkOwned(scopeEl, (el, boundary) => {
+        if (boundary) {
+          if (el.hasAttribute("scope")) handleScope(el, scopeObj, ctx);
+          else if (el.hasAttribute("items")) {
+            collectEl(el, ctx);
+            handleItems(el, scopeObj, ctx);
+          } else if (el.hasAttribute("detail")) handleDetail(el, scopeObj, ctx);
+        } else {
+          if (!ctx.projection) readBindInto(el, ctx);
+          collectEl(el, ctx);
+        }
+      });
+    }
+    function handleScope(el, parentObj, ctx) {
+      const name = el.getAttribute("scope");
+      const childObj = {};
+      parentObj[name] = childObj;
+      const cctx = { root: ctx.root, state: childObj, item: null, ownerEl: el, projection: ctx.projection };
+      enterScope(el, childObj, cctx);
+    }
+    function handleItems(listEl, parentObj, ctx) {
+      const name = listEl.getAttribute("items");
+      const arr = [];
+      parentObj[name] = arr;
+      listEl._sapList = arr;
+      rowsOf(listEl).forEach((rowEl, i) => {
+        const rowObj = {};
+        defineRowMeta(rowObj, rowEl, i);
+        const rctx = { root: ctx.root, state: ctx.state, item: rowObj, ownerEl: rowEl, projection: ctx.projection };
+        enterScope(rowEl, rowObj, rctx);
+        arr.push(rowObj);
+      });
+    }
+    function resolvePathValue(path, ctx) {
+      const segs = String(path).split(".");
+      let o = ctx.state;
+      for (const s of segs) o = o == null ? void 0 : o[s];
+      if (o === void 0) {
+        o = ctx.root;
+        for (const s of segs) o = o == null ? void 0 : o[s];
+      }
+      return o;
+    }
+    function handleDetail(el, parentObj, ctx) {
+      for (const d of parseStateDecl(el.getAttribute("state") || "")) {
+        if (!(d.name in parentObj)) {
+          let raw = el.getAttribute(d.name);
+          if (raw == null) raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
+          parentObj[d.name] = parseTyped(raw, d.type);
+        }
+      }
+      el._sapScope = parentObj;
+      const spec = el.getAttribute("detail") || "";
+      const m = /^([\w.]+)\s+by\s+(.+)$/.exec(spec);
+      if (!m) {
+        el.hidden = true;
+        el._sapDetailRow = null;
+        return;
+      }
+      const listPath = m[1];
+      const keyExpr = m[2].trim();
+      const arr = resolvePathValue(listPath, ctx);
+      let keyVal;
+      try {
+        keyVal = run(compile(keyExpr), { state: parentObj, item: ctx.item, el, root: ctx.root });
+      } catch {
+        keyVal = void 0;
+      }
+      const row = Array.isArray(arr) ? arr.find((r) => r && String(r.$key) === String(keyVal)) : null;
+      el._sapDetailRow = row ? row.$el : null;
+      if (!row) {
+        if (!el.hidden) el.hidden = true;
+        return;
+      }
+      if (el.hidden) el.hidden = false;
+      const dctx = { root: ctx.root, state: parentObj, item: row, ownerEl: row.$el, projection: true };
+      collectEl(el, dctx);
+      walkScope(el, row, dctx);
+    }
+    enterScope(root, rootObj, rootCtx);
+    const groups = /* @__PURE__ */ new Map();
+    for (const c of calcs) {
+      let g = groups.get(c.owner);
+      if (!g) {
+        g = { ownerEl: c.ownerEl, list: [] };
+        groups.set(c.owner, g);
+      }
+      g.list.push(c);
+    }
+    const ordered = [...groups.values()].sort((a, b) => depth(b.ownerEl) - depth(a.ownerEl));
+    for (const g of ordered) {
+      let sorted;
+      try {
+        sorted = topoSort(g.list);
+      } catch (err) {
+        app.diag.error("E07", g.list[0].el, { problem: err.message });
+        sorted = g.list;
+      }
+      for (const c of sorted) {
+        try {
+          c.owner[c.name] = run(c.entry, { state: c.ctx.state, item: c.ctx.item, el: c.el, root: c.ctx.root });
+          clearBeacon(c.el);
+        } catch (err) {
+          c.owner[c.name] = void 0;
+          app.diag.error("E24", c.el, { attr: "calc:" + c.name, expr: c.entry.src, problem: String(err.message) });
+          setBeacon(c.el, err.sapCode || "E24");
+        }
+      }
+    }
+    let writes = 0;
+    for (const p of paints) writes += paintOne(p, app);
+    for (const e of effects) runEffect(e, app);
+    for (const iv of invalids) runInvalid(iv);
+    app._state = rootObj;
+    app._stats = {
+      fields: Object.keys(rootObj).filter((k) => typeof rootObj[k] !== "function").length,
+      calcs: calcs.length,
+      paints: paints.length,
+      lists: groups.size,
+      writes
+    };
+    app._lastPass = { trigger: opts.trigger || "refresh", writes };
+    if (app._debug) {
+      console.log(`sap pass \xB7 trigger: ${app._lastPass.trigger} \xB7 writes ${writes}/${paints.length}`);
+    }
+  }
+  function paintAttrName(p) {
+    if (p.kind === "text") return p.fmt ? "text:" + p.fmt : "text";
+    if (p.kind === "attr") return "attr:" + p.arg;
+    if (p.kind === "class") return "class:" + p.arg;
+    if (p.kind === "css") return "css:" + p.arg;
+    return p.kind;
+  }
+  function applyProjection(el, v) {
+    if (el === el.ownerDocument.activeElement) return 0;
+    const c = carrierFor(el);
+    const cur = c.read();
+    const nv = v == null ? "" : v;
+    if (String(cur) !== String(nv)) {
+      c.write(nv, { silent: true });
+      return 1;
+    }
+    return 0;
+  }
+  function paintOne(p, app) {
+    if (p.kind === "projection") {
+      return applyProjection(p.el, p.ctx.item ? p.ctx.item[p.field] : "");
+    }
+    const ctx = { state: p.ctx.state, item: p.ctx.item, el: p.el, root: p.ctx.root };
+    try {
+      const value = run(p.entry, ctx);
+      const n2 = applyPaint(p, value);
+      clearBeacon(p.el);
+      return n2;
+    } catch (err) {
+      app.diag.error(err.sapCode === "E22" ? "E22" : "E24", p.el, {
+        attr: paintAttrName(p),
+        expr: p.entry && p.entry.src,
+        problem: String(err.message)
+      });
+      setBeacon(p.el, err.sapCode || "E24");
+      return 0;
+    }
+  }
+  function applyPaint(p, value) {
+    const el = p.el;
+    switch (p.kind) {
+      case "text": {
+        const s = p.fmt != null ? applyFormat(p.fmt, value) : value == null ? "" : String(value);
+        if (el.textContent !== s) {
+          el.textContent = s;
+          return 1;
+        }
+        return 0;
+      }
+      case "show": {
+        const hide = !value;
+        if (el.hidden !== hide) {
+          el.hidden = hide;
+          return 1;
+        }
+        return 0;
+      }
+      case "attr": {
+        const a = p.arg;
+        if (NATIVE_BOOLEAN_SET.has(a)) {
+          const has = el.hasAttribute(a);
+          if (value && !has) {
+            el.setAttribute(a, "");
+            return 1;
+          }
+          if (!value && has) {
+            el.removeAttribute(a);
+            return 1;
+          }
+          return 0;
+        }
+        const s = typeof value === "boolean" ? String(value) : value == null ? "" : String(value);
+        if (el.getAttribute(a) !== s) {
+          el.setAttribute(a, s);
+          return 1;
+        }
+        return 0;
+      }
+      case "class": {
+        const on = !!value;
+        if (el.classList.contains(p.arg) !== on) {
+          el.classList.toggle(p.arg, on);
+          return 1;
+        }
+        return 0;
+      }
+      case "css": {
+        const s = value == null ? "" : String(value);
+        if (el.style.getPropertyValue("--" + p.arg) !== s) {
+          el.style.setProperty("--" + p.arg, s);
+          return 1;
+        }
+        return 0;
+      }
+      default:
+        return 0;
+    }
+  }
+  function runEffect(e, app) {
+    try {
+      run(e.entry, { state: e.ctx.state, item: e.ctx.item, el: e.el, root: e.ctx.root });
+      clearBeacon(e.el);
+    } catch (err) {
+      app.diag.error("E24", e.el, { attr: "effect", expr: e.entry && e.entry.src, problem: String(err.message) });
+      setBeacon(e.el, "E24");
+    }
+  }
+  function runInvalid(iv) {
+    let msg = "";
+    try {
+      const v = run(iv.entry, { state: iv.ctx.state, item: iv.ctx.item, el: iv.el, root: iv.ctx.root });
+      msg = typeof v === "string" ? v : "";
+    } catch {
+      msg = "";
+    }
+    if (typeof iv.el.setCustomValidity === "function") iv.el.setCustomValidity(msg);
+  }
+  function depth(el) {
+    let d = 0;
+    let c = el;
+    while (c) {
+      if (c.hasAttribute && c.hasAttribute("sap")) break;
+      c = c.parentElement;
+      d++;
+    }
+    return d;
+  }
+
+  // src/lint.js
+  var NATIVE_BOOLEAN_SET2 = new Set(NATIVE_BOOLEANS);
+  var COLON_PREFIXES = /* @__PURE__ */ new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "editmode"]);
+  function isControl(el) {
+    return el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA";
+  }
+  function isBound(el) {
+    return el.hasAttribute("bind");
+  }
+  function walkAll(root, visit) {
+    visit(root);
+    for (const child of root.children) descend(child);
+    function descend(el) {
+      if (el.nodeType !== 1) return;
+      if (el.hasAttribute("sap-ignore") || el.hasAttribute("template")) {
+        if (el.hasAttribute("sap-ignore")) return;
+      }
+      visit(el);
+      for (const c of el.children) descend(c);
+    }
+  }
+  function lintApp(root, diag) {
+    let halted = false;
+    const halt = (code, el, info) => {
+      diag.error(code, el, info);
+      halted = true;
+    };
+    const tw = root.ownerDocument.createTreeWalker(
+      root,
+      4
+      /* NodeFilter.SHOW_TEXT */
+    );
+    let node;
+    while (node = tw.nextNode()) {
+      if (/\{\{.*\}\}/.test(node.nodeValue || "")) {
+        halt("E02", node.parentElement || root, {
+          problem: "moustaches in text content are not a Sap feature",
+          fix: 'move the expression onto the element: text="state.x"'
+        });
+        break;
+      }
+    }
+    walkAll(root, (el) => {
+      const inDetail = el.closest && el.closest("[detail]");
+      for (const a of [...el.attributes]) {
+        const name = a.name;
+        const teach = teachForAttr(name);
+        if (teach) {
+          halt("E01", el, {
+            attr: name,
+            expr: a.value,
+            problem: `"${name}" is a foreign-dialect attribute; Sap has no ${name.split(/[:=]/)[0]} directive`,
+            fix: teach + " \u2014 or wrap the subtree in sap-ignore if intentional"
+          });
+          continue;
+        }
+        if (name.includes(":")) {
+          const prefix = name.slice(0, name.indexOf(":"));
+          if (!COLON_PREFIXES.has(prefix)) {
+            const dym = didYouMean(prefix, [...COLON_PREFIXES]);
+            diag.warn("W03", el, {
+              attr: name,
+              problem: `unknown "${prefix}:" attribute`,
+              didYouMean: dym ? `${dym}:` : null
+            });
+          }
+        }
+        if (name === "attr:hidden") {
+          diag.warn("W03", el, { attr: name, problem: "attr:hidden paints the wrong attribute", fix: 'use show="expr"' });
+        }
+        if ((name === "attr:value" || name === "attr:checked" || name === "attr:selected") && isBound(el)) {
+          halt("E30", el, { attr: name, problem: "attr: on a bound control collides with persist ownership", fix: "remove it; bind owns this attribute" });
+        }
+        if (name === "effect" && isBound(el) && /\b(value|checked)\s*=[^=]/.test(a.value)) {
+          halt("E30", el, { attr: name, expr: a.value, problem: "effect writes value/checked on a bound control (writes a stale value with no synthetic event)", fix: "write through onclick + Sap(this) instead" });
+        }
+        if ((name === "text" || name.startsWith("text:") || name === "show") && isControl(el)) {
+          if (name === "show") {
+          } else {
+            halt("E18", el, { attr: name, problem: "paint belongs on output elements, not form controls", fix: "move the paint to an <output> or <span>" });
+          }
+        }
+      }
+      if (el.hasAttribute("state")) {
+        const decls = parseStateDecl(el.getAttribute("state"));
+        const seen = /* @__PURE__ */ new Set();
+        for (const d of decls) {
+          if (d.name.includes("-")) {
+            halt("E08", el, { attr: "state", problem: `field "${d.name}" is not a valid identifier (the hyphen parses as subtraction)`, fix: `rename to ${d.name.replace(/-/g, "")}` });
+          }
+          if (seen.has(d.name)) halt("E04", el, { attr: "state", problem: `field "${d.name}" is declared twice in one scope` });
+          seen.add(d.name);
+          if (RESERVED.has(d.name)) halt("E05", el, { attr: "state", problem: `"${d.name}" is a reserved Sap word` });
+          if (HTML_GLOBALS.has(d.name)) halt("E06", el, { attr: "state", problem: `"${d.name}" is a global HTML attribute name; pick another field name` });
+          if (d.name === "open" && el.tagName === "DIALOG") {
+            halt("E33", el, { attr: "state", problem: "dialog open is transient", fix: "use showModal() \u2014 declare state= only on <details> or popovers" });
+          }
+        }
+      }
+      if (isBound(el)) {
+        if (el.hasAttribute("-")) {
+        }
+        if (el.tagName === "INPUT") {
+          const t = (el.getAttribute("type") || "text").toLowerCase();
+          if (t === "file") halt("E32", el, { attr: "bind", problem: "files never serialize into an HTML file", fix: "use no-save + effect instead of bind" });
+          if (t === "password" && !el.hasAttribute("transient")) {
+            halt("E31", el, { attr: "bind", problem: "a password must never serialize into a world-readable file", fix: "add transient to the password input" });
+          }
+        } else if (el.tagName !== "SELECT" && el.tagName !== "TEXTAREA") {
+          const ce = el.getAttribute("contenteditable");
+          const editable = ce != null && ce !== "false";
+          if (!editable && el.children.length > 0) {
+            halt("E20", el, { attr: "bind", problem: "bind on a container element is not a control; a write would overwrite its children", fix: "bind a control (input/select/textarea), a contenteditable, or an empty text leaf" });
+          }
+        }
+      }
+      if (el.hasAttribute("item") && !el.hasAttribute("template")) {
+        const list = el.parentElement;
+        if (!list || !list.hasAttribute("items")) {
+          halt("E10", el, { problem: "an [item] must be a direct child of an [items] list", fix: 'wrap it in a container with items="name"' });
+        }
+      }
+      if (el.hasAttribute("items") && inDetail) {
+        halt("E17", el, { attr: "items", problem: "nested items inside a detail panel is a v1 mount error (nested collections ship in v1.1)" });
+      }
+      if (el.hasAttribute("items")) {
+        const targeted = root.querySelector(`[trigger-add="${el.getAttribute("items")}"]`);
+        if (!templateOf(el) && rowsOf(el).length === 0 && targeted) {
+          halt("E17", el, { attr: "items", problem: `trigger-add targets items="${el.getAttribute("items")}" but it has no [item template] to clone` });
+        }
+      }
+    });
+    if (halted) {
+      diag.halted = true;
+      diag.haltReason = diag.errors[0] ? diag.errors[0].code : "halt";
+      setBeacon(root, diag.haltReason);
+    }
+    return !halted;
+  }
+
+  // src/mount.js
+  var STYLE_ID = "sap-styles";
+  var STYLE_TEXT = "[item][template]{display:none!important}[hidden]{display:none!important}[sap-error]{outline:2px solid #e5484d;outline-offset:1px}";
+  var styledDocs = /* @__PURE__ */ new WeakSet();
+  function injectStyles(doc) {
+    if (styledDocs.has(doc)) return;
+    const view = doc.defaultView;
+    const SheetCtor = view && view.CSSStyleSheet;
+    if (SheetCtor && "adoptedStyleSheets" in doc) {
+      try {
+        const sheet = new SheetCtor();
+        sheet.replaceSync(STYLE_TEXT);
+        doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, sheet];
+        styledDocs.add(doc);
+        return;
+      } catch {
+      }
+    }
+    if (!doc.getElementById(STYLE_ID)) {
+      const style = doc.createElement("style");
+      style.id = STYLE_ID;
+      style.textContent = STYLE_TEXT;
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+    styledDocs.add(doc);
+  }
+  var appSeq = 0;
+  function now() {
+    return typeof performance !== "undefined" && performance.now ? performance.now() : 0;
+  }
+  function mountApp(root) {
+    const name = root.id || root.getAttribute("sap") || `app-${appSeq++}`;
+    const diag = new Diagnostics(name);
+    const appRec = {
+      root,
+      name,
+      diag,
+      _state: null,
+      _stats: null,
+      _lastPass: null,
+      _passes: 0,
+      _broken: false,
+      _mountMs: 0,
+      _mountWrites: 0
+    };
+    const ok = lintApp(root, diag);
+    if (!ok) {
+      appRec.halted = true;
+      return appRec;
+    }
+    injectStyles(root.ownerDocument);
+    const t0 = now();
+    runPass(appRec, { trigger: "mount" });
+    appRec._mountMs = now() - t0;
+    appRec._mountWrites = appRec._stats ? appRec._stats.writes : 0;
+    if (appRec._mountWrites > 0) {
+      diag.warn("W30", root, {
+        problem: `${appRec._mountWrites} paint(s) ran at mount; the saved file was out of sync with its declared state`,
+        fix: "re-save once so the file mounts clean (a settled file writes nothing)"
+      });
+    }
+    return appRec;
+  }
+
+  // src/scope.js
+  function ownedScope(scopeEl, name) {
+    let found = null;
+    walkOwned(scopeEl, (el) => {
+      if (!found && el.getAttribute("scope") === name) found = el;
+    });
+    return found;
+  }
+  function declarerOf(fromEl, appRoot, field) {
+    let cur = nearestScopeEl(fromEl) || appRoot;
+    while (cur) {
+      for (const d of parseStateDecl(cur.getAttribute("state") || "")) {
+        if (d.name === field) return { el: cur, decl: d };
+      }
+      if (cur.hasAttribute("sap")) break;
+      cur = nearestScopeEl(cur.parentElement);
+    }
+    return null;
+  }
+  function inferType(v) {
+    if (typeof v === "number") return "num";
+    if (typeof v === "boolean") return "bool";
+    return "string";
+  }
+  function createAccessor(runtime2) {
+    function contextElFor(el) {
+      const appRec = runtime2.appFor(el);
+      if (!appRec) return null;
+      const detailEl = isInsideDetail(el);
+      if (detailEl) {
+        if (detailEl._sapDetailRow) return { ctxEl: detailEl._sapDetailRow, appRec, isRow: true };
+        const sEl = nearestScopeEl(detailEl.parentElement) || appRec.root;
+        return { ctxEl: sEl, appRec, isRow: false };
+      }
+      const itemEl = nearestItemEl(el);
+      if (itemEl && itemEl.hasAttribute("item")) return { ctxEl: itemEl, appRec, isRow: true };
+      const scopeEl = nearestScopeEl(el) || appRec.root;
+      return { ctxEl: scopeEl, appRec, isRow: scopeEl.hasAttribute("item") };
+    }
+    function Sap2(elOrSel) {
+      const el = typeof elOrSel === "string" ? document.querySelector(elOrSel) : elOrSel;
+      if (!el || el.nodeType !== 1) return null;
+      const res = contextElFor(el);
+      if (!res) return null;
+      return makeProxy(res.ctxEl, res.appRec, res.isRow);
+    }
+    function readField(ctxEl, appRec, field) {
+      const control = ownedBind(ctxEl, field);
+      if (control) return carrierFor(control).read();
+      const listEl = ownedItems(ctxEl, field);
+      if (listEl) return rowsOf(listEl).map((r) => makeProxy(r, appRec, true));
+      const sub = ownedScope(ctxEl, field);
+      if (sub) return makeProxy(sub, appRec, false);
+      const decl = declarerOf(ctxEl, appRec.root, field);
+      if (decl) {
+        if (decl.decl.transient) return readTransient(decl.el, decl.decl);
+        return parseTyped(decl.el.getAttribute(field), decl.decl.type);
+      }
+      const snap = ctxEl._sapScope;
+      return snap ? snap[field] : void 0;
+    }
+    function setStateAttr(el, field, value, decl, appRec) {
+      if (decl.transient) writeTransient(el, decl, value);
+      else el.setAttribute(field, serializeTyped(value, decl.type));
+      runtime2.schedule(appRec, "set:" + field);
+    }
+    function knownFieldsFor(ctxEl, appRoot) {
+      const names = /* @__PURE__ */ new Set();
+      let cur = nearestScopeEl(ctxEl) || appRoot;
+      while (cur) {
+        for (const d of parseStateDecl(cur.getAttribute("state") || "")) names.add(d.name);
+        if (cur.hasAttribute("sap")) break;
+        cur = nearestScopeEl(cur.parentElement);
+      }
+      walkOwned(ctxEl, (el) => {
+        const b = el.getAttribute("bind");
+        if (b) names.add(b);
+      });
+      return names;
+    }
+    function writeField(ctxEl, appRec, field, value) {
+      const control = ownedBind(ctxEl, field);
+      if (control) {
+        carrierFor(control).write(value);
+        return;
+      }
+      let probe = ctxEl;
+      while (probe) {
+        for (const attr of probe.attributes) {
+          if (attr.name === "calc:" + field) {
+            appRec.diag.error("E16", probe, { attr: "calc:" + field, problem: `"${field}" is a computed field; computed fields are read-only` });
+            return;
+          }
+        }
+        if (probe.hasAttribute("sap")) break;
+        probe = probe.parentElement;
+      }
+      const decl = declarerOf(ctxEl, appRec.root, field);
+      if (decl) {
+        setStateAttr(decl.el, field, value, decl.decl, appRec);
+        return;
+      }
+      const known = knownFieldsFor(ctxEl, appRec.root);
+      known.delete(field);
+      const guess = field.length >= 4 ? didYouMean(field, [...known]) : null;
+      if (guess) {
+        appRec.diag.error("E12", ctxEl, { key: field, problem: `unknown state key "${field}"`, didYouMean: guess });
+        return;
+      }
+      if (RESERVED.has(field) || HTML_GLOBALS.has(field)) {
+        appRec.diag.error("E15", ctxEl, {
+          key: field,
+          problem: `cannot write undeclared field "${field}" \u2014 it is a reserved/global name and cannot become state`,
+          fix: "pick a different field name, or declare it explicitly in a state= attribute"
+        });
+        return;
+      }
+      const root = appRec.root;
+      const type = inferType(value);
+      const decls = root.getAttribute("state") || "";
+      const token = type === "string" ? field : `${field}:${type}`;
+      root.setAttribute("state", decls ? `${decls} ${token}` : token);
+      setStateAttr(root, field, value, { name: field, type, transient: false }, appRec);
+    }
+    function freshIds(rootClone) {
+      const stamp = (el) => {
+        if (el.id) {
+          el.id = "";
+          ensureId(el, "row");
+        }
+        if (el.hasAttribute("sap-error")) el.removeAttribute("sap-error");
+      };
+      rootClone.id = "";
+      ensureId(rootClone, "row");
+      rootClone.querySelectorAll("[id]").forEach(stamp);
+    }
+    function doAdd(ctxEl, appRec, name) {
+      const listEl = resolveListEl(appRec.root, ctxEl, name);
+      if (!listEl) {
+        appRec.diag.error("E17", ctxEl, { problem: `cannot resolve a list named "${name}" from here` });
+        return null;
+      }
+      const tmpl = templateOf(listEl);
+      if (!tmpl) {
+        appRec.diag.error("E17", listEl, { problem: `items="${name}" has no [item template] to clone` });
+        return null;
+      }
+      const clone = tmpl.cloneNode(true);
+      clone.removeAttribute("template");
+      freshIds(clone);
+      listEl.appendChild(clone);
+      runtime2.schedule(appRec, "trigger-add:" + name);
+      return makeProxy(clone, appRec, true);
+    }
+    function doReset(ctxEl, appRec) {
+      walkOwned(ctxEl, (el) => {
+        if (el.hasAttribute("bind")) {
+          const c = carrierFor(el);
+          const def = el.getAttribute("default");
+          if (c.kind === "checkbox" || c.kind === "radio") {
+            c.write(def != null ? def === "" || def === "true" || el.value === def : el.hasAttribute("checked"));
+          } else {
+            c.write(def != null ? def : el.getAttribute("value") || "");
+          }
+        }
+      });
+      for (const d of parseStateDecl(ctxEl.getAttribute("state") || "")) {
+        const dflt = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
+        if (d.transient) writeTransient(ctxEl, d, parseTyped(dflt, d.type));
+        else ctxEl.setAttribute(d.name, dflt);
+      }
+      runtime2.schedule(appRec, "trigger-reset");
+    }
+    function doRemove(ctxEl, appRec) {
+      if (!ctxEl.isConnected) throw new Error("stale row handle: $remove() on a removed row");
+      ctxEl.remove();
+      runtime2.schedule(appRec, "trigger-remove");
+    }
+    function doMove(ctxEl, appRec, target) {
+      if (!ctxEl.isConnected) throw new Error("stale row handle: $move() on a removed row");
+      let listEl = null;
+      if (target && target.nodeType === 1) listEl = target;
+      else if (typeof target === "string") listEl = resolveListEl(appRec.root, ctxEl, target);
+      if (!listEl) {
+        appRec.diag.error("E17", ctxEl, { problem: `$move() cannot resolve target "${target}"` });
+        return;
+      }
+      runtime2.moveInto(listEl, ctxEl);
+      runtime2.schedule(appRec, "trigger-move");
+    }
+    function rowIndex(ctxEl) {
+      const list = ctxEl.parentElement;
+      if (!list) return -1;
+      return rowsOf(list).indexOf(ctxEl);
+    }
+    function makeProxy(ctxEl, appRec, isRow) {
+      const verbs = {
+        get $el() {
+          return ctxEl;
+        },
+        get $key() {
+          return ensureId(ctxEl, isRow ? "row" : "scope");
+        },
+        get $index() {
+          return rowIndex(ctxEl);
+        },
+        $add(name) {
+          return doAdd(ctxEl, appRec, name);
+        },
+        $reset() {
+          doReset(ctxEl, appRec);
+          return proxy;
+        },
+        $remove() {
+          doRemove(ctxEl, appRec);
+        },
+        $move(target) {
+          doMove(ctxEl, appRec, target);
+        },
+        get $appRec() {
+          return appRec;
+        }
+      };
+      const proxy = new Proxy(verbs, {
+        get(t, prop) {
+          if (typeof prop === "symbol") return t[prop];
+          if (prop[0] === "$") return t[prop];
+          return readField(ctxEl, appRec, prop);
+        },
+        set(t, prop, value) {
+          if (typeof prop === "string" && prop[0] === "$") {
+            t[prop] = value;
+            return true;
+          }
+          writeField(ctxEl, appRec, prop, value);
+          return true;
+        },
+        has(t, prop) {
+          if (typeof prop === "string" && prop[0] === "$") return prop in t;
+          return readField(ctxEl, appRec, prop) !== void 0;
+        }
+      });
+      return proxy;
+    }
+    return { Sap: Sap2, contextElFor, readField, writeField, makeProxy };
+  }
+
+  // src/actions.js
+  var TRIGGER_WORDS = ["trigger-add", "trigger-remove", "trigger-reset"];
+  function hasAction(el) {
+    if (el.nodeType !== 1) return false;
+    for (const a of el.attributes) {
+      const n2 = a.name;
+      if (n2.startsWith("set:") || n2.startsWith("move:") || n2.startsWith("sort:")) return true;
+      if (TRIGGER_WORDS.includes(n2)) return true;
+    }
+    return false;
+  }
+  function findActionEl(target, root) {
+    let el = target;
+    const stop = root.parentElement;
+    while (el && el !== stop) {
+      if (el.nodeType === 1) {
+        if (hasAction(el) && !(el.tagName === "FORM" && el.hasAttribute("trigger-add"))) return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+  function createActions(runtime2, accessor2) {
+    const { Sap: Sap2 } = accessor2;
+    function actionCtx(el, appRec) {
+      let item = null;
+      const detailEl = isInsideDetail(el);
+      if (detailEl && detailEl._sapDetailRow) item = detailEl._sapDetailRow._sapScope || null;
+      else {
+        const itemEl = nearestItemEl(el);
+        if (itemEl && itemEl.hasAttribute("item")) item = itemEl._sapScope || null;
+      }
+      const scopeEl = nearestScopeEl(el) || appRec.root;
+      const state = scopeEl._sapScope || appRec._state || {};
+      return { state, item, el, root: appRec._state || {} };
+    }
+    function confirmGate(el, appRec) {
+      if (!el.hasAttribute("confirm")) return true;
+      const raw = el.getAttribute("confirm");
+      let msg = raw;
+      const entry = compile(raw);
+      if (!entry.error) {
+        try {
+          const v = run(entry, actionCtx(el, appRec));
+          if (typeof v === "string" || typeof v === "number") msg = String(v);
+        } catch {
+        }
+      }
+      return window.confirm(msg);
+    }
+    function runSet(el, appRec) {
+      for (const a of el.attributes) {
+        if (!a.name.startsWith("set:")) continue;
+        const field = a.name.slice(4);
+        const entry = compile(a.value);
+        if (entry.error) {
+          appRec.diag.error("E08", el, { attr: a.name, expr: a.value, problem: String(entry.error.message) });
+          continue;
+        }
+        let value;
+        try {
+          value = run(entry, actionCtx(el, appRec));
+        } catch (err) {
+          appRec.diag.error("E24", el, { attr: a.name, expr: a.value, problem: String(err.message) });
+          continue;
+        }
+        const proxy = Sap2(el);
+        if (proxy) proxy[field] = value;
+      }
+    }
+    function moveStep(el, dir) {
+      const row = el.closest("[item]");
+      if (!row) return;
+      const siblings = rowsOf(row.parentElement);
+      const i = siblings.indexOf(row);
+      if (dir === "up" && i > 0) runtime2.placeBefore(row, siblings[i - 1]);
+      else if (dir === "down" && i < siblings.length - 1) runtime2.placeBefore(siblings[i + 1], row);
+    }
+    function resolveSortList(el, value, appRec) {
+      if (value) return resolveListEl(appRec.root, el, value);
+      let cur = el;
+      while (cur) {
+        if (cur.hasAttribute && cur.hasAttribute("items")) return cur;
+        cur = cur.parentElement;
+      }
+      const scopeEl = nearestScopeEl(el) || appRec.root;
+      const lists = [];
+      walkOwned(scopeEl, (e) => {
+        if (e.hasAttribute("items")) lists.push(e);
+      });
+      return lists[0] || null;
+    }
+    function cmp(a, b) {
+      const ea = a == null || a === "";
+      const eb = b == null || b === "";
+      if (ea && eb) return 0;
+      if (ea) return 1;
+      if (eb) return -1;
+      const na = Number(a), nb = Number(b);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
+    }
+    function runSort(el, field, value, appRec) {
+      const listEl = resolveSortList(el, value, appRec);
+      if (!listEl) {
+        appRec.diag.error("E17", el, { attr: "sort:" + field, problem: `no items list resolvable for sort:${field}` });
+        return;
+      }
+      const rows = rowsOf(listEl);
+      const valOf = (r) => r._sapScope ? r._sapScope[field] : void 0;
+      const asc = [...rows].sort((a, b) => cmp(valOf(a), valOf(b)));
+      const isAsc = asc.every((r, i) => r === rows[i]);
+      const ordered = isAsc ? [...asc].reverse() : asc;
+      for (const r of ordered) runtime2.moveInto(listEl, r);
+      runtime2.schedule(appRec, "sort:" + field);
+    }
+    function focusFirstEditable(rowEl) {
+      if (!rowEl || rowEl.hidden) return;
+      const f = rowEl.querySelector("[bind]:not([type=hidden]), [contenteditable]");
+      if (f && typeof f.focus === "function") f.focus();
+    }
+    function runAction(actionEl, appRec) {
+      if (!confirmGate(actionEl, appRec)) return;
+      const proxy = Sap2(actionEl);
+      for (const a of [...actionEl.attributes]) {
+        const n2 = a.name;
+        if (n2 === "trigger-remove") proxy && proxy.$remove();
+        else if (n2 === "trigger-reset") proxy && proxy.$reset();
+        else if (n2 === "trigger-add") {
+          const row = proxy && proxy.$add(a.value);
+          if (row) focusFirstEditable(row.$el);
+        } else if (n2 === "move:up") {
+          moveStep(actionEl, "up");
+          runtime2.schedule(appRec, "move:up");
+        } else if (n2 === "move:down") {
+          moveStep(actionEl, "down");
+          runtime2.schedule(appRec, "move:down");
+        } else if (n2.startsWith("move:to")) proxy && proxy.$move(a.value);
+        else if (n2.startsWith("sort:")) runSort(actionEl, n2.slice(5), a.value, appRec);
+      }
+      if ([...actionEl.attributes].some((a) => a.name.startsWith("set:"))) runSet(actionEl, appRec);
+    }
+    function onClick(e) {
+      const t = e.target;
+      if (!t || t.nodeType !== 1) return;
+      const appRec = runtime2.appFor(t);
+      if (!appRec) return;
+      const actionEl = findActionEl(t, appRec.root);
+      if (!actionEl) return;
+      runAction(actionEl, appRec);
+    }
+    function clearControl(c) {
+      const cr = carrierFor(c);
+      const def = c.getAttribute("default");
+      if (cr.kind === "checkbox") cr.write(def === "" || def === "true");
+      else cr.write(def != null ? def : "");
+    }
+    function addFromForm(formEl, appRec, listName) {
+      const proxy = Sap2(formEl);
+      if (!proxy) return;
+      const newRow = proxy.$add(listName);
+      if (!newRow) return;
+      const composers = [];
+      walkOwned(formEl, (el) => {
+        if (el.hasAttribute("bind")) composers.push(el);
+      });
+      for (const c of composers) {
+        const target = ownedBind(newRow.$el, c.getAttribute("bind"));
+        if (target) carrierFor(target).write(carrierFor(c).read());
+      }
+      composers.forEach(clearControl);
+      if (composers.length) {
+        if (typeof composers[0].focus === "function") composers[0].focus();
+      } else {
+        focusFirstEditable(newRow.$el);
+      }
+    }
+    function onSubmit(e) {
+      const form = e.target;
+      if (!form || !form.hasAttribute || !form.hasAttribute("trigger-add")) return;
+      const appRec = runtime2.appFor(form);
+      if (!appRec) return;
+      e.preventDefault();
+      if (!confirmGate(form, appRec)) return;
+      addFromForm(form, appRec, form.getAttribute("trigger-add"));
+    }
+    function onReset(e) {
+      const form = e.target;
+      const appRec = runtime2.appFor(form);
+      if (!appRec) return;
+      setTimeout(() => {
+        form.querySelectorAll("[bind]").forEach((c) => {
+          c.dispatchEvent(new Event("input", { bubbles: true }));
+          c.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        runtime2.schedule(appRec, "reset");
+      }, 0);
+    }
+    function onToggle(e) {
+      const appRec = runtime2.appFor(e.target);
+      if (appRec) runtime2.schedule(appRec, "toggle");
+    }
+    function onInput(e) {
+      const t = e.target;
+      if (!t || t.nodeType !== 1) return;
+      const appRec = runtime2.appFor(t);
+      if (!appRec) return;
+      const detailEl = isInsideDetail(t);
+      if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind")) {
+        const src = ownedBind(detailEl._sapDetailRow, t.getAttribute("bind"));
+        if (src && src !== t) {
+          carrierFor(src).write(carrierFor(t).read());
+          return;
+        }
+      }
+      runtime2.schedule(appRec, e.type + " " + (t.id || t.tagName.toLowerCase()));
+    }
+    function install(doc = document) {
+      doc.addEventListener("click", onClick);
+      doc.addEventListener("submit", onSubmit);
+      doc.addEventListener("reset", onReset);
+      doc.addEventListener("toggle", onToggle, true);
+      doc.addEventListener("input", onInput);
+      doc.addEventListener("change", onInput);
+    }
+    return { install };
+  }
+
+  // src/debug.js
+  var ACTION_RE = /^(set:|move:|sort:|trigger-add$|trigger-remove$|trigger-reset$)/;
+  function rootLabel(root) {
+    return `${root.tagName.toLowerCase()}[sap]`;
+  }
+  function countActions(root) {
+    let n2 = 0;
+    for (const el of root.querySelectorAll("*")) {
+      for (const a of el.attributes) if (ACTION_RE.test(a.name)) {
+        n2++;
+        break;
+      }
+    }
+    for (const a of root.attributes) if (ACTION_RE.test(a.name)) {
+      n2++;
+      break;
+    }
+    return n2;
+  }
+  function exprSources(root) {
+    const out = [];
+    const scan = (el) => {
+      for (const a of el.attributes) {
+        const n2 = a.name;
+        if (n2.startsWith("calc:") || n2 === "text" || n2.startsWith("text:") || n2 === "show" || n2.startsWith("attr:") || n2.startsWith("class:") || n2.startsWith("css:") || n2 === "effect" || n2 === "invalid" || n2.startsWith("set:") || n2 === "detail") out.push({ el, attr: n2, src: a.value });
+      }
+    };
+    scan(root);
+    for (const el of root.querySelectorAll("*")) scan(el);
+    return out;
+  }
+  function createDebug(runtime2) {
+    function appView(app) {
+      const s = app._stats || {};
+      const root = app.root;
+      return {
+        root: rootLabel(root),
+        fields: s.fields || 0,
+        calcs: s.calcs || 0,
+        paints: s.paints || 0,
+        actions: countActions(root),
+        lists: (root.hasAttribute("items") ? 1 : 0) + root.querySelectorAll("[items]").length,
+        rows: root.querySelectorAll("[item]:not([template])").length,
+        warnings: app.diag.warnings.length,
+        errors: app.diag.errors.length,
+        mountWrites: app._mountWrites || 0,
+        ms: Math.round((app._mountMs || 0) * 10) / 10,
+        passes: app._passes || 0,
+        lastPass: app._lastPass || null,
+        ok: app.diag.errors.length === 0 && !app.halted
+      };
+    }
+    function status() {
+      const apps = runtime2.apps().map(appView);
+      return { ok: apps.every((a) => a.ok), apps };
+    }
+    function greenLine(app) {
+      const v = appView(app);
+      if (!v.ok) {
+        return `sap \u2717 ${v.root} \xB7 errors ${v.errors} \xB7 warnings ${v.warnings} \xB7 ${v.ms}ms`;
+      }
+      return `sap \u2713 ${v.root} \xB7 fields ${v.fields} \xB7 calcs ${v.calcs} \xB7 paints ${v.paints} \xB7 actions ${v.actions} \xB7 lists ${v.lists} \xB7 rows ${v.rows} \xB7 warnings ${v.warnings} \xB7 mount writes ${v.mountWrites} \xB7 ${v.ms}ms`;
+    }
+    function printGreenLines() {
+      for (const app of runtime2.apps()) {
+        const line = greenLine(app);
+        if (app.diag.errors.length || app.halted) console.error(line);
+        else console.log(line);
+      }
+    }
+    function report() {
+      const errors = [];
+      const warnings = [];
+      for (const app of runtime2.apps()) {
+        errors.push(...app.diag.errors);
+        warnings.push(...app.diag.warnings);
+      }
+      return { ok: errors.length === 0, errors, warnings, counts: { errors: errors.length, warnings: warnings.length } };
+    }
+    function resolveEl(elOrSel) {
+      if (!elOrSel) return null;
+      if (typeof elOrSel === "string") return document.querySelector(elOrSel);
+      return elOrSel.nodeType === 1 ? elOrSel : null;
+    }
+    function why(elOrSel, field) {
+      const el = resolveEl(elOrSel);
+      if (!el) {
+        console.warn("sap why: element not found");
+        return null;
+      }
+      const lines = [`sap why <${el.tagName.toLowerCase()}> \u2014 ${cssPath(el)}`];
+      const sapAttrs = [...el.attributes].filter((a) => /^(bind|text|show|effect|invalid|detail|calc:|text:|attr:|class:|css:|set:|state|items|scope)/.test(a.name));
+      for (const a of sapAttrs) lines.push(`  ${a.name}="${a.value}"`);
+      let scopeEl = el;
+      while (scopeEl && !scopeEl._sapScope) scopeEl = scopeEl.parentElement;
+      if (scopeEl && scopeEl._sapScope) {
+        const snap = scopeEl._sapScope;
+        const keys = field ? [field] : Object.keys(snap);
+        lines.push("  reads:");
+        for (const k of keys) {
+          const v = snap[k];
+          if (typeof v === "function") continue;
+          lines.push(`    ${k} = ${JSON.stringify(Array.isArray(v) ? `[${v.length} rows]` : v)}`);
+        }
+      }
+      lines.push("  serialization: textContent and value/checked attributes save with the file; reads live from properties");
+      console.log(lines.join("\n"));
+      return null;
+    }
+    function debug(flag) {
+      const on = flag === void 0 ? true : !!flag;
+      for (const app of runtime2.apps()) app._debug = on;
+      console.log(`sap debug ${on ? "on" : "off"} \u2014 per-pass headers will ${on ? "" : "no longer "}log`);
+      return on;
+    }
+    function doctor() {
+      const findings = [];
+      let checks = 0;
+      for (const app of runtime2.apps()) {
+        const root = app.root;
+        const label = rootLabel(root);
+        checks++;
+        const d2 = new Diagnostics(app.name);
+        lintApp(root, d2);
+        for (const e2 of d2.errors) findings.push({ code: e2.code, severity: "error", message: `${label}: ${e2.code} ${e2.slug} at ${e2.el}` });
+        for (const w2 of d2.warnings) findings.push({ code: w2.code, severity: "warn", message: `${label}: ${w2.code} ${w2.slug} at ${w2.el}` });
+        checks++;
+        runPass(app, { trigger: "doctor-dryrun" });
+        const w = app._stats ? app._stats.writes : 0;
+        if (w > 0) findings.push({ code: "W30", severity: "warn", message: `${label}: dry recompute wrote ${w} cells on a quiet page; an element is stale or non-idempotent` });
+        checks++;
+        const srcs = exprSources(root).map((s) => s.src).join(" \0 ");
+        const decls = [];
+        for (const el of [root, ...root.querySelectorAll("[state]")]) {
+          for (const d of parseStateDecl(el.getAttribute("state") || "")) decls.push(d.name);
+        }
+        for (const name of decls) {
+          const re = new RegExp(`(state|item)\\.${name}\\b`);
+          if (!re.test(srcs)) findings.push({ code: "I33", severity: "info", message: `${label}: field "${name}" is declared but read nowhere (dead state)` });
+        }
+        checks++;
+        const ids = /* @__PURE__ */ new Map();
+        for (const el of root.querySelectorAll("[id]")) ids.set(el.id, (ids.get(el.id) || 0) + 1);
+        for (const [id, n2] of ids) if (n2 > 1) findings.push({ code: "W32", severity: "warn", message: `${label}: duplicate id "${id}" (${n2} elements) \u2014 clone/edit collision` });
+        checks++;
+        for (const s of exprSources(root)) {
+          if (s.src.length > 120) findings.push({ code: "I33", severity: "info", message: `${label}: ${s.attr} expression is ${s.src.length} chars; consider a calc: field` });
+        }
+        checks++;
+        for (const el of root.querySelectorAll("[text], [text\\:num]")) {
+          const t = el.textContent || "";
+          if (/\.\d{5,}/.test(t)) findings.push({ code: "I33", severity: "info", message: `${label}: ${cssPath(el)} paints >4 decimals; consider text:FMT` });
+        }
+      }
+      const e = findings.filter((f) => f.severity === "error").length;
+      const wn = findings.filter((f) => f.severity === "warn").length;
+      const i = findings.filter((f) => f.severity === "info").length;
+      const ms = 0;
+      console.log(`sap doctor \xB7 ${runtime2.apps().map((a) => rootLabel(a.root)).join(", ")} \xB7 errors ${e} \xB7 warnings ${wn} \xB7 info ${i} \xB7 ${checks} checks \xB7 ${ms}ms`);
+      for (const f of findings) {
+        const fn = f.severity === "error" ? console.error : f.severity === "warn" ? console.warn : console.info;
+        fn(`  ${f.severity === "error" ? "\u2717" : f.severity === "warn" ? "\u26A0" : "\xB7"} ${f.message}`);
+      }
+      return findings;
+    }
+    return { status, report, why, debug, doctor, greenLine, printGreenLines, REGISTRY };
+  }
+
+  // src/platform.js
+  function batch(label, fn) {
+    if (typeof fn !== "function") throw new Error("Sap.batch(label, fn): fn must be a function");
+    const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+    if (u && u.flush) u.flush();
+    const r = fn();
+    if (r && typeof r.then === "function") throw new Error("Sap.batch fn must be synchronous (it returned a promise)");
+    if (u && u.commitCaptured) u.commitCaptured(label);
+    return r;
+  }
+  function installBridges(runtime2) {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const refreshConnected = () => {
+      for (const app of runtime2.apps()) {
+        if (app.root.isConnected) runtime2.runNow(app, "platform");
+        else runtime2.remountIfPresent();
+      }
+    };
+    document.addEventListener("hyperclay:livesync-applied", refreshConnected);
+    const undo = window.hyperclay && window.hyperclay.undo;
+    if (undo && typeof undo.on === "function") {
+      undo.on("undo", refreshConnected);
+      undo.on("redo", refreshConnected);
+    } else {
+      window.addEventListener("hyperclay:mutation-ready", () => {
+        const u = window.hyperclay && window.hyperclay.undo;
+        if (u && typeof u.on === "function") {
+          u.on("undo", refreshConnected);
+          u.on("redo", refreshConnected);
+        }
+      });
+    }
+  }
+
+  // src/sap.js
+  var VERSION = "0.2.0";
+  var registry = /* @__PURE__ */ new Map();
+  var order = [];
+  var scheduler = createScheduler(runPass);
+  function appFor(el) {
+    let cur = el;
+    while (cur) {
+      if (cur.nodeType === 1 && cur.hasAttribute && cur.hasAttribute("sap")) {
+        return registry.get(cur) || null;
+      }
+      cur = cur.parentNode && cur.parentNode.host ? cur.parentNode.host : cur.parentElement;
+    }
+    return null;
+  }
+  function moveInto(parent, el) {
+    if (parent.moveBefore) {
+      try {
+        parent.moveBefore(el, null);
+        return;
+      } catch {
+      }
+    }
+    parent.appendChild(el);
+  }
+  function placeBefore(el, ref) {
+    const parent = ref.parentElement;
+    if (!parent) return;
+    if (parent.moveBefore) {
+      try {
+        parent.moveBefore(el, ref);
+        return;
+      } catch {
+      }
+    }
+    parent.insertBefore(el, ref);
+  }
+  var runtime = {
+    apps: () => order.slice(),
+    appFor,
+    schedule: (app, trigger) => scheduler.schedule(app, trigger),
+    runNow: (app, trigger) => scheduler.runNow(app, trigger),
+    moveInto,
+    placeBefore,
+    remountIfPresent: () => mountAll()
+  };
+  var accessor = createAccessor(runtime);
+  var actions = createActions(runtime, accessor);
+  var debugApi = createDebug(runtime);
+  var installed = false;
+  function installOnce() {
+    if (installed) return;
+    installed = true;
+    actions.install(document);
+    installBridges(runtime);
+  }
+  function mountAll(docRoot = document) {
+    installOnce();
+    const roots = docRoot.querySelectorAll("[sap]");
+    const fresh = [];
+    for (const root of roots) {
+      if (registry.has(root)) continue;
+      const appRec = mountApp(root);
+      registry.set(root, appRec);
+      order.push(appRec);
+      fresh.push(appRec);
+    }
+    for (const app of fresh) {
+      const line = debugApi.greenLine(app);
+      if (app.diag.errors.length || app.halted) console.error(line);
+      else console.log(line);
+    }
+    return fresh;
+  }
+  function mount(rootOrSel) {
+    installOnce();
+    if (!rootOrSel) return mountAll();
+    const root = typeof rootOrSel === "string" ? document.querySelector(rootOrSel) : rootOrSel;
+    if (!root) return null;
+    if (registry.has(root)) return registry.get(root);
+    const appRec = mountApp(root);
+    registry.set(root, appRec);
+    order.push(appRec);
+    const line = debugApi.greenLine(appRec);
+    if (appRec.diag.errors.length || appRec.halted) console.error(line);
+    else console.log(line);
+    return appRec;
+  }
+  var Sap = accessor.Sap;
+  Sap.version = VERSION;
+  Sap.refresh = function refresh() {
+    for (const app of order) if (app.root.isConnected) scheduler.runNow(app, "refresh");
+  };
+  Sap.batch = batch;
+  Sap.status = debugApi.status;
+  Sap.report = debugApi.report;
+  Sap.why = debugApi.why;
+  Sap.debug = debugApi.debug;
+  Sap.doctor = debugApi.doctor;
+  Sap.greenLine = debugApi.greenLine;
+  Sap.formats = formats;
+  Sap.mount = mount;
+  Sap.config = function config(options = {}) {
+    if (options.formats) Object.assign(formats, options.formats);
+    return Sap;
+  };
+  Sap._registry = registry;
+  Sap._reset = function reset() {
+    registry.clear();
+    order.length = 0;
+  };
+  function autoMount() {
+    if (typeof document === "undefined") return;
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => mountAll());
+    } else {
+      mountAll();
+    }
+  }
+  autoMount();
+  if (typeof window !== "undefined") window.Sap = Sap;
+  var sap_default = Sap;
+  return __toCommonJS(sap_exports);
+})();
+if (typeof window !== 'undefined' && Sap && Sap.default) window.Sap = Sap.default;
+</script>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --panel: #11151c;
+    --panel-2: #161b24;
+    --border: #232b38;
+    --border-2: #2e3848;
+    --text: #d8dee9;
+    --muted: #8b97a8;
+    --faint: #5d6776;
+    --accent: #6ee7a8;
+    --accent-dim: #3aa776;
+    --warn: #f0b86e;
+    --bad: #f0726f;
+    --blue: #7cc4ff;
+    --code-bg: #0c0f15;
+    --mono: "Berkeley Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre, .mono { font-family: var(--mono); }
+
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 52px 0; border-top: 1px solid var(--border); scroll-margin-top: 64px; }
+
+  h1, h2, h3 { line-height: 1.2; letter-spacing: -0.01em; }
+  h2 { font-size: 28px; margin: 8px 0 6px; }
+  h2 .num { color: var(--accent-dim); font-family: var(--mono); font-size: 16px; margin-right: 12px; }
+  h3 { font-size: 17px; margin: 26px 0 8px; }
+  .lead { color: var(--muted); font-size: 16px; max-width: 74ch; margin: 0 0 22px; }
+  p { max-width: 76ch; }
+  .small { font-size: 13.5px; }
+  .muted { color: var(--muted); }
+
+  /* Sticky table of contents */
+  .toc {
+    position: sticky; top: 0; z-index: 40;
+    background: rgba(10,12,16,0.86); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .toc-inner { display: flex; gap: 6px 20px; align-items: center; flex-wrap: wrap; padding: 12px 24px; max-width: 1000px; margin: 0 auto; }
+  .toc .brand { font-family: var(--mono); font-weight: 700; font-size: 16px; margin-right: 6px; }
+  .toc .brand .dot { color: var(--accent); }
+  .toc a { color: var(--muted); font-size: 13px; font-family: var(--mono); }
+  .toc a:hover, .toc a.active { color: var(--accent); text-decoration: none; }
+  .toc a .qn { color: var(--faint); }
+
+  /* Hero + TL;DR */
+  header.hero { padding: 56px 0 6px; }
+  .hero h1 { font-size: 44px; margin: 6px 0 12px; letter-spacing: -0.03em; }
+  .hero h1 .mono { color: var(--accent); }
+  .hero .sub { font-size: 17px; color: var(--muted); max-width: 70ch; margin: 0 0 22px; }
+  .tldr { background: var(--panel); border: 1px solid var(--border-2); border-left: 3px solid var(--accent); border-radius: 12px; padding: 18px 22px; margin: 8px 0 4px; }
+  .tldr h3 { margin: 0 0 8px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  .tldr p { margin: 0 0 8px; }
+  .tldr p:last-child { margin-bottom: 0; }
+
+  /* Short-answer callout */
+  .answer { background: var(--panel-2); border: 1px solid var(--border-2); border-left: 3px solid var(--accent); border-radius: 10px; padding: 14px 18px; margin: 10px 0 18px; }
+  .answer .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-dim); display: block; margin-bottom: 4px; }
+  .answer p { margin: 0; font-size: 15.5px; }
+  .answer strong { color: var(--text); }
+
+  /* Callout / note */
+  .note { background: rgba(240,184,110,0.06); border: 1px solid rgba(240,184,110,0.3); border-radius: 10px; padding: 13px 16px; margin: 16px 0; font-size: 13.5px; color: var(--text); }
+  .note b { color: var(--warn); }
+  .note.blue { background: rgba(124,196,255,0.06); border-color: rgba(124,196,255,0.28); }
+  .note.blue b { color: var(--blue); }
+
+  /* Demo cards (ported from index.html) */
+  .demo { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; margin: 16px 0; overflow: hidden; }
+  .demo-head { padding: 14px 18px 0; display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+  .demo-head h4 { margin: 0; font-size: 15px; }
+  .demo-head p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+  .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 12px; }
+  @media (max-width: 820px) { .demo-grid { grid-template-columns: 1fr; } }
+  .live { padding: 18px; border-right: 1px solid var(--border); }
+  @media (max-width: 820px) { .live { border-right: none; border-bottom: 1px solid var(--border); } }
+  pre.code, .src-edit {
+    margin: 0; padding: 16px 18px; background: var(--code-bg); color: #aeb9cc; overflow-x: auto;
+    font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; tab-size: 2; font-family: var(--mono);
+  }
+  .src-edit { border: none; width: 100%; resize: vertical; min-height: 220px; color: #c4cede; }
+  .src-edit:focus { outline: none; box-shadow: inset 2px 0 0 var(--accent-dim); }
+  .editwrap { position: relative; }
+  .editwrap .editbadge { position: absolute; top: 8px; right: 12px; font-family: var(--mono); font-size: 10.5px; color: var(--accent); background: var(--panel); border: 1px solid var(--border-2); border-radius: 5px; padding: 2px 7px; pointer-events: none; }
+  .greenline {
+    display: block; padding: 8px 18px; background: var(--panel-2); border-top: 1px solid var(--border);
+    color: var(--accent-dim); font-size: 11.5px; white-space: nowrap; overflow-x: auto; font-family: var(--mono);
+  }
+  .greenline.bad { color: var(--bad); }
+  .chip { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-2); color: var(--accent); white-space: nowrap; }
+  .chip.bad { color: var(--bad); border-color: var(--bad); }
+
+  /* syntax tokens (local highlighter, no Prism) */
+  .tok-tag { color: var(--accent); }
+  .tok-sap { color: var(--warn); }
+  .tok-attr { color: #9fb0c9; }
+  .tok-punc { color: var(--faint); }
+  .tok-comment { color: var(--faint); font-style: italic; }
+
+  /* rendered demo widgets (ported from index.html) */
+  .live input[type=text], .live input[type=number], .live input[type=email], .live input[type=password],
+  .live input[type=search], .live input[type=date], .live input[type=time], .live input:not([type]),
+  .live textarea, .live select {
+    background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text);
+    border-radius: 7px; padding: 7px 9px; font: inherit; font-size: 14px; width: 100%; margin: 2px 0;
+  }
+  .live input[type=number] { width: 110px; }
+  .live input:focus, .live select:focus, .live textarea:focus, .live [contenteditable]:focus { outline: none; border-color: var(--accent-dim); }
+  .live label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 2px; }
+  .live label.inline { display: inline-flex; align-items: center; gap: 6px; }
+  .live button {
+    background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text);
+    border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 13.5px; cursor: pointer;
+  }
+  .live button:hover { border-color: var(--accent-dim); }
+  .live ul, .live ol { list-style: none; margin: 6px 0; padding: 0; }
+  .live li[item] { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; margin: 5px 0; background: var(--panel-2); }
+  .live output, .live .out { font-family: var(--mono); }
+  .live .big { font-size: 26px; font-weight: 600; color: var(--accent); font-family: var(--mono); }
+  .live table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .live th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); padding: 4px 6px; }
+  .live th button { background: none; border: none; color: var(--muted); padding: 2px; cursor: pointer; font: inherit; }
+  .live th button:hover { color: var(--accent); }
+  .live td { padding: 5px 6px; border-bottom: 1px solid var(--border); font-family: var(--mono); }
+  .live [item].active, .live .row.active { border-color: var(--accent); }
+  .live .cols { display: flex; gap: 12px; }
+  .live .col { flex: 1; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px; min-height: 90px; }
+  .live .col h5 { margin: 0 0 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .live .card { background: var(--panel); border: 1px solid var(--border-2); border-radius: 6px; padding: 6px 8px; margin: 4px 0; font-size: 13px; display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+  .live .pill { display: inline-block; padding: 3px 11px; border-radius: 999px; font-size: 12.5px; border: 1px solid var(--border-2); cursor: pointer; color: var(--muted); user-select: none; }
+  .live .pill.active { background: var(--accent); color: #04130c; border-color: var(--accent); }
+  .live .err { color: var(--bad); font-size: 12px; min-height: 1.2em; }
+  .live [contenteditable] { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 7px; padding: 7px 9px; min-height: 38px; }
+  .live form:invalid button[type=submit] { opacity: 0.45; pointer-events: none; }
+  .live .card-plain { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+
+  /* saved-HTML output panel */
+  .savedbar { display: flex; gap: 10px; align-items: center; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--panel-2); }
+  pre.html-out { margin: 0; padding: 14px 18px; background: var(--code-bg); border-top: 1px solid var(--border); font-size: 12px; line-height: 1.6; color: #aeb9cc; white-space: pre-wrap; overflow-x: auto; }
+  .html-out .keep { background: rgba(110,231,168,0.16); color: var(--accent); border-radius: 3px; padding: 0 2px; }
+  .html-out .gone { color: var(--faint); }
+  .legend { font-size: 12px; color: var(--muted); padding: 0 18px 12px; }
+  .legend .keep { background: rgba(110,231,168,0.16); color: var(--accent); border-radius: 3px; padding: 0 4px; }
+  pre.inspect { margin: 8px 0 0; padding: 12px 14px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--accent-dim); white-space: pre-wrap; overflow-x: auto; }
+
+  /* reference tables */
+  table.ref { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 10px; }
+  table.ref th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-2); color: var(--muted); font-weight: 500; }
+  table.ref td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.ref td:first-child { white-space: nowrap; }
+  table.ref code { color: var(--accent); font-size: 12px; }
+  table.ref .cite { color: var(--faint); font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  .card-box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .card-box h4 { margin: 0 0 6px; font-size: 14px; }
+  .card-box p { color: var(--muted); font-size: 13px; margin: 0 0 6px; }
+  pre.block { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #aeb9cc; font-family: var(--mono); }
+
+  /* ---- DIAGRAMS ---- */
+  .diagram { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 22px; margin: 18px 0; }
+  .diagram .cap { font-size: 12px; color: var(--muted); margin: 0 0 16px; font-family: var(--mono); letter-spacing: 0.02em; }
+  .flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+  .flow-step { flex: 1 1 0; min-width: 150px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 10px; padding: 14px; position: relative; }
+  .flow-step .n { font-family: var(--mono); font-size: 11px; color: var(--accent-dim); }
+  .flow-step h5 { margin: 4px 0 6px; font-size: 14.5px; color: var(--accent); }
+  .flow-step p { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .flow-arrow { align-self: center; color: var(--accent-dim); font-size: 22px; padding: 0 8px; font-family: var(--mono); }
+  @media (max-width: 760px) { .flow { flex-direction: column; } .flow-arrow { transform: rotate(90deg); padding: 6px 0; } }
+  .flow-loop { margin-top: 14px; font-size: 12px; color: var(--faint); font-family: var(--mono); text-align: center; border-top: 1px dashed var(--border-2); padding-top: 10px; }
+
+  .twocol { display: grid; grid-template-columns: 1fr 56px 1fr; align-items: center; gap: 10px 0; }
+  @media (max-width: 680px) { .twocol { grid-template-columns: 1fr; } .twocol .mid { display: none; } }
+  .tc-head { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-bottom: 4px; }
+  .tc-cell { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+  .tc-cell.live-store { border-color: var(--accent-dim); }
+  .tc-cell .lbl { font-family: var(--mono); font-size: 11px; color: var(--accent); display: block; margin-bottom: 2px; }
+  .tc-cell.gone-cell { border-style: dashed; color: var(--faint); }
+  .mid { text-align: center; font-family: var(--mono); font-size: 18px; }
+  .mid .ok { color: var(--accent); }
+  .mid .cut { color: var(--bad); }
+
+  .funnel { display: grid; grid-template-columns: 1.1fr 0.5fr 1.3fr; gap: 14px; align-items: center; }
+  @media (max-width: 760px) { .funnel { grid-template-columns: 1fr; } }
+  .funnel .sources .src { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 7px; padding: 7px 10px; margin: 5px 0; font-family: var(--mono); font-size: 12px; }
+  .funnel .converge { text-align: center; }
+  .funnel .converge .node { background: var(--accent); color: #04130c; font-weight: 600; border-radius: 8px; padding: 10px; font-family: var(--mono); font-size: 12.5px; }
+  .funnel .converge .arr { color: var(--accent-dim); font-size: 20px; }
+  .funnel .branches .br { border: 1px solid var(--border-2); border-radius: 8px; padding: 10px 12px; margin: 6px 0; font-size: 12.5px; }
+  .funnel .branches .br b { color: var(--accent); font-family: var(--mono); font-size: 12px; }
+  .funnel .branches .br.silent { border-style: dashed; }
+  .funnel .branches .br.silent b { color: var(--faint); }
+
+  /* console / verification panel */
+  .console { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; margin-top: 10px; }
+  .console-bar { display: flex; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: center; }
+  .console-bar button { background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text); border-radius: 6px; padding: 5px 11px; font: inherit; font-size: 12.5px; cursor: pointer; font-family: var(--mono); }
+  .console-bar button:hover { border-color: var(--accent-dim); }
+  .console-bar .verdict { margin-left: auto; font-family: var(--mono); font-size: 12.5px; }
+  pre.console-out { margin: 0; padding: 14px 16px; font-size: 12px; color: var(--accent-dim); white-space: pre-wrap; max-height: 340px; overflow: auto; min-height: 50px; }
+
+  footer { padding: 44px 0 64px; color: var(--faint); font-size: 13px; }
+  footer .brand { color: var(--muted); font-family: var(--mono); }
+  hr.soft { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+  /* native dialog */
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border-2); border-radius: 12px; padding: 20px 22px; max-width: 380px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+  dialog::backdrop { background: rgba(4,8,12,0.6); backdrop-filter: blur(2px); }
+  dialog h4 { margin: 0 0 8px; }
+</style>
+</head>
+<body>
+
+<!-- STICKY TOC -->
+<nav class="toc">
+  <div class="toc-inner">
+    <span class="brand">sap<span class="dot">·</span></span>
+    <a href="#overview">Overview</a>
+    <a href="#transient"><span class="qn">1·</span> Transient</a>
+    <a href="#richtext"><span class="qn">2·</span> Rich text</a>
+    <a href="#extending"><span class="qn">3·</span> Extending</a>
+    <a href="#setstate"><span class="qn">4·</span> Set state</a>
+    <a href="#modals"><span class="qn">5·</span> Modals</a>
+    <a href="#verify">Verify</a>
+  </div>
+</nav>
+
+<header class="hero wrap">
+  <h1>How <span class="mono">sap</span> works</h1>
+  <p class="sub">A live, source-grounded explainer of the shipped engine. Every claim cites the real code in <code class="mono">src/</code>; every demo below runs the actual library inlined into this file. No network, no build step, no mocks.</p>
+
+  <div class="tldr">
+    <h3>TL;DR</h3>
+    <p><b>The DOM is the only state store.</b> On every change sap throws away its in-memory state and rebuilds it by reading the live DOM top to bottom, computes, paints what changed, then discards the objects. The file you save <em>is</em> the app.</p>
+    <p><b>The five answers, in one line each:</b></p>
+    <p>1. <b>Transient</b> values live only in live DOM (a runtime expando or the control's live <code>.value</code>) and the serializable attribute is actively stripped every pass, so they never save. 2. <b>No rich text</b>: a bind is textContent only by design (HTML-valued state would break "one write path / view-source is correct"). 3. <b>No plugin system</b>: the vocabulary is frozen on purpose; the one extension point is custom <code>Sap.formats</code>. 4. <b>Every way to set state</b> converges on the same recompute pass; control-backed programmatic writes use synthetic <code>input</code>/<code>change</code>, while attribute-state writes schedule directly. 5. <b>No modal coupling</b>: the <code>detail</code> lens projects a row into any container, including a native <code>&lt;dialog&gt;</code>.</p>
+  </div>
+</header>
+
+<!-- ================= OVERVIEW ================= -->
+<section class="wrap" id="overview">
+  <h2><span class="num">00</span>Overview</h2>
+  <p class="lead">What sap is, the mental model, the API surface, and the attribute vocabulary, sourced from the shipped engine (not the spec).</p>
+
+  <h3>The core mental model</h3>
+  <p>Most reactive tools keep two copies of your data: one in a JS store, one on the page, and spend their lives keeping the two in sync. Sap deletes the second copy. The input's value <em>is</em> the quantity; the list items <em>are</em> the rows. When anything changes, sap reads the page, recomputes, and writes back. One copy, nothing to drift (<code class="mono">README.md:23</code>, <code class="mono">src/pass.js:1-3</code>).</p>
+
+  <div class="diagram">
+    <p class="cap">Diagram A · the pass cycle — what one change does (src/pass.js:15-251)</p>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="n">1 · intake</div>
+        <h5>read the DOM</h5>
+        <p>Walk every <code>state=</code>, <code>bind</code>, <code>items</code> into fresh objects. Nothing retained from last pass. <span class="mono">(pass.js:34-147)</span></p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="n">2 · compute</div>
+        <h5>run calc:</h5>
+        <p>Deepest scope first, topological order within each scope. <code>total</code> waits for <code>subtotal</code> automatically. <span class="mono">(pass.js:202-231)</span></p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="n">3 · paint</div>
+        <h5>write if changed</h5>
+        <p><code>text</code>, <code>show</code>, <code>attr:</code>, <code>class:</code>, <code>css:</code>, effects, validity. Only cells that differ are touched. <span class="mono">(pass.js:233-237)</span></p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="n">4 · discard</div>
+        <h5>drop the objects</h5>
+        <p>Per-pass objects are replaced wholesale next pass. The last set is parked on <code>el._sapScope</code> only so <code>Sap(el)</code> can read between passes. <span class="mono">(pass.js:105, 239)</span></p>
+      </div>
+    </div>
+    <div class="flow-loop">a devtools edit · a console paste · a live-sync morph · a keystroke → all are just the next pass's input (README.md:109)</div>
+  </div>
+
+  <h3>The main API surface</h3>
+  <table class="ref">
+    <tr><th>Call</th><th>What it does</th><th>Source</th></tr>
+    <tr><td><code>Sap(el)</code></td><td>Live write-through proxy onto the scope or row that owns <code>el</code>. Control-field writes use the carrier and synthetic events; declared-state writes update attributes or transient storage and schedule directly.</td><td class="cite">scope.js:59-155</td></tr>
+    <tr><td><code>Sap.refresh()</code></td><td>One synchronous pass. Set state, refresh, read painted output on the next line.</td><td class="cite">sap.js:119-121</td></tr>
+    <tr><td><code>Sap.batch(label, fn)</code></td><td>Run a synchronous bulk mutation. With Hyperclay undo present, label the captured mutations as one undo entry.</td><td class="cite">platform.js:5-13</td></tr>
+    <tr><td><code>Sap.mount(root?)</code></td><td>Mount a root added later, or rescan all <code>[sap]</code>. Skips already-mounted roots.</td><td class="cite">sap.js:100-113</td></tr>
+    <tr><td><code>Sap.formats.x</code> · <code>Sap.config({formats})</code></td><td>Register a custom text format (the one extension point — see §3).</td><td class="cite">sap.js:129-134</td></tr>
+    <tr><td><code>Sap.status()</code> · <code>Sap.report()</code></td><td>JSON twin of the green line · JSON list of every error <code>{code, el, expr, problem, fix}</code>.</td><td class="cite">debug.js:66-99</td></tr>
+    <tr><td><code>Sap.why(el)</code> · <code>Sap.doctor()</code></td><td>How a field resolves · full-page audit (dead state, dup ids, drift).</td><td class="cite">debug.js:107-200</td></tr>
+  </table>
+
+  <h3>The attribute vocabulary (what the engine actually accepts)</h3>
+  <p class="small muted">Sourced from the linter's allow-lists (<code class="mono">src/lint.js:11-17</code>) and error registry (<code class="mono">src/errors.js</code>), so this is the shipped surface, not the spec's wish-list.</p>
+  <div class="grid2">
+    <div class="card-box">
+      <h4>Declare &amp; bind</h4>
+      <table class="ref">
+        <tr><td><code>sap</code></td><td>mount root + lint boundary</td></tr>
+        <tr><td><code>state="a b:num c:bool d=x e:transient"</code></td><td>attribute-carried fields</td></tr>
+        <tr><td><code>bind="field"</code></td><td>two-way; control type is the contract</td></tr>
+        <tr><td><code>items="name"</code> · <code>item template</code></td><td>list field + row prototype</td></tr>
+        <tr><td><code>scope="name"</code></td><td>nested state object</td></tr>
+        <tr><td><code>transient</code></td><td>keep this control out of the saved file</td></tr>
+        <tr><td><code>detail="LIST by KEY"</code></td><td>project a selected row into a panel</td></tr>
+      </table>
+    </div>
+    <div class="card-box">
+      <h4>Compute · paint · act</h4>
+      <table class="ref">
+        <tr><td><code>calc:name</code></td><td>computed field, dependency-ordered</td></tr>
+        <tr><td><code>text</code> · <code>text:FMT</code> · <code>show</code></td><td>paint textContent / toggle hidden</td></tr>
+        <tr><td><code>attr:N</code> · <code>class:N</code> · <code>css:N</code></td><td>paint attribute / class / custom prop</td></tr>
+        <tr><td><code>effect</code> · <code>invalid</code></td><td>post-paint statement · setCustomValidity</td></tr>
+        <tr><td><code>set:f</code> · <code>trigger-add/remove/reset</code></td><td>click-write / row + scope verbs</td></tr>
+        <tr><td><code>move:up/down/to</code> · <code>sort:F</code></td><td>reorder / cross-list / column sort</td></tr>
+        <tr><td><code>confirm</code> · <code>sap-ignore</code></td><td>gate an action · opt a subtree out</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="note blue">
+    <b>Implementation vs. spec — read this first.</b> This page documents the <em>shipped</em> engine in <code class="mono">sapjs/</code>. The design spec (<code class="mono">sap-spec/</code>) calls itself "v2" and drifts from the build in a few places. Where they disagree, <b>the code wins</b> and every demo here uses shipped spelling:
+    <ul style="margin:8px 0 0; padding-left:18px;">
+      <li>The spec mounts <code class="mono">&lt;main app&gt;</code> and offers <code class="mono">Sap.app({compute, rows})</code> (<code class="mono">02-vocabulary.md:9,39</code>). The build mounts <code class="mono">[sap]</code> only (<code class="mono">src/sap.js:83</code>) and has <b>no</b> <code class="mono">Sap.app</code>. A <code class="mono">&lt;main app&gt;</code> demo would silently never mount.</li>
+      <li>The spec says plumbing auto-stamps <code class="mono">default=</code> and rewrites text binds to <code class="mono">plaintext-only</code> (<code class="mono">02-vocabulary.md:34,45</code>). The shipped engine does <b>neither</b> (see §2, §4).</li>
+      <li>The spec describes snapshot-time re-derivation of transient-fed paints (<code class="mono">05-...:28,100-102</code>). That is a spec/platform concern, <b>not</b> implemented in this standalone engine (see §1).</li>
+    </ul>
+  </div>
+
+  <!-- overview demo: the whole idea -->
+  <div class="demo" data-demo="overview-calc">
+    <div class="demo-head">
+      <div><h4>The whole idea, in six lines</h4><p>Type in either field. The total recomputes and formats itself. No app JavaScript.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <label>Quantity <input type="number" bind="qty" value="3"></label>
+        <label>Unit price <input type="number" bind="price" value="10"></label>
+        <p>Total: <span class="big" calc:total="state.qty * state.price" text:usd="state.total">$30</span></p>
+      </main>
+    </script>
+  </div>
+</section>
+
+<!-- ================= Q1 TRANSIENT ================= -->
+<section class="wrap" id="transient">
+  <h2><span class="num">01</span>Transient state</h2>
+
+  <div class="answer">
+    <span class="tag">short answer</span>
+    <p>A transient value lives <strong>only in the live DOM</strong>: a runtime-only JS expando (<code>el._sapTransient</code>) for declared state, or the control's live <code>.value</code>/<code>.checked</code> for a bound control. The matching serializable attribute is <strong>actively removed on every read and write</strong>, so the saved file never carries it. There are two transient carriers and both strip.</p>
+  </div>
+
+  <h3>Where the value lives vs. what serializes</h3>
+  <div class="diagram">
+    <p class="cap">Diagram B · runtime store vs. saved bytes (src/dom.js:139-153, src/carrier.js:85-90)</p>
+    <div class="twocol">
+      <div class="tc-head">runtime (drives the app)</div><div class="mid tc-head"></div><div class="tc-head">saved file bytes</div>
+
+      <div class="tc-cell"><span class="lbl">bind="city" (normal)</span>el.value = "Lisbon"</div>
+      <div class="mid"><span class="ok">──▶</span></div>
+      <div class="tc-cell"><span class="lbl">mirrored</span>value="Lisbon"</div>
+
+      <div class="tc-cell live-store"><span class="lbl">bind="q" transient</span>el.value = "abc"</div>
+      <div class="mid"><span class="cut">──✕──</span></div>
+      <div class="tc-cell gone-cell"><span class="lbl">stripped</span>(no value attribute)</div>
+
+      <div class="tc-cell live-store"><span class="lbl">state="secret:transient"</span>el._sapTransient.secret = "hi"</div>
+      <div class="mid"><span class="cut">──✕──</span></div>
+      <div class="tc-cell gone-cell"><span class="lbl">stripped</span>(no secret attribute; decl stays)</div>
+    </div>
+  </div>
+
+  <h3>The exact mechanism</h3>
+  <ul class="small">
+    <li><b>Attribute-carried transient</b> — <code class="mono">state="secret:transient"</code>. <code class="mono">parseStateDecl</code> sets <code>transient:true</code> (<code class="mono">dom.js:111-115</code>). The value is kept in <code class="mono">el._sapTransient</code>; <code class="mono">readTransient</code> seeds it from the attribute-or-default once, then calls <code class="mono">el.removeAttribute(name)</code> and returns the stored value (<code class="mono">dom.js:139-148</code>). <code class="mono">writeTransient</code> stores and strips the same way (<code class="mono">dom.js:150-153</code>). Intake routes transient decls through <code class="mono">readTransient</code> (<code class="mono">pass.js:42-45</code>). The <code class="mono">state=</code> declaration token itself stays, so the field keeps existing.</li>
+    <li><b>Control-carried transient</b> — <code class="mono">&lt;input bind="q" transient&gt;</code>. The carrier's <code class="mono">mirror()</code> sees <code class="mono">transient</code> and <em>removes</em> <code>value</code>/<code>checked</code> instead of writing them (<code class="mono">carrier.js:85-90</code>). Intake also strips them right after reading a transient bound control (<code class="mono">pass.js:63-66</code>). The live property is the only store.</li>
+    <li><b>Password mandate.</b> <code class="mono">bind</code> on a <code>type=password</code> without <code>transient</code> halts the whole app at mount (<code class="mono">E31</code>); <code>type=file</code> always halts (<code class="mono">E32</code>) (<code class="mono">lint.js:139-144</code>). A file must never carry a cleartext password.</li>
+    <li><b>Mirroring nuance, stated honestly.</b> <code class="mono">mirror()</code> only writes attributes for checkbox/radio/number/text/hidden; <code class="mono">select</code> and contenteditable/text-leaf are <em>not</em> mirrored at all (<code class="mono">carrier.js:91-104</code>). They persist only because the live DOM is saved as-is.</li>
+  </ul>
+
+  <div class="note">
+    <b>Save-cycle scope, precisely.</b> The shipped engine guarantees the transient <em>value</em> is excluded from serializable attributes (verified in <code class="mono">test/transient-and-codes.test.js:33-41,71-77</code>). It does <b>not</b>, on its own, re-derive paints that depend on a transient field at save time. So a transient search box that drives <code>show</code>/<code>hidden</code> on rows can leave those <code>hidden</code> attributes in the saved bytes. The snapshot re-derivation described by the spec (<code class="mono">05-...:28,100-102</code>) is not part of this standalone build (<code class="mono">src/platform.js</code> handles live-sync + undo refreshes, not save cloning). The "Show saved HTML" demo below therefore pairs a transient field with a normal one and shows nothing derived.
+    <br><br><b>One more precise fact</b> the demo proves: user <em>typing</em> updates the live <code class="mono">.value</code> property but does <b>not</b> mirror to the <code class="mono">value</code> attribute. Only the write path mirrors (<code class="mono">carrier.write()</code> → <code class="mono">mirror()</code>, run by <code class="mono">Sap(el).x=v</code>, <code class="mono">set:</code>, reset, projection — <code class="mono">carrier.js:120-123</code>). Standalone, a typed-but-not-written value reaches the saved file only via Hyperclay's save hook; the transient field is excluded either way.</div>
+
+  <!-- DEMO: show saved html -->
+  <div class="demo" data-demo="transient-savedhtml">
+    <div class="demo-head">
+      <div><h4>Show saved HTML</h4><p>Type in the search box (the summary proves the app reads it live), then click <b>Show saved HTML</b>. It prints the live <code>root.outerHTML</code>: the transient fields have <em>no</em> <code>value</code>/<code>checked</code> at all. Click <b>Set City via Sap(el)</b> to watch a programmatic write mirror into the attribute.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <div class="savedbar">
+      <button class="show-html-btn">Show saved HTML ↓</button>
+      <span class="muted small">reads <code class="mono">root.outerHTML</code> after the engine's strip</span>
+    </div>
+    <pre class="html-out muted">click the button to dump the live root…</pre>
+    <p class="legend"><span class="keep">highlighted</span> = a value that survives into the file. The transient search box and VIP checkbox have no <code class="mono">value</code>/<code class="mono">checked</code> at all.</p>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <label>Search (transient) <input type="search" bind="q" transient placeholder="type here, never saved…"></label>
+        <label>City (persisted, authored value) <input bind="city" value="Lisbon"></label>
+        <label class="inline"><input type="checkbox" bind="vip" transient> VIP (transient)</label>
+        <label class="inline"><input type="checkbox" bind="active" checked> Active (persisted)</label>
+        <button type="button" onclick="Sap(this).city = 'Madrid'" style="margin-top:8px">Set City via Sap(el) → mirrors</button>
+        <p class="out small" text="'q=' + JSON.stringify(state.q) + '  ·  city=' + JSON.stringify(state.city) + '  ·  vip=' + state.vip + '  ·  active=' + state.active">q=""  ·  city="Lisbon"  ·  vip=false  ·  active=true</p>
+      </main>
+    </script>
+  </div>
+
+  <!-- DEMO: declared transient state — the other transient carrier, with a live runtime-store inspector -->
+  <div class="demo" data-demo="transient-declared">
+    <div class="demo-head">
+      <div><h4>The other carrier: <code>state="secret:transient"</code></h4><p>Declared transient state lives on the runtime expando <code class="mono">el._sapTransient</code>, never as a <code>secret=</code> attribute — yet the <code>state=</code> token itself stays, so the field still exists. The panel below is a live <code>effect=</code> reading the real engine on every pass (<code class="mono">dom.js:139-153</code>, <code class="mono">scope.js:67-87</code>).</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap state="secret:transient=hunter2">
+        <p class="out small">live value <b text="state.secret">hunter2</b> · length <b calc:len="state.secret.length" text="state.len">7</b></p>
+        <div style="display:flex; gap:8px; margin:8px 0">
+          <button type="button" onclick="Sap(this).secret = 'rosebud'; Sap.refresh()">Write via Sap(el)</button>
+          <button type="button" onclick="Sap(this).$reset(); Sap.refresh()">Reset to default</button>
+        </div>
+        <pre class="inspect" effect="var r = el.closest('[sap]'); el.textContent = 'snapshot.secret      → ' + JSON.stringify(state.secret) + '\n' + 'root has secret attr → ' + r.hasAttribute('secret') + '\n' + 'root state= attr     → ' + r.getAttribute('state') + '\n' + 'el._sapTransient     → ' + JSON.stringify(r._sapTransient || {});">secret lives on el._sapTransient (a runtime expando), never as an attribute — click a button and watch this panel update.</pre>
+      </main>
+    </script>
+  </div>
+
+  <!-- DEMO: transient in action (reused, proven) -->
+  <div class="demo" data-demo="transient-filter">
+    <div class="demo-head">
+      <div><h4>Transient in action: live filter</h4><p>The search box is <code>transient</code>. It drives a per-row <code>calc:match</code> → <code>show</code>, yet never persists. Hidden rows still count in the total.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <input type="search" bind="q" transient placeholder="Filter fruit…">
+        <ul items="fruit">
+          <li item template
+              calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())"
+              show="item.match">
+            <span bind="name" style="flex:1"></span><b text:int="num(item.cal)"></b>
+          </li>
+          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())" show="item.match">
+            <span bind="name" style="flex:1">Apple</span><b text:int="num(item.cal)">95</b>
+            <input type="hidden" bind="cal" value="95">
+          </li>
+          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())" show="item.match">
+            <span bind="name" style="flex:1">Banana</span><b text:int="num(item.cal)">105</b>
+            <input type="hidden" bind="cal" value="105">
+          </li>
+          <li item calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())" show="item.match">
+            <span bind="name" style="flex:1">Apricot</span><b text:int="num(item.cal)">48</b>
+            <input type="hidden" bind="cal" value="48">
+          </li>
+        </ul>
+        <p class="muted small">Total of all rows (filter ignored): <b text:int="sum(state.fruit, 'cal')">248</b> cal</p>
+      </main>
+    </script>
+  </div>
+</section>
+
+<!-- ================= Q2 RICH TEXT ================= -->
+<section class="wrap" id="richtext">
+  <h2><span class="num">02</span>Rich text editing</h2>
+
+  <div class="answer">
+    <span class="tag">short answer</span>
+    <p><strong>No rich text, by design.</strong> A bind is <strong>textContent only</strong> for the text-leaf kind, and <code>contenteditable="plaintext-only"</code> is the supported authoring pattern. This is an architectural constraint, not a missing feature: state values are scalars that round-trip as text. HTML-valued state would break both "one write path" and "view-source is correct."</p>
+  </div>
+
+  <h3>The mechanism</h3>
+  <ul class="small">
+    <li><code class="mono">kindOf</code> returns <code>"leaf"</code> for a contenteditable or bound text leaf (<code class="mono">carrier.js:16</code>). <code class="mono">readBy</code> leaf returns <code>el.textContent</code>; <code class="mono">writeBy</code> leaf sets <code>el.textContent = String(v)</code> (<code class="mono">carrier.js:46-47, 74-76</code>). A bound editable reads and writes <em>plain text</em>, never <code>innerHTML</code>.</li>
+    <li>Text paints write <code>el.textContent</code> with <code>String()</code> coercion (<code class="mono">pass.js:297-303</code>). Every carrier write coerces with <code>String(v)</code> (<code class="mono">carrier.js:63-79</code>). Values are scalars or arrays of scalars, never DOM fragments.</li>
+    <li>A <code class="mono">bind</code> on a container with element children halts with <code class="mono">E20</code> ("a write would overwrite its children"), but a <em>contenteditable</em> container with children binds fine because it is treated as a leaf (<code class="mono">lint.js:149-153</code>, <code class="mono">test/transient-and-codes.test.js:126-138</code>). The editable still reads as <code>textContent</code>, so any inner markup is dropped from state.</li>
+  </ul>
+
+  <div class="note">
+    <b>One honesty correction vs. the spec.</b> The spec says plumbing rewrites text binds to <code class="mono">contenteditable="plaintext-only"</code> (<code class="mono">02-vocabulary.md:14,45</code>). The shipped linter does <b>not</b> stamp or enforce that — it accepts any <code class="mono">contenteditable</code> value except <code class="mono">"false"</code> (<code class="mono">lint.js:149-153</code>). So <code class="mono">plaintext-only</code> is the <em>documented authoring pattern you should write</em>; the carrier reads/writes <code>textContent</code> either way.</div>
+
+  <h3>Why it is architectural, not lazy</h3>
+  <div class="grid2">
+    <div class="card-box"><h4>1 · escaping vs. injection</h4><p>If a field held HTML, painting it via <code>textContent</code> would show literal <code>&lt;b&gt;</code> tags, and painting via <code>innerHTML</code> would be an injection vector that does not deterministically round-trip.</p></div>
+    <div class="card-box"><h4>2 · view-source must be correct</h4><p>"The file you save is the app, correct before JS runs" breaks if a saved value does not match what renders. Scalars-as-text always match.</p></div>
+    <div class="card-box"><h4>3 · one carrier, four paths</h4><p>The scalar contract lets one carrier serve intake, proxy-set, undo replay, and mount-seed. An HTML-valued kind would violate the serializable-scalar invariant (<code class="mono">05-...:46,100</code>).</p></div>
+    <div class="card-box"><h4>What you get instead</h4><p>A plaintext contenteditable, native form controls, and structure expressed as real DOM (lists, <code>show</code>, classes). Formatting is markup, not state.</p></div>
+  </div>
+
+  <!-- DEMO: contenteditable mirror -->
+  <div class="demo" data-demo="richtext-contenteditable">
+    <div class="demo-head">
+      <div><h4>A plaintext contenteditable bind</h4><p>Type into the editable box. The mirror and the character counter update live, proving the bound value is the plain string. Try pasting bold or linked text — it flattens to plain text on read.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <label>Note (contenteditable, plaintext-only)</label>
+        <span contenteditable="plaintext-only" bind="note" style="display:block">Clay is malleable.</span>
+        <p class="out">mirror → <b text="state.note">Clay is malleable.</b></p>
+        <p class="muted small">length → <b text="state.note.length">18</b> chars · the bound value is always a plain string (carrier.js:46-47)</p>
+      </main>
+    </script>
+  </div>
+</section>
+
+<!-- ================= Q3 EXTENDING ================= -->
+<section class="wrap" id="extending">
+  <h2><span class="num">03</span>Extending sap / plugins</h2>
+
+  <div class="answer">
+    <span class="tag">short answer</span>
+    <p><strong>There is no plugin system, and the vocabulary is frozen.</strong> The only real extension point is <strong>custom text formats</strong>: <code>Sap.formats.x = fn</code> or <code>Sap.config({ formats })</code>. The expression-helper signature is frozen forever. It is frozen on purpose, to keep failures loud and the contract zero-ambiguity.</p>
+  </div>
+
+  <h3>The one extension API (with a working example)</h3>
+  <pre class="block">// register a custom format — either form works
+Sap.formats.eur = (n) =&gt; "€" + Number(n).toFixed(2);
+Sap.config({ formats: { gbp: (n) =&gt; "£" + Number(n).toFixed(2) } });
+
+// then use it anywhere a built-in format goes
+&lt;span text:eur="state.price"&gt;&lt;/span&gt;</pre>
+  <ul class="small">
+    <li><b>Format registry:</b> the <code class="mono">formats</code> object lives in <code class="mono">helpers.js:67-91</code>. <code class="mono">applyFormat(name, v)</code> looks it up and throws a tagged <code class="mono">E22</code> for an unknown name, or for a numeric built-in format applied to non-finite input (<code class="mono">helpers.js:97-114</code>).</li>
+    <li><b>Registration surface:</b> <code class="mono">Sap.formats = formats</code> (<code class="mono">sap.js:129</code>) and <code class="mono">Sap.config({formats})</code> which does <code class="mono">Object.assign(formats, options.formats)</code> (<code class="mono">sap.js:131-134</code>).</li>
+    <li><b>Frozen signature:</b> <code class="mono">["state","item","el","root","fmt","num","sum","count","avg","min","max","plural","days"]</code> (<code class="mono">compile.js:6</code>). Custom formats extend the <code>fmt</code> namespace object passed at runtime, never the parameter list, so the source-keyed compile cache never invalidates (<code class="mono">compile.js:26-41</code>).</li>
+  </ul>
+
+  <h3>Why it is frozen (the real reason)</h3>
+  <div class="grid2">
+    <div class="card-box"><h4>Loud failure / zero ambiguity</h4><p>A foreign-dialect attribute (<code class="mono">x-text</code>, <code class="mono">v-if</code>, <code class="mono">@click</code>, <code class="mono">:class</code>) hard-errors with <code class="mono">E01</code> and teaches the sap spelling (<code class="mono">errors.js:69-82</code>, <code class="mono">lint.js:69-77</code>). If authors could add vocabulary, an unknown attribute could not be told apart from a typo, and the did-you-mean guarantee collapses.</p></div>
+    <div class="card-box"><h4>Cache stability + agent-authorability</h4><p>Extending the parameter list would invalidate the source-keyed cache; the <code>fmt</code> namespace sidesteps that. And a finite, frozen vocabulary is exactly what makes sap files reliably writable and checkable by an LLM.</p></div>
+  </div>
+
+  <div class="note">
+    <b>Why there is no live "foreign dialect" demo on this page.</b> Mounting <code class="mono">&lt;output x-text="…"&gt;</code> would intentionally produce <code class="mono">sap ✗ E01</code> and a <code class="mono">[sap-error]</code> beacon, which would fail this page's own verification gate. So here is the engine's real console output verbatim — what <code class="mono">block()</code> prints via <code class="mono">console.error</code> (<code class="mono">errors.js:116-121</code>). <code class="mono">Sap.report()</code> returns the same facts as a JSON object instead: <code class="mono">{ok, app, halted, errors[], warnings[]}</code> (<code class="mono">errors.js:137-146</code>).
+    <pre class="block" style="margin-top:10px">sap ✗ E01 foreign-dialect
+  at main[sap] &gt; output — x-text="state.total"
+  problem: "x-text" is a foreign-dialect attribute; Sap has no x-text directive
+  fix: use text="state.x" (Sap paints text only) — or wrap the subtree in sap-ignore if intentional</pre></div>
+
+  <!-- DEMO: custom format -->
+  <div class="demo" data-demo="extending-format">
+    <div class="demo-head">
+      <div><h4>A registered custom format, live</h4><p><code>Sap.formats.eur</code> was registered before mount. Type a price; the <code>text:eur</code> paint formats it as euros next to the built-in <code>text:usd2</code>.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <label>Price <input type="number" bind="price" value="42.5" step="0.01"></label>
+        <p>EUR (custom): <span class="big" text:eur="state.price">€42.50</span></p>
+        <p class="muted small">USD2 (built-in): <b text:usd2="state.price">$42.50</b> · GBP (custom): <b text:gbp="state.price">£42.50</b></p>
+      </main>
+    </script>
+  </div>
+</section>
+
+<!-- ================= Q4 SET STATE ================= -->
+<section class="wrap" id="setstate">
+  <h2><span class="num">04</span>All the ways to set state</h2>
+
+  <div class="answer">
+    <span class="tag">short answer</span>
+    <p>State is "set" by anything that changes the DOM, because every change is just the next pass's input. The deliberate write surfaces are: <strong><code>state=</code> declarations, two-way <code>bind=</code> per control type, the <code>Sap(el)</code> write-through proxy and its <code>$</code>-verbs, the action attributes (<code>set:</code>, <code>trigger-*</code>, <code>move:</code>, <code>sort:</code>), form <code>trigger-add</code>, and <code>detail=</code> write-back</strong>. They converge on one scheduler/pass model; control-backed programmatic writes share the carrier event path, while attribute-state and row-order writes schedule directly.</p>
+  </div>
+
+  <h3>One recompute path (with its real write-path differences)</h3>
+  <div class="diagram">
+    <p class="cap">Diagram C · writes converge, control writes synthesize events, paints stay silent (src/carrier.js:107-129, src/actions.js:231-245, src/scope.js:83-87)</p>
+    <div class="funnel">
+      <div class="sources">
+        <div class="src">typing in a bound control</div>
+        <div class="src">Sap(el).field = v</div>
+        <div class="src">set: / form trigger-add / detail edit</div>
+        <div class="src">trigger-* / move: / sort:</div>
+        <div class="src">declared state attr write</div>
+      </div>
+      <div class="converge">
+        <div class="arr">▶</div>
+        <div class="node">schedule</div>
+        <div class="arr" style="margin-top:6px">▼</div>
+      </div>
+      <div class="branches">
+        <div class="br"><b>native input</b> → browser mutates the live property → native <code>input</code>/<code>change</code> → schedule() (actions.js:231-245)</div>
+        <div class="br"><b>control programmatic write</b> → carrier.write(): set live property → mirror serializable attr (unless transient) → fire synthetic <code>input</code> + <code>change</code> (carrier.js:120-123)</div>
+        <div class="br"><b>attribute state</b> → setAttribute() / writeTransient() → schedule() directly, no synthetic event (scope.js:83-87)</div>
+        <div class="br"><b>row order</b> → remove/move DOM rows → schedule() directly; order in the DOM is the state (actions.js:90-136)</div>
+        <div class="br silent"><b>paint</b> → writes the DOM silently (no event) to avoid feedback loops; projection uses {silent:true} (pass.js:261-271)</div>
+      </div>
+    </div>
+    <div class="flow-loop">any event or direct schedule → one coalesced pass on the next microtask (scheduler.js:18-25)</div>
+  </div>
+  <p class="small muted">A programmatic write to a bound control looks like typing after it hits the carrier, so recompute and platform hooks can observe it through the same event surface. The honest caveats: user typing starts as a native event, attribute-carried <code>state=</code> writes skip synthetic events and schedule directly, row-order writes schedule after moving DOM nodes, and paints write silently.</p>
+
+  <h3>The complete reference (every mechanism, grounded)</h3>
+  <table class="ref">
+    <tr><th>Mechanism</th><th>Syntax</th><th>How it writes</th><th>Source</th></tr>
+    <tr><td>Declared field</td><td><code>state="filter=all step:num=1 s:transient"</code></td><td>seeds the scope object at intake</td><td class="cite">dom.js:95-119; pass.js:34-50</td></tr>
+    <tr><td>bind string</td><td><code>&lt;input bind="name"&gt;</code></td><td>live <code>.value</code> ↔ <code>state.name</code>; carrier writes mirror to value attr</td><td class="cite">carrier.js:44-47,96-100</td></tr>
+    <tr><td>bind textarea</td><td><code>&lt;textarea bind="bio"&gt;</code></td><td>text kind; live <code>.value</code> ↔ <code>state.bio</code>; mirrored to a <code>value</code> attr</td><td class="cite">carrier.js:14,44-47,96-100</td></tr>
+    <tr><td>bind number/range</td><td><code>&lt;input type="number" bind="age"&gt;</code></td><td>NaN-safe via <code>_sapLastGood</code></td><td class="cite">carrier.js:19-29</td></tr>
+    <tr><td>bind checkbox</td><td><code>&lt;input type="checkbox" bind="done"&gt;</code></td><td>boolean; mirror <code>checked</code></td><td class="cite">carrier.js:33-34,92-95</td></tr>
+    <tr><td>bind radio (by name)</td><td><code>&lt;input type="radio" name="g" bind="p"&gt;</code></td><td>the checked radio's value</td><td class="cite">carrier.js:35-36; pass.js:57-60</td></tr>
+    <tr><td>bind select / multiple</td><td><code>&lt;select bind="plan"&gt;</code>, <code>&lt;select multiple bind="tags"&gt;</code></td><td>value / array of values (not mirrored)</td><td class="cite">carrier.js:39-42,69-73</td></tr>
+    <tr><td>bind date/time</td><td><code>&lt;input type="date" bind="due"&gt;</code></td><td>carried as text kind; value = ISO string; mirrored</td><td class="cite">carrier.js:7-12,44-47</td></tr>
+    <tr><td>bind contenteditable leaf</td><td><code>&lt;span contenteditable="plaintext-only" bind="note"&gt;</code></td><td>textContent (not mirrored)</td><td class="cite">carrier.js:16,46-47,74-76</td></tr>
+    <tr><td>Proxy scalar write</td><td><code>Sap(el).field = v</code></td><td>carrier write, else <code>state=</code> attr, else auto-declare on root (or E12/E15)</td><td class="cite">scope.js:106-155</td></tr>
+    <tr><td>Proxy <code>$add</code></td><td><code>Sap(el).$add('todos')</code></td><td>clone template, strip <code>template</code>, fresh ids, append, schedule</td><td class="cite">scope.js:170-187</td></tr>
+    <tr><td>Proxy <code>$remove</code>/<code>$reset</code>/<code>$move</code></td><td><code>row.$remove()</code> etc.</td><td>remove / restore defaults / cross-list move</td><td class="cite">scope.js:189-226</td></tr>
+    <tr><td><code>Sap.batch</code></td><td><code>Sap.batch('Delete', fn)</code></td><td>one labeled undo entry around bulk writes</td><td class="cite">platform.js:5-13</td></tr>
+    <tr><td><code>set:</code></td><td><code>set:tab="'pricing'"</code></td><td>click → <code>proxy[field] = value</code></td><td class="cite">actions.js:69-88</td></tr>
+    <tr><td><code>trigger-add</code> (form)</td><td><code>&lt;form trigger-add="todos"&gt;</code></td><td>add row; on a form, compose from matching binds + clear + refocus</td><td class="cite">actions.js:183-209</td></tr>
+    <tr><td><code>trigger-remove</code>/<code>trigger-reset</code></td><td><code>&lt;button trigger-remove&gt;</code></td><td><code>$remove()</code> / <code>$reset()</code></td><td class="cite">actions.js:149-150</td></tr>
+    <tr><td><code>move:up/down/to</code></td><td><code>&lt;button move:to="doing"&gt;</code></td><td>DOM move <em>is</em> the write</td><td class="cite">actions.js:90-97,155-157</td></tr>
+    <tr><td><code>sort:FIELD</code></td><td><code>&lt;button sort:price&gt;</code></td><td>reorder rows; order is the state; toggles statelessly</td><td class="cite">actions.js:99-136</td></tr>
+    <tr><td><code>detail=</code> write-back</td><td>edit inside a <code>detail</code> panel</td><td>routes to the source row's carrier (silent projection paints)</td><td class="cite">actions.js:236-243; pass.js:261-271</td></tr>
+    <tr><td>Native form reset</td><td><code>&lt;button type="reset"&gt;</code></td><td>replays synthetic input/change per control</td><td class="cite">actions.js:212-224</td></tr>
+    <tr><td>External mutation</td><td>devtools edit · console paste · live-sync morph</td><td>next pass reads it; same path as a keystroke</td><td class="cite">README.md:109; platform.js:17-45</td></tr>
+  </table>
+
+  <!-- DEMO: bind matrix (EDITABLE) -->
+  <div class="demo" data-demo="set-bindmatrix" data-editable>
+    <div class="demo-head">
+      <div><h4>Two-way binding by control type — <span style="color:var(--accent)">editable</span></h4><p>The control is the contract, no modifiers. <b>Edit the markup on the right</b> and the live app re-mounts. Every input feeds one live object.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <div class="editwrap"><span class="editbadge">editable ✎</span><textarea class="src-edit" spellcheck="false">
+<main sap>
+  <label>Name <input bind="name" value="Ada"></label>
+  <label>Age <input type="number" bind="age" value="36"></label>
+  <label class="inline"><input type="checkbox" bind="member" checked> Member</label>
+  <label>Plan
+    <select bind="plan">
+      <option value="free">Free</option>
+      <option value="pro" selected>Pro</option>
+    </select>
+  </label>
+  <p class="out" text="state.name + ' · ' + state.age + ' · ' + (state.member ? state.plan : 'guest')">Ada · 36 · pro</p>
+</main>
+</textarea></div>
+    </div>
+    <code class="greenline"></code>
+  </div>
+
+  <!-- DEMO: set: tabs -->
+  <div class="demo" data-demo="set-tabs">
+    <div class="demo-head">
+      <div><h4><code>set:</code> — write a field on click</h4><p>A click writes <code>tab</code>; <code>show</code> reads it back. No toggle state stored anywhere but the DOM.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap state="tab=overview">
+        <div style="display:flex; gap:8px; margin-bottom:10px">
+          <span class="pill active" set:tab="'overview'" class:active="state.tab === 'overview'">Overview</span>
+          <span class="pill" set:tab="'pricing'" class:active="state.tab === 'pricing'">Pricing</span>
+          <span class="pill" set:tab="'faq'" class:active="state.tab === 'faq'">FAQ</span>
+        </div>
+        <p show="state.tab === 'overview'">Sap rebuilds state from the DOM every pass.</p>
+        <p show="state.tab === 'pricing'" hidden>Free and open source. MIT licensed.</p>
+        <p show="state.tab === 'faq'" hidden>Yes, it works in a single saved HTML file.</p>
+      </main>
+    </script>
+  </div>
+
+  <!-- DEMO: trigger-add form -->
+  <div class="demo" data-demo="set-triggeradd">
+    <div class="demo-head">
+      <div><h4>form <code>trigger-add</code> + <code>trigger-remove</code></h4><p>The form's <code>bind="title"</code> matches the row's field, so submit clones the template, fills it, and clears the box.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <form trigger-add="todos">
+          <input bind="title" placeholder="What needs doing? (Enter)" required>
+        </form>
+        <ul items="todos">
+          <li item template>
+            <input type="checkbox" bind="done">
+            <span bind="title" style="flex:1"></span>
+            <button trigger-remove>✕</button>
+          </li>
+          <li item>
+            <input type="checkbox" bind="done" checked>
+            <span bind="title" style="flex:1">Ship sap</span>
+            <button trigger-remove>✕</button>
+          </li>
+          <li item>
+            <input type="checkbox" bind="done">
+            <span bind="title" style="flex:1">Write the explainer</span>
+            <button trigger-remove>✕</button>
+          </li>
+        </ul>
+        <p class="muted small" text="plural(count(state.todos, t => !t.done), 'task', 'tasks') + ' left'">1 task left</p>
+      </main>
+    </script>
+  </div>
+
+  <!-- DEMO: bulk + batch -->
+  <div class="demo" data-demo="set-batch">
+    <div class="demo-head">
+      <div><h4><code>Sap(el)</code> verbs + <code>Sap.batch</code></h4><p>Row proxies compose with array methods. <code>Sap.batch</code> groups them into one undo entry. The delete is gated with a plain <code>window.confirm()</code> in the handler: <code>confirm=</code> only gates sap action attributes (<code>set:</code>, <code>move:</code>, <code>sort:</code>, <code>trigger-*</code>), not a native <code>onclick</code> (<code class="mono">actions.js:16-37,144-170</code>).</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <ul items="inbox">
+          <li item template>
+            <input type="checkbox" bind="sel">
+            <span bind="subject" style="flex:1"></span>
+          </li>
+          <li item><input type="checkbox" bind="sel" checked><span bind="subject" style="flex:1">Invoice #1042</span></li>
+          <li item><input type="checkbox" bind="sel"><span bind="subject" style="flex:1">Welcome aboard</span></li>
+          <li item><input type="checkbox" bind="sel" checked><span bind="subject" style="flex:1">Re: launch</span></li>
+        </ul>
+        <button onclick="if (window.confirm('Delete selected messages?')) Sap.batch('Delete selected', () => Sap(this).inbox.filter(m => m.sel).forEach(m => m.$remove()))">
+          Delete selected (<output text="count(state.inbox, m => m.sel)">2</output>)
+        </button>
+      </main>
+    </script>
+  </div>
+
+  <!-- DEMO: kanban move:to + sort -->
+  <div class="demo" data-demo="set-kanban">
+    <div class="demo-head">
+      <div><h4><code>move:to</code> — the DOM move is the write</h4><p>Moving a row between lists IS the state change. Works for keyboard users with zero extra code.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <div class="cols">
+          <div class="col">
+            <h5>To do</h5>
+            <ul items="todo">
+              <li item template class="card"><span bind="t"></span><button move:to="doing">→</button></li>
+              <li item class="card"><span bind="t">Design</span><button move:to="doing">→</button></li>
+              <li item class="card"><span bind="t">Build</span><button move:to="doing">→</button></li>
+            </ul>
+          </div>
+          <div class="col">
+            <h5>Doing</h5>
+            <ul items="doing">
+              <li item template class="card"><button move:to="todo">←</button><span bind="t"></span></li>
+              <li item class="card"><button move:to="todo">←</button><span bind="t">Ship</span></li>
+            </ul>
+          </div>
+        </div>
+      </main>
+    </script>
+  </div>
+
+  <!-- DEMO: sort -->
+  <div class="demo" data-demo="set-sort">
+    <div class="demo-head">
+      <div><h4><code>sort:FIELD</code> — order is the state</h4><p>Click a header to reorder rows; direction toggles statelessly. The row order is the entire sort state.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <table>
+          <thead><tr>
+            <th><button sort:name>Item ▲▼</button></th>
+            <th><button sort:price>Price ▲▼</button></th>
+          </tr></thead>
+          <tbody items="rows">
+            <tr item template state="price:num"><td bind="name"></td><td text:usd2="item.price"></td></tr>
+            <tr item state="price:num=89"><td bind="name">Keyboard</td><td text:usd2="item.price">$89.00</td></tr>
+            <tr item state="price:num=340"><td bind="name">Monitor</td><td text:usd2="item.price">$340.00</td></tr>
+            <tr item state="price:num=12"><td bind="name">Cable</td><td text:usd2="item.price">$12.00</td></tr>
+          </tbody>
+        </table>
+      </main>
+    </script>
+  </div>
+
+  <!-- DEMO: trigger-reset (NEW) -->
+  <div class="demo" data-demo="set-reset">
+    <div class="demo-head">
+      <div><h4><code>trigger-reset</code> — restore defaults</h4><p>Edit the fields, then Reset. <b>Note:</b> the shipped engine reads explicit <code>default=</code> on controls (it does not auto-stamp them), so this demo authors them; attribute-state restores from its <code>state="f=dflt"</code> declaration.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap state="mode=compact">
+        <label>Display name <input bind="dname" value="Ada Lovelace" default="Ada Lovelace"></label>
+        <label class="inline"><input type="checkbox" bind="emails" checked default="true"> Email me updates</label>
+        <div style="display:flex; gap:8px; margin:8px 0">
+          <span class="pill active" set:mode="'compact'" class:active="state.mode === 'compact'">Compact</span>
+          <span class="pill" set:mode="'cozy'" class:active="state.mode === 'cozy'">Cozy</span>
+        </div>
+        <p class="out small" text="state.dname + ' · emails=' + state.emails + ' · mode=' + state.mode">Ada Lovelace · emails=true · mode=compact</p>
+        <button trigger-reset>Reset to defaults</button>
+      </main>
+    </script>
+  </div>
+</section>
+
+<!-- ================= Q5 MODALS ================= -->
+<section class="wrap" id="modals">
+  <h2><span class="num">05</span>Modals / showing item details</h2>
+
+  <div class="answer">
+    <span class="tag">short answer</span>
+    <p><strong>No.</strong> Sap has zero modal coupling: no modal attribute, no modal API. The <code>detail="LIST by KEYEXPR"</code> lens projects a selected row into <strong>any</strong> container — a <code>&lt;div&gt;</code>, a <code>&lt;form&gt;</code>, or a native <code>&lt;dialog&gt;</code> — and edits route back to the source row. You bring whatever modal you like; sap just fills it.</p>
+  </div>
+
+  <h3>The mechanism</h3>
+  <ul class="small">
+    <li><code class="mono">handleDetail</code> parses <code>LIST by KEYEXPR</code>, resolves the list, evaluates the key, finds the row whose <code>$key</code> matches, then unhides the container (<code>el.hidden = false</code>) and walks it in projection mode; no match toggles <code>hidden = true</code> (<code class="mono">pass.js:160-197</code>). A malformed spec or throwing key expr just hides it, silently.</li>
+    <li>Projection paints write each bound control <em>silently</em> and skip the active element, so typing is never clobbered (<code class="mono">pass.js:261-271</code>).</li>
+    <li>Edits route back: the delegated <code>input</code>/<code>change</code> handler detects an input inside a detail panel with a resolved <code>_sapDetailRow</code>, finds the source row's bound control via <code>ownedBind</code>, and writes through it (<code class="mono">actions.js:236-243</code>). <code>Sap(this)</code> inside the panel resolves the projected row, so <code>$remove()</code>/<code>$move()</code> operate on the source row (<code class="mono">scope.js:44-57</code>).</li>
+    <li>Because the lens only toggles <code>hidden</code> and writes text/values, the container type is irrelevant. The one limit: an <code>items=</code> list nested inside a <code>detail=</code> panel is mount error <code class="mono">E17</code> (<code class="mono">lint.js:166-168</code>).</li>
+  </ul>
+
+  <div class="note">
+    <b>Timing detail, handled in the demo.</b> <code class="mono">set:</code> schedules an async pass, but <code class="mono">dialog.showModal()</code> is synchronous, so a naive <code>set:</code> + inline <code>showModal()</code> can open the dialog one tick before the projection fills. The robust pattern (used below): one inline handler that sets state, calls <code class="mono">Sap.refresh()</code> for a synchronous pass, <em>then</em> opens. Also note: <code class="mono">state="open"</code> on a <code>&lt;dialog&gt;</code> is a hard error <code class="mono">E33</code> (<code class="mono">lint.js:130-132</code>) — drive visibility with <code>showModal()</code>, not state.</div>
+
+  <!-- DEMO: native dialog detail -->
+  <div class="demo" data-demo="modal-dialog">
+    <div class="demo-head">
+      <div><h4>One selection, two containers, no modal library</h4><p>Click a row to select it (the inline <code>&lt;div&gt;</code> fills). Click <b>Edit ▸</b> to open the same lens in a native <code>&lt;dialog&gt;</code>. Edit name or email in either; it writes back to the source row and both update.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap state="selected">
+        <ul items="people">
+          <li item template set:selected="item.$key" class:active="state.selected === item.$key">
+            <span bind="name" style="flex:1"></span>
+            <button type="button" onclick="Sap(this).selected = Sap(this).$key; Sap.refresh(); document.getElementById('peopleDlg').showModal()">Edit ▸</button>
+          </li>
+          <li item id="person-grace" set:selected="item.$key" class:active="state.selected === item.$key">
+            <span bind="name" style="flex:1">Grace Hopper</span>
+            <input type="hidden" bind="email" value="grace@navy.mil">
+            <button type="button" onclick="Sap(this).selected = Sap(this).$key; Sap.refresh(); document.getElementById('peopleDlg').showModal()">Edit ▸</button>
+          </li>
+          <li item id="person-alan" set:selected="item.$key" class:active="state.selected === item.$key">
+            <span bind="name" style="flex:1">Alan Turing</span>
+            <input type="hidden" bind="email" value="alan@bletchley.uk">
+            <button type="button" onclick="Sap(this).selected = Sap(this).$key; Sap.refresh(); document.getElementById('peopleDlg').showModal()">Edit ▸</button>
+          </li>
+        </ul>
+
+        <div class="card-plain" detail="people by state.selected">
+          <div class="muted small" style="margin-bottom:4px">inline &lt;div&gt; lens</div>
+          <label>Name <input bind="name"></label>
+          <label>Email <input type="email" bind="email"></label>
+        </div>
+        <p class="muted small" show="!state.selected">No contact selected.</p>
+        <button type="button" set:selected="''" style="margin-top:8px">Clear selection</button>
+
+        <dialog id="peopleDlg" detail="people by state.selected">
+          <form method="dialog">
+            <h4>Edit contact</h4>
+            <div class="muted small" style="margin-bottom:4px">native &lt;dialog&gt; lens — same source row</div>
+            <label>Name <input bind="name"></label>
+            <label>Email <input type="email" bind="email"></label>
+            <div style="margin-top:12px; display:flex; justify-content:flex-end">
+              <button value="done">Done</button>
+            </div>
+          </form>
+        </dialog>
+      </main>
+    </script>
+  </div>
+</section>
+
+<!-- ================= VERIFY ================= -->
+<section class="wrap" id="verify">
+  <h2><span class="num">06</span>Verify it yourself</h2>
+  <p class="lead">This page is held to sap's own agent contract (<code class="mono">index.html:800-804</code>): every demo mounts <code>sap ✓</code>, <code>Sap.status().ok</code> is true, and there are zero <code>[sap-error]</code> beacons — three of the contract's four clauses (the fourth, an empty <code>Sap.doctor()</code>, is advisory on a teaching page). Run the checks below; they call the real console API on the demos above.</p>
+  <div class="console">
+    <div class="console-bar">
+      <button onclick="runConsole('verify')">Run page gate</button>
+      <button onclick="runConsole('status')">Sap.status()</button>
+      <button onclick="runConsole('report')">Sap.report()</button>
+      <button onclick="runConsole('doctor')">Sap.doctor()</button>
+      <button onclick="runConsole('clear')">clear</button>
+      <span class="verdict" id="verdict"></span>
+    </div>
+    <pre class="console-out" id="console-out">// click "Run page gate" — the verdict appears here and in the devtools console</pre>
+  </div>
+  <p class="small muted" style="margin-top:10px">Note on the editable demo: re-mounting fresh markup leaves the old, now-disconnected root in the internal order array. <code class="mono">Sap.refresh()</code> skips disconnected roots (<code class="mono">sap.js:120</code>), but <code class="mono">Sap.status()</code> still counts them, so after you edit, the app count rises while connected apps stay green. The gate below reports connected apps separately.</p>
+</section>
+
+<footer class="wrap">
+  <hr class="soft">
+  <p><span class="brand">sap·</span> — reactive HTML in attributes. The DOM is the only state store.</p>
+  <p class="small">Built as authoritative internal documentation for the shipped engine in <code class="mono">sapjs/</code>. Lives at <code class="mono">docs/sapjs-explained.html</code>; edit <code class="mono">docs/sapjs-explained.template.html</code>, then refresh the generated file with <code class="mono">npm run build:docs</code>. The engine is inlined verbatim from <code class="mono">dist/sap.js</code>. Every citation points at real source. Demos run the real library, verified from <code class="mono">file://</code> with no network.</p>
+  <p class="small">Footnote on spec drift: the design spec (<code class="mono">sap-spec/</code>) is labeled "v2" and uses <code class="mono">app=</code> / <code class="mono">Sap.app</code>, auto-stamped <code class="mono">default=</code>, <code class="mono">plaintext-only</code> stamping, and snapshot re-derivation. The build mounts <code class="mono">[sap]</code>, has no <code class="mono">Sap.app</code>, and does none of that stamping. All demos here use the shipped vocabulary so they actually run.</p>
+</footer>
+
+<!-- ================= HARNESS ================= -->
+<script>
+(function () {
+  "use strict";
+
+  // ---- register custom formats BEFORE mounting (so text:eur never errors) ----
+  Sap.formats.eur = (n) => "€" + Number(n).toFixed(2);
+  Sap.config({ formats: { gbp: (n) => "£" + Number(n).toFixed(2) } });
+
+  // ---- dedent helper (from index.html) ----
+  function dedent(s) {
+    let lines = s.replace(/\t/g, "  ").split("\n");
+    while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    const widths = lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
+    const indent = widths.length ? Math.min.apply(null, widths) : 0;
+    return lines.map((l) => l.slice(indent)).join("\n");
+  }
+
+  // ---- tiny, dependency-free, injection-safe markup highlighter ----
+  const SAP_DIR = /^(sap|bind|items|item|template|scope|detail|state|show|effect|invalid|transient|confirm|default|calc|text|attr|class|css|set|move|sort|trigger-add|trigger-remove|trigger-reset)([:-]|$)/;
+  const BOOL_ATTRS = "sap|item|template|transient|required|checked|selected|multiple|disabled|readonly|autofocus|open|novalidate|inert";
+  function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function isSap(n) { return SAP_DIR.test(n); }
+  function highlight(src) {
+    try {
+      let h = esc(src);
+      h = h.replace(/&lt;!--[\s\S]*?--&gt;/g, (m) => '<i class="tok-comment">' + m + "</i>");
+      h = h.replace(/(&lt;\/?)([a-zA-Z][\w-]*)/g, (_, p, t) => '<i class="tok-punc">' + p + '</i><i class="tok-tag">' + t + "</i>");
+      // attribute names that have a value: anchor on =&quot; (never parse value internals)
+      h = h.replace(/(\s)([A-Za-z][\w-]*(?::[\w.\-]+)?)=&quot;/g, (_, sp, n) =>
+        sp + '<i class="' + (isSap(n) ? "tok-sap" : "tok-attr") + '">' + n + "</i>=&quot;");
+      // boolean attributes (no value)
+      h = h.replace(new RegExp("(\\s)(" + BOOL_ATTRS + ")(?=\\s|/?&gt;|$)", "g"), (_, sp, n) =>
+        sp + '<i class="' + (isSap(n) ? "tok-sap" : "tok-attr") + '">' + n + "</i>");
+      return h;
+    } catch (e) {
+      return esc(src);
+    }
+  }
+
+  // ---- mount a fresh chunk of markup into a .live container, return the app records ----
+  function mountInto(liveEl, markup) {
+    liveEl.innerHTML = markup;
+    const roots = liveEl.matches("[sap]") ? [liveEl] : [...liveEl.querySelectorAll("[sap]")];
+    const recs = [];
+    for (const root of roots) recs.push(Sap.mount(root)); // mount the real [sap] root, never the wrapper
+    return recs;
+  }
+
+  function paintGreenLine(demo, recs) {
+    const gl = demo.querySelector(".greenline");
+    const chip = demo.querySelector("[data-chip]");
+    if (!recs || !recs.length) return;
+    const rec = recs[0];
+    const line = Sap.greenLine(rec);
+    if (gl) {
+      gl.textContent = line;
+      gl.classList.toggle("bad", line.indexOf("✗") > -1);
+    }
+    if (chip) {
+      const ok = line.indexOf("✗") === -1;
+      chip.textContent = ok ? "sap ✓" : "sap ✗";
+      chip.classList.toggle("bad", !ok);
+    }
+  }
+
+  // ---- boot every demo ----
+  const demos = [...document.querySelectorAll(".demo")];
+  demos.forEach((demo) => {
+    const live = demo.querySelector(".live");
+    const editable = demo.hasAttribute("data-editable");
+
+    if (editable) {
+      const ta = demo.querySelector(".src-edit");
+      const initial = dedent(ta.value);
+      ta.value = initial;
+      let recs = mountInto(live, initial);
+      paintGreenLine(demo, recs);
+      let timer = null;
+      ta.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          recs = mountInto(live, ta.value); // fresh [sap] roots; old disconnected roots are skipped by refresh
+          paintGreenLine(demo, recs);
+        }, 350);
+      });
+      return;
+    }
+
+    const tpl = demo.querySelector('script[type="text/html"]');
+    if (!tpl) return;
+    const src = dedent(tpl.textContent);
+    const recs = mountInto(live, src);
+    const codeEl = demo.querySelector("pre.code");
+    if (codeEl) codeEl.innerHTML = highlight(src);
+    paintGreenLine(demo, recs);
+
+    // "Show saved HTML" wiring (transient demo)
+    const showBtn = demo.querySelector(".show-html-btn");
+    if (showBtn) {
+      const out = demo.querySelector(".html-out");
+      showBtn.addEventListener("click", () => {
+        const root = live.querySelector("[sap]");
+        if (!root) return;
+        Sap.refresh();
+        let html = esc(root.outerHTML); // esc only touches & < > — quotes stay literal "
+        // highlight surviving value/checked attributes so the contrast is obvious
+        html = html.replace(/(value|checked)="[^"]*"/g, (m) => '<span class="keep">' + m + "</span>");
+        html = html.replace(/\schecked(?=\s|&gt;|")/g, (m) => '<span class="keep">' + m + "</span>");
+        out.innerHTML = html;
+        out.classList.remove("muted");
+      });
+    }
+  });
+
+  // ---- console / verification panel ----
+  window.runConsole = function (which) {
+    const out = document.getElementById("console-out");
+    const verdict = document.getElementById("verdict");
+    if (which === "clear") { out.textContent = "// cleared"; verdict.textContent = ""; return; }
+
+    if (which === "verify") {
+      const apps = Sap._registry; // Map<rootEl, rec>
+      let total = 0, connected = 0, connectedOk = 0;
+      const failing = [];
+      apps.forEach((rec, root) => {
+        total++;
+        if (!root.isConnected) return;
+        connected++;
+        const ok = rec.diag.errors.length === 0 && !rec.halted;
+        if (ok) connectedOk++; else failing.push(Sap.greenLine(rec));
+      });
+      const beacons = document.querySelectorAll("[sap-error]").length;
+      const pass = connectedOk === connected && beacons === 0;
+      const lines = [
+        "PAGE GATE",
+        "  connected apps : " + connected,
+        "  connected ✓    : " + connectedOk,
+        "  [sap-error]    : " + beacons,
+        "  total registered (incl. disconnected from editing): " + total,
+        "",
+        pass ? "RESULT: PASS — every connected demo is green, zero beacons."
+             : "RESULT: FAIL\n" + failing.map((l) => "  " + l).join("\n"),
+      ];
+      out.textContent = lines.join("\n");
+      verdict.textContent = pass ? "✓ PASS" : "✗ FAIL";
+      verdict.style.color = pass ? "var(--accent)" : "var(--bad)";
+      console.log("[page gate]", { connected, connectedOk, beacons, total, pass });
+      return;
+    }
+
+    let result;
+    if (which === "status") result = Sap.status();
+    else if (which === "report") result = Sap.report();
+    else if (which === "doctor") result = { findings: Sap.doctor() };
+    out.textContent = "Sap." + which + "() →\n\n" + JSON.stringify(result, null, 2);
+    console.log("Sap." + which + "()", result);
+  };
+
+  // ---- sticky TOC active-section highlight ----
+  const tocLinks = [...document.querySelectorAll(".toc a")];
+  const linkFor = (id) => tocLinks.find((a) => a.getAttribute("href") === "#" + id);
+  if ("IntersectionObserver" in window) {
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) {
+          tocLinks.forEach((a) => a.classList.remove("active"));
+          const l = linkFor(e.target.id);
+          if (l) l.classList.add("active");
+        }
+      });
+    }, { rootMargin: "-45% 0px -50% 0px" });
+    document.querySelectorAll("section[id]").forEach((s) => obs.observe(s));
+  }
+
+  // auto-run the gate once on load so the verdict is visible immediately
+  window.addEventListener("load", () => setTimeout(() => window.runConsole("verify"), 60));
+})();
+</script>
+
+</body>
+</html>

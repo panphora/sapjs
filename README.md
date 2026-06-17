@@ -62,6 +62,18 @@ npm install sapjs
 
 Importing the module also auto-mounts every `[sap]` on `DOMContentLoaded`. Call `Sap.mount(rootOrSelector)` to mount a root added later, or `Sap.mount()` to rescan; `Sap.config({ formats })` registers custom formats as a config-object alternative to `Sap.formats.x`.
 
+## Internal explainer
+
+For the source-grounded walkthrough with live demos, open `docs/sapjs-explained.html` directly in a browser. It is a self-contained file with the real `dist/sap.js` engine inlined, so it works from `file://` with no network or build step.
+
+Edit `docs/sapjs-explained.template.html`, then run:
+
+```bash
+npm run build:docs
+```
+
+That regenerates `docs/sapjs-explained.html` and refreshes the inlined engine from `dist/sap.js`.
+
 ---
 
 ## Quickstart
