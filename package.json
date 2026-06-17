@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "build": "node build/bundle.mjs",
+    "copy-to-hyperclayjs": "npm run build && node scripts/copy-to-hyperclayjs.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "serve": "node build/bundle.mjs && python3 -m http.server 8123"

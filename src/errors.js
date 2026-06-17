@@ -7,7 +7,7 @@ export const REGISTRY = {
   E04: { slug: "duplicate-declaration", behavior: "HALT" },
   E05: { slug: "reserved-name", behavior: "HALT" },
   E06: { slug: "global-html-name", behavior: "HALT" },
-  E07: { slug: "calc-cycle", behavior: "HALT" },
+  E07: { slug: "calc-cycle", behavior: "ERR" },
   E08: { slug: "expression-syntax", behavior: "HALT" },
   E10: { slug: "orphan-item", behavior: "HALT" },
   E12: { slug: "unknown-state-key", behavior: "ERR" },
