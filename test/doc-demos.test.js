@@ -64,8 +64,8 @@ describe("the inlined engine is the real, shipped Sap", () => {
     }
   });
 
-  test("the doc ships 14 demos, each with a single [sap] root", () => {
-    expect(demos.length).toBe(14);
+  test("the doc ships 15 demos, each with a single [sap] root", () => {
+    expect(demos.length).toBe(15);
     for (const d of demos) {
       const wrap = document.createElement("div");
       wrap.innerHTML = d.markup;
@@ -162,6 +162,50 @@ describe("Q2 — rich text: a bind is plain textContent (no HTML-valued state)",
     const mirror = root.querySelector('[text="state.note"]');
     expect(mirror.textContent).toBe("bold and italic"); // flattened to plain text
     expect(mirror.innerHTML).toBe("bold and italic"); // painted as text, not HTML
+  });
+
+  test("the escape hatch: sap-ignore bodies keep markup while the list stays reactive", async () => {
+    const { root } = mountDemo("richtext-embed");
+    const count = () => root.querySelector("p[text]").textContent;
+    const editors = () => [...root.querySelectorAll('[item]:not([template]) [sap-ignore]')];
+    const bodyHtml = () => editors().map((e) => e.innerHTML).join(" ");
+
+    // the engine ignores the editor subtree entirely: not bound, marked sap-ignore + no-undo
+    for (const ed of editors()) {
+      expect(ed.hasAttribute("bind")).toBe(false);
+      expect(ed.hasAttribute("sap-ignore")).toBe(true);
+      expect(ed.hasAttribute("no-undo")).toBe(true);
+    }
+    // unlike the plaintext bind above, the rich bodies retain their <b>/<i> markup
+    expect(bodyHtml()).toContain("<b>");
+    expect(bodyHtml()).toContain("<i>");
+
+    // sap owns the list count, not the prose
+    expect(count()).toBe("3 blocks · each body keeps its own markup");
+
+    // add stays reactive; the cloned body still carries the template's markup
+    const formInput = root.querySelector('form [bind="kind"]');
+    setText(formInput, "Quote");
+    root.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+    expect(count()).toBe("4 blocks · each body keeps its own markup");
+    const lastBody = editors().pop();
+    expect(lastBody.innerHTML).toContain("<b>"); // markup preserved through the clone
+
+    // reorder stays reactive and never touches the bodies
+    root.querySelector('[item]:not([template]) [move\\:down]').click();
+    await flush();
+    expect(count()).toBe("4 blocks · each body keeps its own markup");
+    expect(bodyHtml()).toContain("<b>");
+    expect(bodyHtml()).toContain("<i>");
+
+    // remove brings the reactive count back down
+    root.querySelector('[item]:not([template]) [trigger-remove]').click();
+    await flush();
+    expect(count()).toBe("3 blocks · each body keeps its own markup");
+
+    // the whole demo stayed green throughout
+    expect(Sap.report().errors).toEqual([]);
   });
 });
 

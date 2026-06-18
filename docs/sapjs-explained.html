@@ -2333,7 +2333,7 @@ if (typeof window !== 'undefined' && Sap && Sap.default) window.Sap = Sap.defaul
     <h3>TL;DR</h3>
     <p><b>The DOM is the only state store.</b> On every change sap throws away its in-memory state and rebuilds it by reading the live DOM top to bottom, computes, paints what changed, then discards the objects. The file you save <em>is</em> the app.</p>
     <p><b>The five answers, in one line each:</b></p>
-    <p>1. <b>Transient</b> values live only in live DOM (a runtime expando or the control's live <code>.value</code>) and the serializable attribute is actively stripped every pass, so they never save. 2. <b>No rich text</b>: a bind is textContent only by design (HTML-valued state would break "one write path / view-source is correct"). 3. <b>No plugin system</b>: the vocabulary is frozen on purpose; the one extension point is custom <code>Sap.formats</code>. 4. <b>Every way to set state</b> converges on the same recompute pass; control-backed programmatic writes use synthetic <code>input</code>/<code>change</code>, while attribute-state writes schedule directly. 5. <b>No modal coupling</b>: the <code>detail</code> lens projects a row into any container, including a native <code>&lt;dialog&gt;</code>.</p>
+    <p>1. <b>Transient</b> values live only in live DOM (a runtime expando or the control's live <code>.value</code>) and the serializable attribute is actively stripped every pass, so they never save. 2. <b>No rich text</b>: a bind is textContent only by design (HTML-valued state would break "one write path / view-source is correct"); to embed a real editor, wrap its subtree in <code>sap-ignore</code>. 3. <b>No plugin system</b>: the vocabulary is frozen on purpose; the one extension point is custom <code>Sap.formats</code>. 4. <b>Every way to set state</b> converges on the same recompute pass; control-backed programmatic writes use synthetic <code>input</code>/<code>change</code>, while attribute-state writes schedule directly. 5. <b>No modal coupling</b>: the <code>detail</code> lens projects a row into any container, including a native <code>&lt;dialog&gt;</code>.</p>
   </div>
 </header>
 
@@ -2484,6 +2484,21 @@ if (typeof window !== 'undefined' && Sap && Sap.default) window.Sap = Sap.defaul
     <b>Save-cycle scope, precisely.</b> The shipped engine guarantees the transient <em>value</em> is excluded from serializable attributes (verified in <code class="mono">test/transient-and-codes.test.js:33-41,71-77</code>). It does <b>not</b>, on its own, re-derive paints that depend on a transient field at save time. So a transient search box that drives <code>show</code>/<code>hidden</code> on rows can leave those <code>hidden</code> attributes in the saved bytes. The snapshot re-derivation described by the spec (<code class="mono">05-...:28,100-102</code>) is not part of this standalone build (<code class="mono">src/platform.js</code> handles live-sync + undo refreshes, not save cloning). The "Show saved HTML" demo below therefore pairs a transient field with a normal one and shows nothing derived.
     <br><br><b>One more precise fact</b> the demo proves: user <em>typing</em> updates the live <code class="mono">.value</code> property but does <b>not</b> mirror to the <code class="mono">value</code> attribute. Only the write path mirrors (<code class="mono">carrier.write()</code> → <code class="mono">mirror()</code>, run by <code class="mono">Sap(el).x=v</code>, <code class="mono">set:</code>, reset, projection — <code class="mono">carrier.js:120-123</code>). Standalone, a typed-but-not-written value reaches the saved file only via Hyperclay's save hook; the transient field is excluded either way.</div>
 
+  <h3>Integrating with Hyperclay: <code>[persist]</code></h3>
+  <p class="small muted">This is the host-platform layer, not the sap engine. The behavior below lives in hyperclayjs; the sap linter merely allow-lists these attributes so the two coexist (<code class="mono">lint.js:12-17</code> lists <code>persist</code>, <code>no-save</code>, <code>no-watch</code>, <code>no-undo</code>).</p>
+  <div class="note">
+    <b>The save-survival footgun.</b> <code class="mono">bind</code> makes a control <em>reactive</em>; it does not make a <em>typed</em> value <em>durable</em>. When a user types, sap updates the live <code class="mono">.value</code> and reschedules, but it does <b>not</b> mirror to the serializable attribute — only carrier writes mirror (the note above). So on a plain DOM save the typed value is gone <em>unless</em> Hyperclay's <code class="mono">[persist]</code> synced it back on the input event, in capture phase, on every keystroke (<code class="mono">enablePersistentFormInputValues.js:50-89</code>). Rule of thumb: <b>bind is reactivity, <code class="mono">[persist]</code> is durability.</b> Put <code class="mono">persist</code> on any user-editable control whose value must survive a reload. Unlike the region attributes, <code class="mono">persist</code> is matched per control (<code class="mono">input[persist]</code> / <code class="mono">textarea[persist]</code> / <code class="mono">select[persist]</code>), so it goes on the control itself, not a wrapper (<code class="mono">enablePersistentFormInputValues.js:43-46</code>).
+  </div>
+  <table class="ref">
+    <tr><th>control</th><th>does a <em>typed</em> value survive a plain save?</th><th>add <code>[persist]</code>?</th></tr>
+    <tr><td>contenteditable / bound text leaf</td><td>yes — it is <code class="mono">textContent</code>, already in the saved DOM</td><td>no</td></tr>
+    <tr><td>text / number input</td><td>no — typing updates <code class="mono">.value</code>, not the <code class="mono">value</code> attribute</td><td>yes</td></tr>
+    <tr><td>checkbox / radio</td><td>no — toggling updates <code class="mono">.checked</code>, not the <code class="mono">checked</code> attribute</td><td>yes</td></tr>
+    <tr><td>select / select-multiple</td><td>no — sap's carrier never mirrors a select (<code class="mono">carrier.js:102-103</code>)</td><td>yes</td></tr>
+    <tr><td>textarea</td><td>no — content lives in <code class="mono">.value</code>, not the child text that <code class="mono">outerHTML</code> saves</td><td>yes</td></tr>
+  </table>
+  <p class="small muted">They do not fight: sap mirrors on a carrier write, <code class="mono">[persist]</code> writes the same value on user input, so the writes are idempotent or land on a disjoint attribute (<code class="mono">carrier.js:85-105</code>, <code class="mono">enablePersistentFormInputValues.js:50-89</code>). But never combine <code class="mono">transient</code> + <code class="mono">persist</code>: their intent is opposite. <code class="mono">transient</code> strips the value every pass; <code class="mono">[persist]</code> forces the live <code class="mono">.value</code> into the saved clone at snapshot time and wins, leaking exactly what <code class="mono">transient</code> promised to drop. <code class="mono">[persist]</code> also deliberately skips <code class="mono">hidden</code>, <code class="mono">password</code>, and <code class="mono">file</code> (<code class="mono">enablePersistentFormInputValues.js:44</code>): a bound <code class="mono">hidden</code> input already persists through sap's carrier mirror (<code class="mono">carrier.js:97-100</code>), and a password must stay <code class="mono">transient</code> or sap halts (E31, above).</p>
+
   <!-- DEMO: show saved html -->
   <div class="demo" data-demo="transient-savedhtml">
     <div class="demo-head">
@@ -2593,6 +2608,35 @@ if (typeof window !== 'undefined' && Sap && Sap.default) window.Sap = Sap.defaul
     <div class="card-box"><h4>What you get instead</h4><p>A plaintext contenteditable, native form controls, and structure expressed as real DOM (lists, <code>show</code>, classes). Formatting is markup, not state.</p></div>
   </div>
 
+  <h3>Embedding a real editor (the escape hatch)</h3>
+  <p class="lead">"No rich text" is about engine <em>state</em>, not the page. You can embed a real editor — a formatting contenteditable, or Slate / TinyMCE / ProseMirror — by telling sap to leave that subtree alone. The seam is <code class="mono">sap-ignore</code>.</p>
+  <ul class="small">
+    <li><b>The walk stops.</b> <code class="mono">isInert</code> returns true for <code class="mono">sap-ignore</code>, so the pass walker never descends into it and sap neither reads nor paints inside (<code class="mono">dom.js:14-16,25</code>). The editor's own markup is left exactly as authored; it round-trips because Hyperclay saves the live DOM as-is.</li>
+    <li><b>The linter stops too.</b> A <code class="mono">sap-ignore</code> subtree is skipped whole during mount analysis, so foreign markup or a third-party editor's attributes inside it never trip <code class="mono">E01</code> (<code class="mono">lint.js:33-35</code>). (A <code class="mono">template</code> subtree is still scanned; only <code class="mono">sap-ignore</code> is fully exempt.)</li>
+    <li><b>The Notion shape.</b> sap owns the block <em>list</em> (<code class="mono">items</code>/<code class="mono">item</code> + <code class="mono">trigger-add</code>/<code class="mono">move:</code>/<code class="mono">trigger-remove</code>); each block body is a <code class="mono">sap-ignore</code> editor mount. Add, remove, and reorder stay fully reactive; the prose stays rich.</li>
+  </ul>
+  <pre class="block">&lt;main sap&gt;
+  &lt;ul items="blocks"&gt;
+    &lt;li item template&gt;
+      &lt;input bind="kind"&gt;                <i class="tok-comment">&lt;!-- block metadata: reactive --&gt;</i>
+      &lt;button move:up&gt;↑&lt;/button&gt;
+      &lt;button trigger-remove&gt;✕&lt;/button&gt;
+      &lt;div sap-ignore no-undo
+           contenteditable="true"&gt;…&lt;/div&gt; <i class="tok-comment">&lt;!-- the real editor: sap never reads this --&gt;</i>
+    &lt;/li&gt;
+    <i class="tok-comment">&lt;!-- …authored rows… --&gt;</i>
+  &lt;/ul&gt;
+  &lt;form trigger-add="blocks"&gt;&lt;input bind="kind" required&gt;&lt;/form&gt;
+&lt;/main&gt;</pre>
+
+  <h4 style="font-size:14px; margin:22px 0 6px;">Three caveats when you embed (all code-grounded)</h4>
+  <div class="grid2">
+    <div class="card-box"><h4>1 · event noise</h4><p><code class="mono">sap-ignore</code> stops the DOM <em>walk</em>, not event delegation. sap's <code class="mono">input</code>/<code class="mono">change</code> listeners sit on <code class="mono">document</code> and schedule a pass for any event bubbling out of <code class="mono">[sap]</code>, ignored subtree or not (<code class="mono">actions.js:231-245,252-253</code>). Firewall: <code class="mono">stopPropagation()</code> the editor's <code class="mono">input</code>/<code class="mono">change</code>. sap's listener is bubble-phase, so it stops; Hyperclay's <code class="mono">[persist]</code> is capture-phase (<code class="mono">enablePersistentFormInputValues.js:50,64</code>) and autosave is a MutationObserver, so neither is disturbed.</p></div>
+    <div class="card-box"><h4>2 · undo / autosave</h4><p>A rich editor churns the DOM. Put <code class="mono">no-undo</code> on the mount so its keystrokes do not flood Hyperclay's undo stack; the region stays watched, so autosave still fires (<code class="mono">region-policy.js:75</code>). Avoid <code class="mono">no-watch</code> here: it also turns off autosave-on-edit <em>and</em> undo for the subtree (<code class="mono">region-policy.js:73,90</code>), so a prose-only change would never mark the page dirty.</p></div>
+    <div class="card-box"><h4>3 · not in sap state</h4><p>sap cannot read the prose, so you cannot <code class="mono">calc:</code>/<code class="mono">count</code>/search over it. If you need a word count or search index, mirror a derived plaintext into a normal field with a programmatic write: <code class="mono">Sap(el).body = editor.textContent</code>.</p></div>
+    <div class="card-box"><h4>JS-state editors</h4><p>Editors that keep their canonical content in JS rather than the DOM (a TinyMCE iframe, Slate's React tree) leave the cloned DOM stale at save time. Flush content into the mount before serialize: register <code class="mono">onSnapshot</code> (runs on save <em>and</em> live-sync) or an inline <code class="mono">[onbeforesave]</code> (save only) (<code class="mono">snapshot.js:55-57,132-134</code>).</p></div>
+  </div>
+
   <!-- DEMO: contenteditable mirror -->
   <div class="demo" data-demo="richtext-contenteditable">
     <div class="demo-head">
@@ -2607,6 +2651,62 @@ if (typeof window !== 'undefined' && Sap && Sap.default) window.Sap = Sap.defaul
         <span contenteditable="plaintext-only" bind="note" style="display:block">Clay is malleable.</span>
         <p class="out">mirror → <b text="state.note">Clay is malleable.</b></p>
         <p class="muted small">length → <b text="state.note.length">18</b> chars · the bound value is always a plain string (carrier.js:46-47)</p>
+      </main>
+    </script>
+  </div>
+
+  <!-- DEMO: rich-text embed via sap-ignore (the escape hatch) -->
+  <div class="demo" data-demo="richtext-embed">
+    <div class="demo-head">
+      <div><h4>The escape hatch: a block list with rich bodies</h4><p>sap owns the list (add, remove, reorder are reactive), but each block body is a <code>sap-ignore</code> contenteditable that <b>keeps</b> its <code>&lt;b&gt;</code>/<code>&lt;i&gt;</code> markup — the exact opposite of the plaintext-flatten demo above. Edit a body, reorder it, add one; the markup is never touched by the engine.</p></div>
+      <span class="chip" data-chip></span>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <ul items="blocks">
+          <li item template class="card-plain" style="display:block">
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+              <input bind="kind" style="flex:1" placeholder="Block label">
+              <button move:up title="move up">↑</button>
+              <button move:down title="move down">↓</button>
+              <button trigger-remove title="remove">✕</button>
+            </div>
+            <div class="editor" sap-ignore no-undo contenteditable="true">A new block. Edit me — <b>bold</b> survives.</div>
+          </li>
+          <li item class="card-plain" style="display:block">
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+              <input bind="kind" style="flex:1" value="Intro">
+              <button move:up title="move up">↑</button>
+              <button move:down title="move down">↓</button>
+              <button trigger-remove title="remove">✕</button>
+            </div>
+            <div class="editor" sap-ignore no-undo contenteditable="true">The DOM is the <b>only</b> state store.</div>
+          </li>
+          <li item class="card-plain" style="display:block">
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+              <input bind="kind" style="flex:1" value="Aside">
+              <button move:up title="move up">↑</button>
+              <button move:down title="move down">↓</button>
+              <button trigger-remove title="remove">✕</button>
+            </div>
+            <div class="editor" sap-ignore no-undo contenteditable="true">Formatting is <i>markup</i>, not state.</div>
+          </li>
+          <li item class="card-plain" style="display:block">
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+              <input bind="kind" style="flex:1" value="Quote">
+              <button move:up title="move up">↑</button>
+              <button move:down title="move down">↓</button>
+              <button trigger-remove title="remove">✕</button>
+            </div>
+            <div class="editor" sap-ignore no-undo contenteditable="true">Own your tools. <b>Edit</b> the <i>source</i>.</div>
+          </li>
+        </ul>
+        <form trigger-add="blocks">
+          <input bind="kind" placeholder="New block label (Enter)" required>
+        </form>
+        <p class="muted small" text="plural(state.blocks.length, 'block', 'blocks') + ' · each body keeps its own markup'">3 blocks · each body keeps its own markup</p>
       </main>
     </script>
   </div>

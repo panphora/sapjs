@@ -24,7 +24,7 @@ export const docHtml = readFileSync(DOC_PATH, "utf8");
 export const EXPECTED_DEMOS = {
   overview: ["overview-calc"],
   transient: ["transient-savedhtml", "transient-declared", "transient-filter"],
-  richtext: ["richtext-contenteditable"],
+  richtext: ["richtext-contenteditable", "richtext-embed"],
   extending: ["extending-format"],
   setstate: ["set-bindmatrix", "set-tabs", "set-triggeradd", "set-batch", "set-kanban", "set-sort", "set-reset"],
   modals: ["modal-dialog"],
