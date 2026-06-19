@@ -8,7 +8,7 @@ import {
 } from "./errors.js";
 
 const NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
-const COLON_PREFIXES = new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "editmode"]);
+const COLON_PREFIXES = new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode"]);
 const KNOWN_BARE = new Set([
   "sap", "scope", "items", "item", "template", "bind", "show", "effect", "invalid",
   "detail", "state", "transient", "confirm", "default", "persist", "sortable",

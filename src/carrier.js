@@ -1,6 +1,8 @@
 // The control matrix. One Carrier per control shape: { kind, read(), write(v) }.
 // Writes dispatch synthetic input + change events (the one write path) unless silent.
 
+import { serializeControlToAttributes } from "./control-serialize.js";
+
 function kindOf(el) {
   const tag = el.tagName;
   if (tag === "INPUT") {
@@ -80,28 +82,18 @@ function writeBy(el, kind, v) {
 }
 
 // Mirror the live value to a serializable attribute so the saved DOM reflects state.
-// A transient control (search boxes, passwords) is never serialized: its value
-// lives only in the live property, so we strip the attribute instead of writing it.
-function mirror(el, kind) {
+// Delegates the per-control rules to the shared serializer (the single source of
+// truth shared with hyperclayjs persist). A transient control (search boxes,
+// passwords) is never serialized: its value lives only in the live property, so
+// we strip the attributes instead of writing them.
+function mirror(el) {
   if (el.hasAttribute("transient")) {
     el.removeAttribute("value");
     el.removeAttribute("checked");
+    el.removeAttribute("data-value");
     return;
   }
-  switch (kind) {
-    case "checkbox":
-    case "radio":
-      if (el.checked) el.setAttribute("checked", "");
-      else el.removeAttribute("checked");
-      break;
-    case "number":
-    case "text":
-    case "hidden":
-      el.setAttribute("value", el.value);
-      break;
-    default:
-      break;
-  }
+  serializeControlToAttributes(el);
 }
 
 function fire(el) {
@@ -119,11 +111,11 @@ export function carrierFor(el) {
     },
     write(v, opts = {}) {
       writeBy(el, kind, v);
-      if (!opts.noMirror) mirror(el, kind);
+      if (!opts.noMirror) mirror(el);
       if (!opts.silent) fire(el);
     },
     mirror() {
-      mirror(el, kind);
+      mirror(el);
     },
   };
 }

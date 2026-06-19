@@ -404,27 +404,28 @@
     <li><b>Attribute-carried transient</b> — <code class="mono">state="secret:transient"</code>. <code class="mono">parseStateDecl</code> sets <code>transient:true</code> (<code class="mono">dom.js:111-115</code>). The value is kept in <code class="mono">el._sapTransient</code>; <code class="mono">readTransient</code> seeds it from the attribute-or-default once, then calls <code class="mono">el.removeAttribute(name)</code> and returns the stored value (<code class="mono">dom.js:139-148</code>). <code class="mono">writeTransient</code> stores and strips the same way (<code class="mono">dom.js:150-153</code>). Intake routes transient decls through <code class="mono">readTransient</code> (<code class="mono">pass.js:42-45</code>). The <code class="mono">state=</code> declaration token itself stays, so the field keeps existing.</li>
     <li><b>Control-carried transient</b> — <code class="mono">&lt;input bind="q" transient&gt;</code>. The carrier's <code class="mono">mirror()</code> sees <code class="mono">transient</code> and <em>removes</em> <code>value</code>/<code>checked</code> instead of writing them (<code class="mono">carrier.js:85-90</code>). Intake also strips them right after reading a transient bound control (<code class="mono">pass.js:63-66</code>). The live property is the only store.</li>
     <li><b>Password mandate.</b> <code class="mono">bind</code> on a <code>type=password</code> without <code>transient</code> halts the whole app at mount (<code class="mono">E31</code>); <code>type=file</code> always halts (<code class="mono">E32</code>) (<code class="mono">lint.js:139-144</code>). A file must never carry a cleartext password.</li>
-    <li><b>Mirroring nuance, stated honestly.</b> <code class="mono">mirror()</code> only writes attributes for checkbox/radio/number/text/hidden; <code class="mono">select</code> and contenteditable/text-leaf are <em>not</em> mirrored at all (<code class="mono">carrier.js:91-104</code>). They persist only because the live DOM is saved as-is.</li>
+    <li><b>Mirroring, via one shared serializer.</b> <code class="mono">mirror()</code> delegates to <code class="mono">serializeControlToAttributes</code> (<code class="mono">control-serialize.js</code>, the single source of truth shared with hyperclayjs): text/number/checkbox/radio write their attribute, <code class="mono">select</code> writes <code>selected</code> on the chosen option, <code class="mono">textarea</code> writes a cursor-safe <code>data-value</code> (<code class="mono">carrier.js:89-97</code>). contenteditable/text-leaf need no mirror — they are <code class="mono">textContent</code>, saved as-is. mirror runs on a carrier <em>write</em>; a plain typed value is made durable by <code class="mono">persist</code> (below).</li>
   </ul>
 
   <div class="note">
     <b>Save-cycle scope, precisely.</b> The shipped engine guarantees the transient <em>value</em> is excluded from serializable attributes (verified in <code class="mono">test/transient-and-codes.test.js:33-41,71-77</code>). It does <b>not</b>, on its own, re-derive paints that depend on a transient field at save time. So a transient search box that drives <code>show</code>/<code>hidden</code> on rows can leave those <code>hidden</code> attributes in the saved bytes. The snapshot re-derivation described by the spec (<code class="mono">05-...:28,100-102</code>) is not part of this standalone build (<code class="mono">src/platform.js</code> handles live-sync + undo refreshes, not save cloning). The "Show saved HTML" demo below therefore pairs a transient field with a normal one and shows nothing derived.
-    <br><br><b>One more precise fact</b> the demo proves: user <em>typing</em> updates the live <code class="mono">.value</code> property but does <b>not</b> mirror to the <code class="mono">value</code> attribute. Only the write path mirrors (<code class="mono">carrier.write()</code> → <code class="mono">mirror()</code>, run by <code class="mono">Sap(el).x=v</code>, <code class="mono">set:</code>, reset, projection — <code class="mono">carrier.js:120-123</code>). Standalone, a typed-but-not-written value reaches the saved file only via Hyperclay's save hook; the transient field is excluded either way.</div>
+    <br><br><b>One more precise fact</b> the demo proves: user <em>typing</em> updates the live <code class="mono">.value</code> property but does <b>not</b> mirror to the <code class="mono">value</code> attribute on its own. Carrier writes mirror (<code class="mono">carrier.write()</code> → <code class="mono">mirror()</code>, run by <code class="mono">Sap(el).x=v</code>, <code class="mono">set:</code>, reset, projection — <code class="mono">carrier.js:112-116</code>), and a control marked <code class="mono">persist</code> mirrors on every edit (next section). So a typed value is durable when it is written or marked <code class="mono">persist</code>; the transient field is excluded either way.</div>
 
-  <h3>Integrating with Hyperclay: <code>[persist]</code></h3>
-  <p class="small muted">This is the host-platform layer, not the sap engine. The behavior below lives in hyperclayjs; the sap linter merely allow-lists these attributes so the two coexist (<code class="mono">lint.js:12-17</code> lists <code>persist</code>, <code>no-save</code>, <code>no-watch</code>, <code>no-undo</code>).</p>
+  <h3>Durability: <code>persist</code></h3>
+  <p class="small muted">sap honors <code>persist</code> natively — no host platform required. On every edit of a <code class="mono">[persist]</code> control inside a <code class="mono">[sap]</code> root, the engine mirrors the live value to a serializable attribute through the shared serializer (<code class="mono">actions.js:240</code> → <code class="mono">control-serialize.js</code>). hyperclayjs honors the same attribute on the platform through that same serializer, so the two agree by construction. (<code class="mono">lint.js</code> also allow-lists the host region attributes <code>no-save</code>/<code>no-watch</code>/<code>no-undo</code>.)</p>
+  <p class="small muted">A <code class="mono">textarea</code> is the one control whose value the browser does <em>not</em> reload from an attribute (it reloads from child text), so its cursor-safe mirror lives in <code class="mono">data-value</code>. sap closes that loop on load: when it mounts a root it restores any <code class="mono">textarea[data-value]</code> into the textarea's content and strips the attribute (<code class="mono">mount.js</code> → <code class="mono">rehydrateControlFromAttributes</code>), so a persisted textarea round-trips standalone, no save step required. On the platform the save already finalized it to <code class="mono">textContent</code>, so there is nothing left to restore.</p>
   <div class="note">
-    <b>The save-survival footgun.</b> <code class="mono">bind</code> makes a control <em>reactive</em>; it does not make a <em>typed</em> value <em>durable</em>. When a user types, sap updates the live <code class="mono">.value</code> and reschedules, but it does <b>not</b> mirror to the serializable attribute — only carrier writes mirror (the note above). So on a plain DOM save the typed value is gone <em>unless</em> Hyperclay's <code class="mono">[persist]</code> synced it back on the input event, in capture phase, on every keystroke (<code class="mono">enablePersistentFormInputValues.js:50-89</code>). Rule of thumb: <b>bind is reactivity, <code class="mono">[persist]</code> is durability.</b> Put <code class="mono">persist</code> on any user-editable control whose value must survive a reload. Unlike the region attributes, <code class="mono">persist</code> is matched per control (<code class="mono">input[persist]</code> / <code class="mono">textarea[persist]</code> / <code class="mono">select[persist]</code>), so it goes on the control itself, not a wrapper (<code class="mono">enablePersistentFormInputValues.js:43-46</code>).
+    <b>The save-survival footgun.</b> <code class="mono">bind</code> makes a control <em>reactive</em>; it does not by itself make a <em>typed</em> value <em>durable</em>. When a user types, sap updates the live <code class="mono">.value</code> and reschedules, but a plain bound control does <b>not</b> mirror to the serializable attribute (only carrier writes do). Mark it <code class="mono">persist</code> and the engine mirrors it on every edit (<code class="mono">actions.js:240</code>), so the typed value survives a plain DOM save — standalone, and on the platform where hyperclayjs does the same. Rule of thumb: <b>bind is reactivity, <code class="mono">persist</code> is durability.</b> Put <code class="mono">persist</code> on any user-editable control whose value must survive a reload. It is matched per control, so it goes on the control itself, not a wrapper.
   </div>
   <table class="ref">
     <tr><th>control</th><th>does a <em>typed</em> value survive a plain save?</th><th>add <code>[persist]</code>?</th></tr>
     <tr><td>contenteditable / bound text leaf</td><td>yes — it is <code class="mono">textContent</code>, already in the saved DOM</td><td>no</td></tr>
     <tr><td>text / number input</td><td>no — typing updates <code class="mono">.value</code>, not the <code class="mono">value</code> attribute</td><td>yes</td></tr>
     <tr><td>checkbox / radio</td><td>no — toggling updates <code class="mono">.checked</code>, not the <code class="mono">checked</code> attribute</td><td>yes</td></tr>
-    <tr><td>select / select-multiple</td><td>no — sap's carrier never mirrors a select (<code class="mono">carrier.js:102-103</code>)</td><td>yes</td></tr>
+    <tr><td>select / select-multiple</td><td>no — selecting updates <code class="mono">.selected</code>, not the <code>selected</code> attribute</td><td>yes</td></tr>
     <tr><td>textarea</td><td>no — content lives in <code class="mono">.value</code>, not the child text that <code class="mono">outerHTML</code> saves</td><td>yes</td></tr>
   </table>
-  <p class="small muted">They do not fight: sap mirrors on a carrier write, <code class="mono">[persist]</code> writes the same value on user input, so the writes are idempotent or land on a disjoint attribute (<code class="mono">carrier.js:85-105</code>, <code class="mono">enablePersistentFormInputValues.js:50-89</code>). But never combine <code class="mono">transient</code> + <code class="mono">persist</code>: their intent is opposite. <code class="mono">transient</code> strips the value every pass; <code class="mono">[persist]</code> forces the live <code class="mono">.value</code> into the saved clone at snapshot time and wins, leaking exactly what <code class="mono">transient</code> promised to drop. <code class="mono">[persist]</code> also deliberately skips <code class="mono">hidden</code>, <code class="mono">password</code>, and <code class="mono">file</code> (<code class="mono">enablePersistentFormInputValues.js:44</code>): a bound <code class="mono">hidden</code> input already persists through sap's carrier mirror (<code class="mono">carrier.js:97-100</code>), and a password must stay <code class="mono">transient</code> or sap halts (E31, above).</p>
+  <p class="small muted">sap and hyperclayjs do not fight: both write the same value through the same shared serializer (<code class="mono">control-serialize.js</code>), so the writes are idempotent. But never combine <code class="mono">transient</code> + <code class="mono">persist</code>: their intent is opposite. <code class="mono">transient</code> strips the value every pass; <code class="mono">persist</code> forces the live value into the saved bytes and wins, leaking exactly what <code class="mono">transient</code> promised to drop. On the platform, hyperclayjs's <code class="mono">[persist]</code> also deliberately skips <code class="mono">hidden</code>, <code class="mono">password</code>, and <code class="mono">file</code>: a bound <code class="mono">hidden</code> input already persists through sap's carrier mirror, and a password must stay <code class="mono">transient</code> or sap halts (E31, above).</p>
 
   <!-- DEMO: show saved html -->
   <div class="demo" data-demo="transient-savedhtml">
@@ -734,13 +735,13 @@ Sap.config({ formats: { gbp: (n) =&gt; "£" + Number(n).toFixed(2) } });
     <tr><th>Mechanism</th><th>Syntax</th><th>How it writes</th><th>Source</th></tr>
     <tr><td>Declared field</td><td><code>state="filter=all step:num=1 s:transient"</code></td><td>seeds the scope object at intake</td><td class="cite">dom.js:95-119; pass.js:34-50</td></tr>
     <tr><td>bind string</td><td><code>&lt;input bind="name"&gt;</code></td><td>live <code>.value</code> ↔ <code>state.name</code>; carrier writes mirror to value attr</td><td class="cite">carrier.js:44-47,96-100</td></tr>
-    <tr><td>bind textarea</td><td><code>&lt;textarea bind="bio"&gt;</code></td><td>text kind; live <code>.value</code> ↔ <code>state.bio</code>; mirrored to a <code>value</code> attr</td><td class="cite">carrier.js:14,44-47,96-100</td></tr>
+    <tr><td>bind textarea</td><td><code>&lt;textarea bind="bio"&gt;</code></td><td>text kind; live <code>.value</code> ↔ <code>state.bio</code>; cursor-safe <code>data-value</code> mirror, finalized to <code>textContent</code> on save</td><td class="cite">control-serialize.js</td></tr>
     <tr><td>bind number/range</td><td><code>&lt;input type="number" bind="age"&gt;</code></td><td>NaN-safe via <code>_sapLastGood</code></td><td class="cite">carrier.js:19-29</td></tr>
     <tr><td>bind checkbox</td><td><code>&lt;input type="checkbox" bind="done"&gt;</code></td><td>boolean; mirror <code>checked</code></td><td class="cite">carrier.js:33-34,92-95</td></tr>
     <tr><td>bind radio (by name)</td><td><code>&lt;input type="radio" name="g" bind="p"&gt;</code></td><td>the checked radio's value</td><td class="cite">carrier.js:35-36; pass.js:57-60</td></tr>
-    <tr><td>bind select / multiple</td><td><code>&lt;select bind="plan"&gt;</code>, <code>&lt;select multiple bind="tags"&gt;</code></td><td>value / array of values (not mirrored)</td><td class="cite">carrier.js:39-42,69-73</td></tr>
+    <tr><td>bind select / multiple</td><td><code>&lt;select bind="plan"&gt;</code>, <code>&lt;select multiple bind="tags"&gt;</code></td><td>value / array of values; mirrors the <code>selected</code> attribute so the choice survives a save</td><td class="cite">carrier.js:39-42,69-73; control-serialize.js</td></tr>
     <tr><td>bind date/time</td><td><code>&lt;input type="date" bind="due"&gt;</code></td><td>carried as text kind; value = ISO string; mirrored</td><td class="cite">carrier.js:7-12,44-47</td></tr>
-    <tr><td>bind contenteditable leaf</td><td><code>&lt;span contenteditable="plaintext-only" bind="note"&gt;</code></td><td>textContent (not mirrored)</td><td class="cite">carrier.js:16,46-47,74-76</td></tr>
+    <tr><td>bind contenteditable leaf</td><td><code>&lt;span contenteditable="plaintext-only" bind="note"&gt;</code></td><td>textContent; round-trips natively, no mirror needed</td><td class="cite">carrier.js:16,46-47,74-76</td></tr>
     <tr><td>Proxy scalar write</td><td><code>Sap(el).field = v</code></td><td>carrier write, else <code>state=</code> attr, else auto-declare on root (or E12/E15)</td><td class="cite">scope.js:106-155</td></tr>
     <tr><td>Proxy <code>$add</code></td><td><code>Sap(el).$add('todos')</code></td><td>clone template, strip <code>template</code>, fresh ids, append, schedule</td><td class="cite">scope.js:170-187</td></tr>
     <tr><td>Proxy <code>$remove</code>/<code>$reset</code>/<code>$move</code></td><td><code>row.$remove()</code> etc.</td><td>remove / restore defaults / cross-list move</td><td class="cite">scope.js:189-226</td></tr>
@@ -758,7 +759,7 @@ Sap.config({ formats: { gbp: (n) =&gt; "£" + Number(n).toFixed(2) } });
   <!-- DEMO: bind matrix (EDITABLE) -->
   <div class="demo" data-demo="set-bindmatrix" data-editable>
     <div class="demo-head">
-      <div><h4>Two-way binding by control type — <span style="color:var(--accent)">editable</span></h4><p>The control is the contract, no modifiers. <b>Edit the markup on the right</b> and the live app re-mounts. Every input feeds one live object.</p></div>
+      <div><h4>Two-way binding by control type — <span style="color:var(--accent)">editable</span></h4><p>The control is the contract, no modifiers. <b>Edit the markup on the right</b> and the live app re-mounts; <b>edit the live app on the left</b> and the markup re-serializes (the same <code>finalizeControlForSave</code> a real save runs). Every input feeds one live object.</p></div>
       <span class="chip" data-chip></span>
     </div>
     <div class="demo-grid">
@@ -774,7 +775,15 @@ Sap.config({ formats: { gbp: (n) =&gt; "£" + Number(n).toFixed(2) } });
       <option value="pro" selected>Pro</option>
     </select>
   </label>
-  <p class="out" text="state.name + ' · ' + state.age + ' · ' + (state.member ? state.plan : 'guest')">Ada · 36 · pro</p>
+  <label>Tags
+    <select bind="tags" multiple>
+      <option value="design" selected>Design</option>
+      <option value="code">Code</option>
+      <option value="ops">Ops</option>
+    </select>
+  </label>
+  <label>Bio &lt;textarea bind="bio"&gt;Builder.&lt;/textarea&gt;</label>
+  <p class="out" text="state.name + ' · ' + state.age + ' · ' + (state.member ? state.plan : 'guest') + ' · ' + state.tags.join('+')">Ada · 36 · pro · design</p>
 </main>
 </textarea></div>
     </div>
@@ -784,7 +793,7 @@ Sap.config({ formats: { gbp: (n) =&gt; "£" + Number(n).toFixed(2) } });
   <!-- DEMO: set: tabs -->
   <div class="demo" data-demo="set-tabs">
     <div class="demo-head">
-      <div><h4><code>set:</code> — write a field on click</h4><p>A click writes <code>tab</code>; <code>show</code> reads it back. No toggle state stored anywhere but the DOM.</p></div>
+      <div><h4><code>set:</code> — write a field on click</h4><p>A click writes <code>tab</code>; <code>show-when</code> reads it back. No toggle state stored anywhere but the DOM.</p></div>
       <span class="chip" data-chip></span>
     </div>
     <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
@@ -796,9 +805,9 @@ Sap.config({ formats: { gbp: (n) =&gt; "£" + Number(n).toFixed(2) } });
           <span class="pill" set:tab="'pricing'" class:active="state.tab === 'pricing'">Pricing</span>
           <span class="pill" set:tab="'faq'" class:active="state.tab === 'faq'">FAQ</span>
         </div>
-        <p show="state.tab === 'overview'">Sap rebuilds state from the DOM every pass.</p>
-        <p show="state.tab === 'pricing'" hidden>Free and open source. MIT licensed.</p>
-        <p show="state.tab === 'faq'" hidden>Yes, it works in a single saved HTML file.</p>
+        <p show-when:tab="overview">Sap rebuilds state from the DOM every pass.</p>
+        <p show-when:tab="pricing" hidden>Free and open source. MIT licensed.</p>
+        <p show-when:tab="faq" hidden>Yes, it works in a single saved HTML file.</p>
       </main>
     </script>
   </div>
@@ -1119,6 +1128,8 @@ Sap.config({ formats: { gbp: (n) =&gt; "£" + Number(n).toFixed(2) } });
       ta.value = initial;
       let recs = mountInto(live, initial);
       paintGreenLine(demo, recs);
+
+      // right -> left: typing markup re-mounts the live app
       let timer = null;
       ta.addEventListener("input", () => {
         clearTimeout(timer);
@@ -1127,6 +1138,28 @@ Sap.config({ formats: { gbp: (n) =&gt; "£" + Number(n).toFixed(2) } });
           paintGreenLine(demo, recs);
         }, 350);
       });
+
+      // left -> right: editing the live app re-serializes the markup, exactly the
+      // way a real save does (clone, then finalize each control from the live one).
+      // Programmatic ta.value writes don't fire "input", and a re-mount projects
+      // silently, so this re-serializes on real edits without ever looping.
+      let backTimer = null;
+      const syncBack = () => {
+        clearTimeout(backTimer);
+        backTimer = setTimeout(() => {
+          const root = live.querySelector("[sap]");
+          if (!root) return;
+          Sap.refresh(); // settle projections (the computed readout) before reading
+          const clone = root.cloneNode(true);
+          const liveControls = root.querySelectorAll("input, select, textarea");
+          clone.querySelectorAll("input, select, textarea").forEach((c, i) => {
+            if (liveControls[i]) Sap.finalizeControlForSave(c, liveControls[i]);
+          });
+          ta.value = clone.outerHTML;
+        }, 150);
+      };
+      live.addEventListener("input", syncBack);
+      live.addEventListener("change", syncBack);
       return;
     }
 

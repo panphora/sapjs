@@ -21,6 +21,7 @@ import { createActions } from "./actions.js";
 import { createDebug } from "./debug.js";
 import { batch, installBridges } from "./platform.js";
 import { formats } from "./helpers.js";
+import { serializeControlToAttributes, finalizeControlForSave, rehydrateControlFromAttributes } from "./control-serialize.js";
 
 const VERSION = "0.2.0";
 
@@ -127,6 +128,9 @@ Sap.debug = debugApi.debug;
 Sap.doctor = debugApi.doctor;
 Sap.greenLine = debugApi.greenLine;
 Sap.formats = formats;
+Sap.serializeControlToAttributes = serializeControlToAttributes;
+Sap.finalizeControlForSave = finalizeControlForSave;
+Sap.rehydrateControlFromAttributes = rehydrateControlFromAttributes;
 Sap.mount = mount;
 Sap.config = function config(options = {}) {
   if (options.formats) Object.assign(formats, options.formats);

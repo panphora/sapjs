@@ -24,6 +24,7 @@
     --accent-dim: #3aa776;
     --warn: #f0b86e;
     --bad: #f0726f;
+    --blue: #7cc4ff;
     --code-bg: #0c0f15;
     --mono: "Berkeley Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -167,6 +168,65 @@
   .console-bar button:hover { border-color: var(--accent-dim); }
   pre.console-out { margin: 0; padding: 14px 16px; font-size: 12px; color: var(--accent-dim); white-space: pre-wrap; max-height: 320px; overflow: auto; min-height: 60px; }
 
+  /* Utility */
+  .small { font-size: 13.5px; }
+  .muted { color: var(--muted); }
+
+  /* Notes / callouts */
+  .note { background: rgba(240,184,110,0.06); border: 1px solid rgba(240,184,110,0.3); border-radius: 10px; padding: 13px 16px; margin: 16px 0; font-size: 13.5px; color: var(--text); }
+  .note b { color: var(--warn); }
+  .note.blue { background: rgba(124,196,255,0.06); border-color: rgba(124,196,255,0.28); }
+  .note.blue b { color: var(--blue); }
+
+  /* Diagrams */
+  .diagram { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 22px; margin: 18px 0; }
+  .diagram .cap { font-size: 12px; color: var(--muted); margin: 0 0 16px; font-family: var(--mono); letter-spacing: 0.02em; }
+  .flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+  .flow-step { flex: 1 1 0; min-width: 150px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 10px; padding: 14px; position: relative; }
+  .flow-step .n { font-family: var(--mono); font-size: 11px; color: var(--accent-dim); }
+  .flow-step h5 { margin: 4px 0 6px; font-size: 14.5px; color: var(--accent); }
+  .flow-step p { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .flow-arrow { align-self: center; color: var(--accent-dim); font-size: 22px; padding: 0 8px; font-family: var(--mono); }
+  @media (max-width: 760px) { .flow { flex-direction: column; } .flow-arrow { transform: rotate(90deg); padding: 6px 0; } }
+  .flow-loop { margin-top: 14px; font-size: 12px; color: var(--faint); font-family: var(--mono); text-align: center; border-top: 1px dashed var(--border-2); padding-top: 10px; }
+  .funnel { display: grid; grid-template-columns: 1.1fr 0.5fr 1.3fr; gap: 14px; align-items: center; }
+  @media (max-width: 760px) { .funnel { grid-template-columns: 1fr; } }
+  .funnel .sources .src { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 7px; padding: 7px 10px; margin: 5px 0; font-family: var(--mono); font-size: 12px; }
+  .funnel .converge { text-align: center; }
+  .funnel .converge .node { background: var(--accent); color: #04130c; font-weight: 600; border-radius: 8px; padding: 10px; font-family: var(--mono); font-size: 12.5px; }
+  .funnel .converge .arr { color: var(--accent-dim); font-size: 20px; }
+  .funnel .branches .br { border: 1px solid var(--border-2); border-radius: 8px; padding: 10px 12px; margin: 6px 0; font-size: 12.5px; }
+  .funnel .branches .br b { color: var(--accent); font-family: var(--mono); font-size: 12px; }
+  .funnel .branches .br.silent { border-style: dashed; }
+  .funnel .branches .br.silent b { color: var(--faint); }
+
+  /* Saved-HTML output panel */
+  .savedbar { display: flex; gap: 10px; align-items: center; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--panel-2); }
+  .savedbar button { background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text); border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 13.5px; cursor: pointer; }
+  .savedbar button:hover { border-color: var(--accent-dim); }
+  pre.html-out { margin: 0; padding: 14px 18px; background: var(--code-bg); border-top: 1px solid var(--border); font-size: 12px; line-height: 1.6; color: #aeb9cc; white-space: pre-wrap; overflow-x: auto; }
+  .html-out .keep { background: rgba(110,231,168,0.16); color: var(--accent); border-radius: 3px; padding: 0 2px; }
+  .legend { font-size: 12px; color: var(--muted); padding: 0 18px 12px; }
+  .legend .keep { background: rgba(110,231,168,0.16); color: var(--accent); border-radius: 3px; padding: 0 4px; }
+
+  /* Editable demo (tamed) */
+  .src-edit { margin: 0; padding: 16px 18px; background: var(--code-bg); color: #c4cede; overflow-x: auto; font-size: 12.5px; line-height: 1.55; white-space: pre; tab-size: 2; font-family: var(--mono); border: none; width: 100%; resize: vertical; min-height: 240px; }
+  .src-edit:focus { outline: none; box-shadow: inset 2px 0 0 var(--accent-dim); }
+  .editwrap { position: relative; }
+  .editwrap .editbadge { position: absolute; top: 8px; right: 12px; font-family: var(--mono); font-size: 10.5px; color: var(--accent); background: var(--panel); border: 1px solid var(--border-2); border-radius: 5px; padding: 2px 7px; pointer-events: none; }
+  .edit-toggle { position: absolute; top: 10px; right: 10px; z-index: 2; background: var(--panel-2); border: 1px solid var(--border-2); color: var(--muted); border-radius: 6px; padding: 4px 10px; font-family: var(--mono); font-size: 12px; cursor: pointer; }
+  .edit-toggle:hover { border-color: var(--accent-dim); color: var(--text); }
+
+  /* contenteditable + block cards inside a live demo */
+  .live [contenteditable] { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 7px; padding: 7px 9px; min-height: 38px; }
+  .live [contenteditable]:focus { outline: none; border-color: var(--accent-dim); }
+  .live .card-plain { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+
+  /* native dialog */
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border-2); border-radius: 12px; padding: 20px 22px; max-width: 380px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+  dialog::backdrop { background: rgba(4,8,12,0.6); backdrop-filter: blur(2px); }
+  dialog h4 { margin: 0 0 8px; }
+
   footer { padding: 48px 0 64px; color: var(--faint); font-size: 13px; }
   footer .brand { color: var(--muted); }
   footer .brandline { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
@@ -183,6 +243,8 @@
       <a href="#why">Why</a>
       <a href="#quickstart">Quickstart</a>
       <a href="#demos">Demos</a>
+      <a href="#persistence">Persistence</a>
+      <a href="#text">Rich text</a>
       <a href="#reference">Reference</a>
       <a href="#agents">For agents</a>
       <a href="https://github.com/panphora/sapjs">GitHub</a>
@@ -208,7 +270,7 @@
 
 <!-- HERO DEMO -->
 <section class="wrap" style="padding-top: 28px;">
-  <div class="demo">
+  <div class="demo" data-demo="overview-calc">
     <div class="demo-head">
       <h3>The whole idea, in six lines</h3>
       <p>Type in either field. The total recomputes and formats itself. No JavaScript to write.</p>
@@ -292,7 +354,7 @@
     <li>Type in either box: the total recomputes and formats as currency. You wrote no app JavaScript.</li>
   </ol>
   <p style="color:var(--muted); font-size:14px; max-width:74ch;">
-    The saved markup already reads <code class="mono">$30</code>, because every paint targets a real attribute, so the file is correct before JS even loads. Made a typo? Open the devtools console: Sap names the element, the mistake, and the fix (see <a href="#console">section 04</a>).
+    The saved markup already reads <code class="mono">$30</code>, because every paint targets a real attribute, so the file is correct before JS even loads. Made a typo? Open the devtools console: Sap names the element, the mistake, and the fix (see <a href="#console">section 07</a>).
   </p>
 </section>
 
@@ -321,6 +383,36 @@
     Reads are expressions over <code class="mono">state</code> (the nearest scope) and <code class="mono">item</code> (the nearest row).
     Writes go through <code class="mono">Sap(el)</code> in your handlers, or the action attributes. One write path, always.
   </p>
+
+  <div class="diagram">
+    <p class="cap">The pass cycle — what one change does</p>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="n">1 · intake</div>
+        <h5>read the DOM</h5>
+        <p>Walk every <code>state=</code>, <code>bind</code>, and <code>items</code> into fresh objects. Nothing is retained from the last pass.</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="n">2 · compute</div>
+        <h5>run calc:</h5>
+        <p>Deepest scope first, dependency order within each scope. <code>total</code> waits for <code>subtotal</code> automatically.</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="n">3 · paint</div>
+        <h5>write if changed</h5>
+        <p><code>text</code>, <code>show</code>, <code>attr:</code>, <code>class:</code>, <code>css:</code>, effects, validity. Only cells that differ are touched.</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="n">4 · discard</div>
+        <h5>drop the objects</h5>
+        <p>Per-pass objects are replaced wholesale on the next pass. Nothing is cached, so nothing can drift.</p>
+      </div>
+    </div>
+    <div class="flow-loop">a devtools edit · a console paste · a live-sync update · a keystroke → all are just the next pass's input</div>
+  </div>
 </section>
 
 <!-- DEMOS -->
@@ -328,10 +420,10 @@
   <h2><span class="num">03</span>Live demos</h2>
   <p class="lead">Every demo below runs the real library, live on this page. New here? The first few are
     the gentlest. The green line under each is what Sap prints when an app mounts: the fields, calcs, and
-    paints it found, plus the pass time. Section 04 reads it line by line.</p>
+    paints it found, plus the pass time. Section 07 reads it line by line.</p>
 
   <!-- TODO -->
-  <div class="demo">
+  <div class="demo" data-demo="todo">
     <div class="demo-head">
       <h3>A todo list, in attributes</h3>
       <p>The form's <code>bind="title"</code> matches the row's <code>title</code>, so <code>trigger-add</code> fills the new row and clears the box. No JavaScript.</p>
@@ -371,7 +463,7 @@
   </div>
 
   <!-- SORT -->
-  <div class="demo">
+  <div class="demo" data-demo="sort">
     <div class="demo-head">
       <h3>Stateless column sort</h3>
       <p><code>sort:FIELD</code> reorders the rows and toggles direction. The row order is the entire sort state.</p>
@@ -411,11 +503,11 @@
     </script>
   </div>
 
-  <!-- MASTER-DETAIL -->
-  <div class="demo">
+  <!-- DETAIL / DIALOG -->
+  <div class="demo" data-demo="modal-dialog">
     <div class="demo-head">
-      <h3>Master–detail, no framework</h3>
-      <p><code>detail="LIST by KEYEXPR"</code> projects the selected row. Edits in the panel write back to the source row.</p>
+      <h3>One selection, two containers, no modal library</h3>
+      <p><code>detail="LIST by KEY"</code> projects the selected row into <em>any</em> container. Click a row to fill the inline panel; click <b>Edit ▸</b> to open the same lens in a native <code>&lt;dialog&gt;</code>. Edits in either write back to the source row.</p>
     </div>
     <div class="demo-grid">
       <div class="live"></div>
@@ -424,40 +516,51 @@
     <code class="greenline"></code>
     <script type="text/html">
       <main sap state="selected">
-        <ul items="contacts">
-          <li item template
-              set:selected="item.$key"
-              class:active="state.selected === item.$key">
+        <ul items="people">
+          <li item template set:selected="item.$key" class:active="state.selected === item.$key">
             <span bind="name" style="flex:1"></span>
+            <button type="button" onclick="Sap(this).selected = Sap(this).$key; Sap.refresh(); document.getElementById('peopleDlg').showModal()">Edit ▸</button>
           </li>
-          <li item id="ct-1"
-              set:selected="item.$key"
-              class:active="state.selected === item.$key">
+          <li item id="person-grace" set:selected="item.$key" class:active="state.selected === item.$key">
             <span bind="name" style="flex:1">Grace Hopper</span>
             <input type="hidden" bind="email" value="grace@navy.mil">
+            <button type="button" onclick="Sap(this).selected = Sap(this).$key; Sap.refresh(); document.getElementById('peopleDlg').showModal()">Edit ▸</button>
           </li>
-          <li item id="ct-2"
-              set:selected="item.$key"
-              class:active="state.selected === item.$key">
+          <li item id="person-alan" set:selected="item.$key" class:active="state.selected === item.$key">
             <span bind="name" style="flex:1">Alan Turing</span>
             <input type="hidden" bind="email" value="alan@bletchley.uk">
+            <button type="button" onclick="Sap(this).selected = Sap(this).$key; Sap.refresh(); document.getElementById('peopleDlg').showModal()">Edit ▸</button>
           </li>
         </ul>
-        <form detail="contacts by state.selected"
-              style="margin-top:10px">
+
+        <div class="card-plain" detail="people by state.selected">
+          <div class="muted small" style="margin-bottom:4px">inline &lt;div&gt; lens</div>
           <label>Name <input bind="name"></label>
           <label>Email <input type="email" bind="email"></label>
-        </form>
-        <p class="muted" show="!state.selected">Pick a contact to edit it.</p>
+        </div>
+        <p class="muted small" show="!state.selected">No contact selected.</p>
+        <button type="button" set:selected="''" style="margin-top:8px">Clear selection</button>
+
+        <dialog id="peopleDlg" detail="people by state.selected">
+          <form method="dialog">
+            <h4>Edit contact</h4>
+            <div class="muted small" style="margin-bottom:4px">native &lt;dialog&gt; lens — same source row</div>
+            <label>Name <input bind="name"></label>
+            <label>Email <input type="email" bind="email"></label>
+            <div style="margin-top:12px; display:flex; justify-content:flex-end">
+              <button value="done">Done</button>
+            </div>
+          </form>
+        </dialog>
       </main>
     </script>
   </div>
 
   <!-- FILTER -->
-  <div class="demo">
+  <div class="demo" data-demo="filter">
     <div class="demo-head">
       <h3>Live filter (hide, never remove)</h3>
-      <p>A per-row <code>calc:match</code> drives <code>show</code>. Hidden rows still count in the total, like a spreadsheet.</p>
+      <p>A per-row <code>calc:match</code> drives <code>show</code>. Hidden rows still count in the total, like a spreadsheet. The search box is <code>transient</code>: it filters live but is never written to the saved file.</p>
     </div>
     <div class="demo-grid">
       <div class="live"></div>
@@ -503,7 +606,7 @@
   </div>
 
   <!-- KANBAN -->
-  <div class="demo">
+  <div class="demo" data-demo="kanban">
     <div class="demo-head">
       <h3>Move between lists</h3>
       <p><code>move:to="list"</code> moves a row to another list. The DOM move <em>is</em> the write. Works for keyboard users with zero extra code.</p>
@@ -552,7 +655,7 @@
   </div>
 
   <!-- VALIDATION -->
-  <div class="demo">
+  <div class="demo" data-demo="validation">
     <div class="demo-head">
       <h3>Cross-field validation, natively</h3>
       <p><code>invalid="expr"</code> sets a custom validity message. The submit button disables itself with pure CSS — no Sap attribute.</p>
@@ -581,7 +684,7 @@
   </div>
 
   <!-- TABS / SET -->
-  <div class="demo">
+  <div class="demo" data-demo="tabs">
     <div class="demo-head">
       <h3>Tabs with <code>set:</code></h3>
       <p>A click writes a field; <code>show</code> reads it back. No toggle state stored anywhere but the DOM.</p>
@@ -604,15 +707,15 @@
                 set:tab="'faq'"
                 class:active="state.tab === 'faq'">FAQ</span>
         </div>
-        <p show="state.tab === 'overview'">Sap rebuilds state from the DOM every pass.</p>
-        <p show="state.tab === 'pricing'">Free and open source. MIT licensed.</p>
-        <p show="state.tab === 'faq'">Yes, it works in a single saved HTML file.</p>
+        <p show-when:tab="overview">Sap rebuilds state from the DOM every pass.</p>
+        <p show-when:tab="pricing">Free and open source. MIT licensed.</p>
+        <p show-when:tab="faq">Yes, it works in a single saved HTML file.</p>
       </main>
     </script>
   </div>
 
   <!-- BULK + BATCH -->
-  <div class="demo">
+  <div class="demo" data-demo="batch">
     <div class="demo-head">
       <h3>Bulk operations as one-liners</h3>
       <p>Row proxies compose with array methods. <code>Sap.batch</code> groups them into a single undo entry.</p>
@@ -642,19 +745,18 @@
             <span bind="subject" style="flex:1">Re: launch</span>
           </li>
         </ul>
-        <button confirm="Delete selected messages?"
-                onclick="Sap.batch('Delete selected', () => Sap(this).inbox.filter(m => m.sel).forEach(m => m.$remove()))">
+        <button onclick="if (window.confirm('Delete selected messages?')) Sap.batch('Delete selected', () => Sap(this).inbox.filter(m => m.sel).forEach(m => m.$remove()))">
           Delete selected (<output text="count(state.inbox, m => m.sel)"></output>)
         </button>
       </main>
     </script>
   </div>
 
-  <!-- BIND MATRIX -->
-  <div class="demo">
+  <!-- RESET -->
+  <div class="demo" data-demo="set-reset">
     <div class="demo-head">
-      <h3>Two-way binding, by control type</h3>
-      <p>The control <em>is</em> the contract. No modifiers, ever. Every input feeds one live object.</p>
+      <h3><code>trigger-reset</code> — restore defaults</h3>
+      <p>Edit the fields, then Reset. Controls restore from an explicit <code>default=</code>; attribute-carried state restores from its <code>state="field=default"</code> declaration.</p>
     </div>
     <div class="demo-grid">
       <div class="live"></div>
@@ -662,26 +764,64 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main sap>
-        <label>Name <input bind="name" value="Ada"></label>
-        <label>Age
-          <input type="number" bind="age" value="36"></label>
+      <main sap state="mode=compact">
+        <label>Display name
+          <input bind="dname" value="Ada Lovelace" default="Ada Lovelace"></label>
         <label class="inline">
-          <input type="checkbox" bind="member" checked> Member</label>
-        <label>Plan
-          <select bind="plan">
-            <option value="free">Free</option>
-            <option value="pro" selected>Pro</option>
-          </select>
-        </label>
+          <input type="checkbox" bind="emails" checked default="true"> Email me updates</label>
+        <div style="display:flex; gap:8px; margin:8px 0">
+          <span class="pill active" set:mode="'compact'"
+                class:active="state.mode === 'compact'">Compact</span>
+          <span class="pill" set:mode="'cozy'"
+                class:active="state.mode === 'cozy'">Cozy</span>
+        </div>
         <p class="out"
-           text="state.name + ' · ' + state.age + ' · ' + (state.member ? state.plan : 'guest')"></p>
+           text="state.dname + ' · emails=' + state.emails + ' · mode=' + state.mode">Ada Lovelace · emails=true · mode=compact</p>
+        <button trigger-reset>Reset to defaults</button>
       </main>
     </script>
   </div>
 
+  <!-- BIND MATRIX (editable, tamed behind a toggle) -->
+  <div class="demo" data-demo="set-bindmatrix" data-editable>
+    <div class="demo-head">
+      <h3>Two-way binding, by control type</h3>
+      <p>The control <em>is</em> the contract — no modifiers, ever. Every input feeds one live object. Hit <b>Edit markup ✎</b> to change the source and watch the app re-mount; edit the live app and the markup re-serializes, the same way a save does.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="live"></div>
+      <div style="position:relative">
+        <button class="edit-toggle" type="button">Edit markup ✎</button>
+        <pre class="code"></pre>
+        <div class="editwrap" hidden><textarea class="src-edit" spellcheck="false">
+<main sap>
+  <label>Name <input bind="name" value="Ada"></label>
+  <label>Age <input type="number" bind="age" value="36"></label>
+  <label class="inline"><input type="checkbox" bind="member" checked> Member</label>
+  <label>Plan
+    <select bind="plan">
+      <option value="free">Free</option>
+      <option value="pro" selected>Pro</option>
+    </select>
+  </label>
+  <label>Tags
+    <select bind="tags" multiple>
+      <option value="design" selected>Design</option>
+      <option value="code">Code</option>
+      <option value="ops">Ops</option>
+    </select>
+  </label>
+  <label>Bio &lt;textarea bind="bio"&gt;Builder.&lt;/textarea&gt;</label>
+  <p class="out" text="state.name + ' · ' + state.age + ' · ' + (state.member ? state.plan : 'guest') + ' · ' + state.tags.join('+')">Ada · 36 · pro · design</p>
+</main>
+</textarea></div>
+      </div>
+    </div>
+    <code class="greenline"></code>
+  </div>
+
   <!-- ACCORDION -->
-  <div class="demo">
+  <div class="demo" data-demo="accordion">
     <div class="demo-head">
       <h3>Where <code>open</code> really is state</h3>
       <p>A native <code>&lt;details&gt;</code> declares <code>state="open"</code> with presence semantics. The open panel serializes and renders pre-JS.</p>
@@ -710,9 +850,208 @@
   </div>
 </section>
 
+<!-- WRITING STATE -->
+<section class="wrap" id="writing">
+  <h2><span class="num">04</span>One write path</h2>
+  <p class="lead">Every change is just the next pass's input, so there is one place state gets written and one model to learn. Typing in a field, a <code class="mono">Sap(el)</code> assignment, a <code class="mono">set:</code> click, a row move, a live-sync update from another tab: all funnel into the same scheduled recompute.</p>
+
+  <div class="diagram">
+    <p class="cap">Writes converge — control writes synthesize events, paints stay silent</p>
+    <div class="funnel">
+      <div class="sources">
+        <div class="src">typing in a bound control</div>
+        <div class="src">Sap(el).field = v</div>
+        <div class="src">set: / form trigger-add / detail edit</div>
+        <div class="src">trigger-* / move: / sort:</div>
+        <div class="src">declared state attr write</div>
+      </div>
+      <div class="converge">
+        <div class="arr">▶</div>
+        <div class="node">schedule</div>
+        <div class="arr" style="margin-top:6px">▼</div>
+      </div>
+      <div class="branches">
+        <div class="br"><b>native input</b> → the browser mutates the live property → native <code>input</code>/<code>change</code> → schedule</div>
+        <div class="br"><b>programmatic control write</b> → set the live property, mirror the serializable attribute (unless transient), fire a synthetic <code>input</code> + <code>change</code></div>
+        <div class="br"><b>attribute state</b> → <code>setAttribute()</code> → schedule directly, no synthetic event</div>
+        <div class="br"><b>row order</b> → move or remove DOM rows → schedule directly; order in the DOM is the state</div>
+        <div class="br silent"><b>paint</b> → writes the DOM silently, no event, so it can never trigger a feedback loop</div>
+      </div>
+    </div>
+    <div class="flow-loop">any event or direct schedule → one coalesced pass on the next microtask</div>
+  </div>
+  <p class="muted" style="font-size:14px;">The honest caveats behind "one path": user typing starts as a native event; a programmatic write to a bound control synthesizes <code class="mono">input</code>/<code class="mono">change</code> so platform hooks observe it the same way; attribute-carried <code class="mono">state=</code> writes schedule directly with no event; row-order writes schedule after moving the nodes; and paints write silently. Different entry points, one recompute.</p>
+</section>
+
+<!-- PERSISTENCE -->
+<section class="wrap" id="persistence">
+  <h2><span class="num">05</span>Persistence &amp; transient state</h2>
+  <p class="lead">"The file you save is the app" is true for structure and authored values: the markup, the rows, a contenteditable's text. There is one honest nuance for <em>typed</em> form values, and one attribute that handles it.</p>
+
+  <h3>What survives a save, and what needs help</h3>
+  <p>When a user types into an <code class="mono">&lt;input&gt;</code>, sap updates the control's live <code class="mono">.value</code> and recomputes, but it does <b>not</b> copy that into the saved <code class="mono">value=</code> attribute. Only a programmatic write (<code class="mono">Sap(el).x = v</code>, <code class="mono">set:</code>, a reset, a projection) mirrors back to the attribute. So a plain "save the DOM" keeps everything you authored, plus contenteditable text, but misses values the user typed and never wrote through code.</p>
+  <p>On Hyperclay, the <code class="mono">[persist]</code> attribute closes that gap: it syncs a control's live value into its serializable attribute on every keystroke, so the typed value lands in the saved file. The rule of thumb: <b><code class="mono">bind</code> is reactivity; <code class="mono">[persist]</code> is durability.</b> Put <code class="mono">persist</code> on any user-editable control whose value must survive a reload.</p>
+
+  <div class="note">
+    <b>The save-survival footgun.</b> <code class="mono">bind</code> makes a control reactive; it does not make a typed value durable on its own. <code class="mono">persist</code> is matched per control — <code class="mono">input[persist]</code>, <code class="mono">textarea[persist]</code>, <code class="mono">select[persist]</code> — so it goes on the control itself, not a wrapper.
+  </div>
+
+  <table class="ref">
+    <tr><th>control</th><th>does a <em>typed</em> value survive a plain save?</th><th>add <code>[persist]</code>?</th></tr>
+    <tr><td>contenteditable / bound text leaf</td><td>yes — it is <code class="mono">textContent</code>, already in the saved DOM</td><td>no</td></tr>
+    <tr><td>text / number input</td><td>no — typing updates <code class="mono">.value</code>, not the <code class="mono">value</code> attribute</td><td>yes</td></tr>
+    <tr><td>checkbox / radio</td><td>no — toggling updates <code class="mono">.checked</code>, not the <code class="mono">checked</code> attribute</td><td>yes</td></tr>
+    <tr><td>select / select-multiple</td><td>no — sap's carrier never mirrors a select</td><td>yes</td></tr>
+    <tr><td>textarea</td><td>no — content lives in <code class="mono">.value</code>, not the child text a save serializes</td><td>yes</td></tr>
+  </table>
+
+  <h3>transient: the opposite of persist</h3>
+  <p>Mark a control or field <code class="mono">transient</code> and sap actively strips its value on every pass, so it never reaches the saved file: search boxes, scratch state, anything you don't want frozen into the document. Two safety facts:</p>
+  <ul class="small muted">
+    <li>A <code class="mono">bind</code> on a <code class="mono">type=password</code> without <code class="mono">transient</code> halts the app at mount (<code class="mono">E31</code>); a <code class="mono">type=file</code> always halts (<code class="mono">E32</code>). A saved file must never carry a cleartext password.</li>
+    <li>Never combine <code class="mono">transient</code> + <code class="mono">[persist]</code>: their intent is opposite. <code class="mono">transient</code> strips the value; <code class="mono">[persist]</code> forces it into the saved clone and wins, leaking exactly what <code class="mono">transient</code> promised to drop.</li>
+  </ul>
+
+  <!-- DEMO: show saved HTML -->
+  <div class="demo" data-demo="transient-savedhtml">
+    <div class="demo-head">
+      <h3>Show saved HTML</h3>
+      <p>Type in the search box (the readout proves the app reads it live), then click <b>Show saved HTML</b>. It dumps the live <code>outerHTML</code>: the transient fields have <em>no</em> <code>value</code>/<code>checked</code> at all. Click <b>Set City via Sap(el)</b> to watch a programmatic write mirror into the attribute.</p>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <div class="savedbar">
+      <button class="show-html-btn">Show saved HTML ↓</button>
+      <span class="muted small">reads <code class="mono">outerHTML</code> after the engine's strip</span>
+    </div>
+    <pre class="html-out muted">click the button to dump the live root…</pre>
+    <p class="legend"><span class="keep">highlighted</span> = a value that survives into the file. The transient search box and VIP checkbox have no <code class="mono">value</code>/<code class="mono">checked</code> at all.</p>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <label>Search (transient)
+          <input type="search" bind="q" transient placeholder="type here, never saved…"></label>
+        <label>City (persisted, authored value)
+          <input bind="city" value="Lisbon"></label>
+        <label class="inline"><input type="checkbox" bind="vip" transient> VIP (transient)</label>
+        <label class="inline"><input type="checkbox" bind="active" checked> Active (persisted)</label>
+        <button type="button" onclick="Sap(this).city = 'Madrid'" style="margin-top:8px">Set City via Sap(el) → mirrors</button>
+        <p class="out small"
+           text="'q=' + JSON.stringify(state.q) + '  ·  city=' + JSON.stringify(state.city) + '  ·  vip=' + state.vip + '  ·  active=' + state.active">q=""  ·  city="Lisbon"  ·  vip=false  ·  active=true</p>
+      </main>
+    </script>
+  </div>
+</section>
+
+<!-- TEXT & RICH EDITORS -->
+<section class="wrap" id="text">
+  <h2><span class="num">06</span>Text &amp; rich editors</h2>
+  <p class="lead">sap state is plaintext: a <code class="mono">bind</code> reads and writes a control's <code class="mono">textContent</code>, never its inner HTML. That keeps every value a scalar that round-trips as text, so view-source stays correct and one carrier serves every write. Rich, formatted editors live <em>behind</em> sap, not inside its state.</p>
+
+  <h3>Plaintext by design</h3>
+  <p>A bound contenteditable reads as plain text: paste bold or linked content and it flattens to the string on read. Formatting is markup, not state. What you get is native form controls, a plaintext contenteditable, and structure expressed as real DOM (lists, <code>show</code>, classes).</p>
+
+  <!-- DEMO: contenteditable bind -->
+  <div class="demo" data-demo="richtext-contenteditable">
+    <div class="demo-head">
+      <h3>A plaintext contenteditable bind</h3>
+      <p>Type into the editable box. The mirror and the character counter update live, proving the bound value is the plain string. Paste bold or linked text — it flattens to plain text on read.</p>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <label>Note (contenteditable, plaintext-only)</label>
+        <span contenteditable="plaintext-only" bind="note" style="display:block">Clay is malleable.</span>
+        <p class="out">mirror → <b text="state.note">Clay is malleable.</b></p>
+        <p class="muted small">length → <b text="state.note.length">18</b> chars · the bound value is always a plain string</p>
+      </main>
+    </script>
+  </div>
+
+  <h3>Embedding a real editor (the escape hatch)</h3>
+  <p>"No rich text" is about engine <em>state</em>, not the page. To embed a real editor — a formatting contenteditable, or Slate / TinyMCE / ProseMirror — tell sap to leave that subtree alone with <code class="mono">sap-ignore</code>. The pass walker never descends into it, the linter skips it whole (so a third-party editor's foreign attributes never trip <code class="mono">E01</code>), and the markup round-trips because the live DOM is saved as-is.</p>
+  <p>The Notion shape: sap owns the block <em>list</em> (<code class="mono">items</code>/<code class="mono">item</code> + <code class="mono">trigger-add</code>/<code class="mono">move:</code>/<code class="mono">trigger-remove</code>), and each block body is a <code class="mono">sap-ignore</code> editor mount. Add, remove, and reorder stay fully reactive; the prose stays rich.</p>
+
+  <div class="grid2">
+    <div class="card-plain">
+      <h3>Quiet the event noise</h3>
+      <p><code class="mono">sap-ignore</code> stops the DOM walk, not event delegation. <code class="mono">stopPropagation()</code> the editor's <code class="mono">input</code>/<code class="mono">change</code> so it doesn't schedule needless passes; Hyperclay's capture-phase hooks still see it.</p>
+    </div>
+    <div class="card-plain">
+      <h3>Undo &amp; autosave</h3>
+      <p>A rich editor churns the DOM. Put <code class="mono">no-undo</code> on the mount so its keystrokes don't flood the undo stack; the region stays watched, so autosave still fires. Avoid <code class="mono">no-watch</code> — it turns autosave off too.</p>
+    </div>
+    <div class="card-plain">
+      <h3>Not in sap state</h3>
+      <p>sap can't read the prose, so you can't <code class="mono">calc:</code> or search over it. Need a word count? Mirror a derived plaintext into a normal field: <code class="mono">Sap(el).body = editor.textContent</code>.</p>
+    </div>
+    <div class="card-plain">
+      <h3>JS-state editors</h3>
+      <p>Editors that keep canonical content in JS (a TinyMCE iframe, Slate's tree) leave the cloned DOM stale at save. Flush into the mount first via an <code class="mono">onSnapshot</code> hook or an inline <code class="mono">[onbeforesave]</code>.</p>
+    </div>
+  </div>
+
+  <!-- DEMO: rich-text embed via sap-ignore -->
+  <div class="demo" data-demo="richtext-embed">
+    <div class="demo-head">
+      <h3>The escape hatch: a block list with rich bodies</h3>
+      <p>sap owns the list (add, remove, reorder are reactive), but each block body is a <code>sap-ignore</code> contenteditable that <b>keeps</b> its <code>&lt;b&gt;</code>/<code>&lt;i&gt;</code> markup — the opposite of the plaintext-flatten demo above. Edit a body, reorder it, add one; the markup is never touched by the engine.</p>
+    </div>
+    <div class="demo-grid"><div class="live"></div><pre class="code"></pre></div>
+    <code class="greenline"></code>
+    <script type="text/html">
+      <main sap>
+        <ul items="blocks">
+          <li item template class="card-plain" style="display:block">
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+              <input bind="kind" style="flex:1" placeholder="Block label">
+              <button move:up title="move up">↑</button>
+              <button move:down title="move down">↓</button>
+              <button trigger-remove title="remove">✕</button>
+            </div>
+            <div class="editor" sap-ignore no-undo contenteditable="true">A new block. Edit me — <b>bold</b> survives.</div>
+          </li>
+          <li item class="card-plain" style="display:block">
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+              <input bind="kind" style="flex:1" value="Intro">
+              <button move:up title="move up">↑</button>
+              <button move:down title="move down">↓</button>
+              <button trigger-remove title="remove">✕</button>
+            </div>
+            <div class="editor" sap-ignore no-undo contenteditable="true">The DOM is the <b>only</b> state store.</div>
+          </li>
+          <li item class="card-plain" style="display:block">
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+              <input bind="kind" style="flex:1" value="Aside">
+              <button move:up title="move up">↑</button>
+              <button move:down title="move down">↓</button>
+              <button trigger-remove title="remove">✕</button>
+            </div>
+            <div class="editor" sap-ignore no-undo contenteditable="true">Formatting is <i>markup</i>, not state.</div>
+          </li>
+          <li item class="card-plain" style="display:block">
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+              <input bind="kind" style="flex:1" value="Quote">
+              <button move:up title="move up">↑</button>
+              <button move:down title="move down">↓</button>
+              <button trigger-remove title="remove">✕</button>
+            </div>
+            <div class="editor" sap-ignore no-undo contenteditable="true">Own your tools. <b>Edit</b> the <i>source</i>.</div>
+          </li>
+        </ul>
+        <form trigger-add="blocks">
+          <input bind="kind" placeholder="New block label (Enter)" required>
+        </form>
+        <p class="muted small"
+           text="plural(state.blocks.length, 'block', 'blocks') + ' · each body keeps its own markup'">3 blocks · each body keeps its own markup</p>
+      </main>
+    </script>
+  </div>
+</section>
+
 <!-- CONSOLE CONTRACT -->
 <section class="wrap" id="console">
-  <h2><span class="num">04</span>Every app is inspectable</h2>
+  <h2><span class="num">07</span>Every app is inspectable</h2>
   <p class="lead">Sap prints a machine-readable green line on mount and answers structured questions on demand.
     Run these against the demos above (open your devtools console to see the formatted blocks too).</p>
   <div class="console">
@@ -735,7 +1074,7 @@
 
 <!-- REFERENCE -->
 <section class="wrap" id="reference">
-  <h2><span class="num">05</span>Reference</h2>
+  <h2><span class="num">08</span>Reference</h2>
   <p class="lead">The complete v1 vocabulary. Reads are frozen expressions; writes go through <code class="mono">Sap(el)</code> or actions.</p>
 
   <h3 style="margin:18px 0 6px; font-size:15px; color:var(--muted)">Declare &amp; bind</h3>
@@ -766,9 +1105,19 @@
     <tr><td><code>trigger-remove</code> / <code>trigger-reset</code></td><td>Remove the nearest row / reset the scope to defaults.</td></tr>
     <tr><td><code>move:up</code> / <code>down</code> / <code>to="list"</code></td><td>Reorder a row, or move it to another list.</td></tr>
     <tr><td><code>sort:FIELD</code></td><td>Stable column sort; direction toggles statelessly.</td></tr>
-    <tr><td><code>confirm="msg"</code></td><td>Gate any action behind <code>window.confirm</code>.</td></tr>
+    <tr><td><code>confirm="msg"</code></td><td>Gate a Sap action (<code>set:</code>, <code>move:</code>, <code>sort:</code>, <code>trigger-*</code>) or a form's <code>trigger-add</code>. For a native <code>onclick</code>, call <code>window.confirm()</code> in the handler.</td></tr>
     <tr><td><code>detail="LIST by KEY"</code></td><td>Project the selected row into a panel; edits route back to the source.</td></tr>
     <tr><td><code>Sap(el).field = v</code></td><td>Live write-through proxy. Verbs: <code>$add</code>, <code>$remove</code>, <code>$move</code>, <code>$reset</code>.</td></tr>
+  </table>
+
+  <h3 style="margin:18px 0 6px; font-size:15px; color:var(--muted)">JavaScript surface</h3>
+  <table class="ref">
+    <tr><td><code>Sap(el)</code></td><td>Live write-through proxy onto the scope or row that owns <code>el</code>. Verbs: <code>$add</code>, <code>$remove</code>, <code>$move</code>, <code>$reset</code>.</td></tr>
+    <tr><td><code>Sap.refresh()</code></td><td>Run one synchronous pass. Set state, refresh, then read the painted DOM on the next line.</td></tr>
+    <tr><td><code>Sap.mount(root?)</code></td><td>Mount a root added after load, or rescan all <code>[sap]</code>. Already-mounted roots are skipped.</td></tr>
+    <tr><td><code>Sap.batch(label, fn)</code></td><td>Run a bulk mutation; with Hyperclay undo present, label it as one undo entry.</td></tr>
+    <tr><td><code>Sap.formats.x</code> / <code>Sap.config({formats})</code></td><td>Register a custom text format — the one extension point.</td></tr>
+    <tr><td><code>Sap.status()</code> / <code>report()</code> / <code>why(el)</code> / <code>doctor()</code></td><td>Inspect a mounted app: status twin · error list · field resolution · full-page audit (section 07).</td></tr>
   </table>
 
   <div class="grid2" style="margin-top:18px">
@@ -783,11 +1132,16 @@
       <p><code class="mono">E01</code> foreign dialect · <code class="mono">E07</code> calc cycle · <code class="mono">E22</code> bad format · <code class="mono">E31</code> bare password.</p>
     </div>
   </div>
+
+  <div class="card-plain" style="margin-top:16px">
+    <h3>Extending sap</h3>
+    <p style="color:var(--muted); font-size:13.5px;">The vocabulary is frozen on purpose: an unknown attribute is always a typo, never a plugin, so the did-you-mean guarantee holds. The one extension point is a custom text format: <code class="mono">Sap.formats.eur = n =&gt; '€' + Number(n).toFixed(2)</code>, then use it anywhere a built-in goes, like <code class="mono">text:eur="state.price"</code>. There are no custom directives or plugins in v1.</p>
+  </div>
 </section>
 
 <!-- FOR AGENTS -->
 <section class="wrap" id="agents">
-  <h2><span class="num">06</span>Built for agents</h2>
+  <h2><span class="num">09</span>Built for agents</h2>
   <p class="lead">Sap files are easy for an LLM to write and verify, because every mistake answers back with a code,
     the exact element, and a copy-pasteable fix.</p>
   <pre class="block">// A typo'd field name doesn't fail silently — it teaches:
@@ -799,8 +1153,8 @@ sap ✗ E12 unknown-state-key
   fix: text="state.total"</pre>
   <p style="color:var(--muted); font-size:14px;">
     Foreign-dialect attributes (<code class="mono">x-text</code>, <code class="mono">v-if</code>, <code class="mono">@click</code>, <code class="mono">:class</code>) each map to their Sap
-    spelling. The definition of done is four shell lines: zero <code class="mono">sap ✗</code>, <code class="mono">Sap.status().ok</code>,
-    zero <code class="mono">[sap-error]</code> elements, and an empty <code class="mono">Sap.doctor()</code>.
+    spelling. The definition of done is three checks: zero <code class="mono">sap ✗</code>, <code class="mono">Sap.status().ok</code>, and
+    zero <code class="mono">[sap-error]</code> elements. <code class="mono">Sap.doctor()</code> findings (dead state, long expressions, high-precision paints) are advisory, not blocking.
   </p>
 </section>
 
@@ -825,6 +1179,83 @@ sap ✗ E12 unknown-state-key
     return lines.map((l) => l.slice(indent)).join("\n");
   }
 
+  function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  function renderCodePanel(demo, src) {
+    const pre = demo.querySelector("pre.code");
+    if (!pre) return;
+    pre.innerHTML = "";
+    const c = document.createElement("code");
+    c.className = "language-markup";
+    c.textContent = src;
+    pre.appendChild(c);
+    if (window.Prism) Prism.highlightElement(c);
+  }
+
+  function paintGreenline(demo, root) {
+    const gl = demo.querySelector(".greenline");
+    if (!gl) return;
+    const rec = root && Sap._registry.get(root);
+    if (!rec) return;
+    const line = Sap.greenLine(rec);
+    gl.textContent = line;
+    gl.classList.toggle("bad", line.indexOf("✗") > -1);
+  }
+
+  // The one editable demo: the textarea is the source of truth. Mount from it,
+  // re-mount on edit (right → left), and re-serialize the live app back to markup
+  // on real edits via the same finalizeControlForSave a save runs (left → right).
+  // The editor stays hidden behind an "Edit markup" toggle so it never dominates.
+  function setupEditable(demo) {
+    const live = demo.querySelector(".live");
+    const ta = demo.querySelector(".src-edit");
+    const pre = demo.querySelector("pre.code");
+    const editwrap = demo.querySelector(".editwrap");
+    const toggle = demo.querySelector(".edit-toggle");
+    if (!live || !ta) return;
+    ta.value = dedent(ta.value);
+
+    function mount(markup) {
+      live.innerHTML = markup;
+      const root = live.querySelector("[sap]");
+      if (root) Sap.mount(root);
+      renderCodePanel(demo, markup);
+      paintGreenline(demo, root);
+    }
+    mount(ta.value);
+
+    if (toggle && editwrap && pre) {
+      toggle.addEventListener("click", () => {
+        const editing = !editwrap.hasAttribute("hidden");
+        if (editing) { editwrap.setAttribute("hidden", ""); pre.removeAttribute("hidden"); toggle.textContent = "Edit markup ✎"; }
+        else { editwrap.removeAttribute("hidden"); pre.setAttribute("hidden", ""); toggle.textContent = "Done editing ✓"; ta.focus(); }
+      });
+    }
+
+    let editTimer = null;
+    ta.addEventListener("input", () => { clearTimeout(editTimer); editTimer = setTimeout(() => mount(ta.value), 350); });
+
+    let backTimer = null;
+    const syncBack = () => {
+      clearTimeout(backTimer);
+      backTimer = setTimeout(() => {
+        const root = live.querySelector("[sap]");
+        if (!root) return;
+        Sap.refresh();
+        const clone = root.cloneNode(true);
+        const liveControls = root.querySelectorAll("input, select, textarea");
+        clone.querySelectorAll("input, select, textarea").forEach((c, i) => {
+          if (liveControls[i] && Sap.finalizeControlForSave) Sap.finalizeControlForSave(c, liveControls[i]);
+        });
+        ta.value = clone.outerHTML;
+        renderCodePanel(demo, clone.outerHTML);
+        paintGreenline(demo, root);
+      }, 150);
+    };
+    live.addEventListener("input", syncBack);
+    live.addEventListener("change", syncBack);
+  }
+
   document.querySelectorAll(".demo").forEach((demo) => {
     const tpl = demo.querySelector('script[type="text/html"]');
     if (!tpl) return;
@@ -838,6 +1269,7 @@ sap ✗ E12 unknown-state-key
       code.appendChild(c);
     }
   });
+  document.querySelectorAll(".demo[data-editable]").forEach(setupEditable);
   if (window.Prism) Prism.highlightAll();
 
   // mount everything we just injected, then print each app's green line
@@ -851,6 +1283,25 @@ sap ✗ E12 unknown-state-key
     const line = Sap.greenLine(rec);
     gl.textContent = line;
     if (line.indexOf("✗") > -1) gl.classList.add("bad");
+  });
+
+  // "Show saved HTML" wiring (Persistence section): dump the live root after the
+  // engine's strip, highlighting the value/checked attributes that survive a save.
+  document.querySelectorAll(".demo .show-html-btn").forEach((btn) => {
+    const demo = btn.closest(".demo");
+    const out = demo.querySelector(".html-out");
+    const live = demo.querySelector(".live");
+    if (!out || !live) return;
+    btn.addEventListener("click", () => {
+      const root = live.querySelector("[sap]");
+      if (!root) return;
+      Sap.refresh();
+      let html = esc(root.outerHTML);
+      html = html.replace(/(value|checked)="[^"]*"/g, (m) => '<span class="keep">' + m + "</span>");
+      html = html.replace(/\schecked(?=\s|&gt;|")/g, (m) => '<span class="keep">' + m + "</span>");
+      out.innerHTML = html;
+      out.classList.remove("muted");
+    });
   });
 
   // console panel

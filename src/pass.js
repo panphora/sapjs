@@ -3,7 +3,7 @@
 // between passes except the compile cache.
 
 import {
-  walkOwned, rowsOf, parseStateDecl, parseTyped, ensureId, readTransient,
+  walkOwned, rowsOf, parseStateDecl, parseTyped, serializeTyped, ensureId, readTransient,
 } from "./dom.js";
 import { compile, run, topoSort } from "./compile.js";
 import { carrierFor } from "./carrier.js";
@@ -27,9 +27,25 @@ export function runPass(app, opts = {}) {
   const paints = [];
   const effects = [];
   const invalids = [];
+  const pending = [];        // declared defaults missing from the DOM (candidates to materialize)
+  const whenFields = new Set(); // field names a show-when/option visibility verb reads
   app.diag.errors = [];
 
   const rootCtx = { root: rootObj, state: rootObj, item: null, ownerEl: root, projection: false };
+
+  // Read a declared field's value, falling back to its default. When the bare
+  // attribute is absent, record the default so it can be materialized to the DOM
+  // after intake — but only if a visibility verb references the field, so the CSS
+  // floor and show-when can match it before any write. Non-visibility fields are
+  // never materialized, keeping this purely additive for existing apps.
+  function resolveDefault(el, d) {
+    let raw = el.getAttribute(d.name);
+    if (raw == null) {
+      raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
+      pending.push({ el, name: d.name, value: serializeTyped(parseTyped(raw, d.type), d.type) });
+    }
+    return parseTyped(raw, d.type);
+  }
 
   function readState(el, obj) {
     const decls = parseStateDecl(el.getAttribute("state") || "");
@@ -43,9 +59,7 @@ export function runPass(app, opts = {}) {
         obj[d.name] = readTransient(el, d); // runtime-only; never serialized
         continue;
       }
-      let raw = el.getAttribute(d.name);
-      if (raw == null) raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
-      obj[d.name] = parseTyped(raw, d.type);
+      obj[d.name] = resolveDefault(el, d);
     }
   }
 
@@ -86,6 +100,18 @@ export function runPass(app, opts = {}) {
         effects.push({ el, entry: compile(val, true), ctx });
       } else if (name === "invalid") {
         invalids.push({ el, entry: compile(val), ctx });
+      } else if (name.startsWith("show-when:") || name.startsWith("option:")) {
+        const field = name.slice(name.indexOf(":") + 1);
+        whenFields.add(field);
+        paints.push({ el, kind: "when", match: "show", field, values: val.split("|"), ctx });
+      } else if (name.startsWith("hide-when:")) {
+        const field = name.slice(name.indexOf(":") + 1);
+        whenFields.add(field);
+        paints.push({ el, kind: "when", match: "hide", field, values: val.split("|"), ctx });
+      } else if (name.startsWith("option-not:")) {
+        const field = name.slice(name.indexOf(":") + 1);
+        whenFields.add(field);
+        paints.push({ el, kind: "when", match: "show-not", field, values: val.split("|"), ctx });
       }
     }
     if (ctx.projection && el.hasAttribute("bind")) {
@@ -161,11 +187,7 @@ export function runPass(app, opts = {}) {
     // A detail's own state= declarations name the key field; it lives on the
     // enclosing scope so the row's set: and the panel's key expr see one field.
     for (const d of parseStateDecl(el.getAttribute("state") || "")) {
-      if (!(d.name in parentObj)) {
-        let raw = el.getAttribute(d.name);
-        if (raw == null) raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
-        parentObj[d.name] = parseTyped(raw, d.type);
-      }
+      if (!(d.name in parentObj)) parentObj[d.name] = resolveDefault(el, d);
     }
     el._sapScope = parentObj;
     const spec = el.getAttribute("detail") || "";
@@ -198,6 +220,25 @@ export function runPass(app, opts = {}) {
 
   // --- intake ---
   enterScope(root, rootObj, rootCtx);
+
+  // --- materialize defaults a visibility verb references, so the CSS floor
+  // (hyperclayjs optionVisibility) and our own show-when can match them before any
+  // write. Undo-paused and not counted as paints: this completes the file, it is
+  // not a user edit. Only whenFields are touched, so apps without show-when/option
+  // see no DOM change. ---
+  if (pending.length && whenFields.size) {
+    const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+    if (u && u.pause) u.pause();
+    try {
+      for (const w of pending) {
+        if (whenFields.has(w.name) && w.el.getAttribute(w.name) == null) {
+          w.el.setAttribute(w.name, w.value);
+        }
+      }
+    } finally {
+      if (u && u.resume) u.resume();
+    }
+  }
 
   // --- compute calc: deepest scopes first, topo within each scope ---
   const groups = new Map();
@@ -255,7 +296,22 @@ function paintAttrName(p) {
   if (p.kind === "attr") return "attr:" + p.arg;
   if (p.kind === "class") return "class:" + p.arg;
   if (p.kind === "css") return "css:" + p.arg;
+  if (p.kind === "when") return (p.match === "hide" ? "hide-when:" : p.match === "show-not" ? "option-not:" : "show-when:") + p.field;
   return p.kind;
+}
+
+// Walk self + ancestors for an element carrying `field`, matching optionVisibility's
+// "inside a matching scope" semantics. notMode flips to "present but not a value".
+function nearestMode(el, field, values, notMode) {
+  let cur = el;
+  while (cur && cur.nodeType === 1) {
+    if (cur.hasAttribute && cur.hasAttribute(field)) {
+      const inList = values.includes(cur.getAttribute(field));
+      if (notMode ? !inList : inList) return true;
+    }
+    cur = cur.parentElement;
+  }
+  return false;
 }
 
 function applyProjection(el, v) {
@@ -273,6 +329,9 @@ function applyProjection(el, v) {
 function paintOne(p, app) {
   if (p.kind === "projection") {
     return applyProjection(p.el, p.ctx.item ? p.ctx.item[p.field] : "");
+  }
+  if (p.kind === "when") {
+    return applyPaint(p, null); // visibility is read from the DOM, not an expression
   }
   const ctx = { state: p.ctx.state, item: p.ctx.item, el: p.el, root: p.ctx.root };
   try {
@@ -304,6 +363,25 @@ function applyPaint(p, value) {
     }
     case "show": {
       const hide = !value;
+      if (el.hidden !== hide) {
+        el.hidden = hide;
+        return 1;
+      }
+      return 0;
+    }
+    case "when": {
+      const ov = typeof window !== "undefined" && window.hyperclay && window.hyperclay.optionVisibility;
+      if (ov && ov._started) {
+        // The CSS floor owns visibility now; clear any hidden we set pre-floor.
+        if (el._sapWhen && el.hidden) { el.hidden = false; el._sapWhen = false; return 1; }
+        return 0;
+      }
+      let visible;
+      if (p.match === "hide") visible = !nearestMode(el, p.field, p.values, false);
+      else if (p.match === "show-not") visible = nearestMode(el, p.field, p.values, true);
+      else visible = nearestMode(el, p.field, p.values, false);
+      el._sapWhen = true;
+      const hide = !visible;
       if (el.hidden !== hide) {
         el.hidden = hide;
         return 1;

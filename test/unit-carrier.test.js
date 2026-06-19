@@ -73,4 +73,34 @@ describe("carrier control matrix", () => {
     carrierFor(node).write("saved", { silent: true });
     expect(node.getAttribute("value")).toBe("saved");
   });
+
+  test("select-one mirror moves the selected attribute to the chosen option", () => {
+    const node = el('<select><option value="free">Free</option><option value="pro" selected>Pro</option></select>');
+    carrierFor(node).write("free", { silent: true });
+    const [free, pro] = node.options;
+    expect(free.hasAttribute("selected")).toBe(true);
+    expect(pro.hasAttribute("selected")).toBe(false);
+  });
+
+  test("select-multiple mirror marks exactly the selected options", () => {
+    const node = el('<select multiple><option value="a">a</option><option value="b">b</option><option value="c">c</option></select>');
+    carrierFor(node).write(["a", "c"], { silent: true });
+    const [a, b, c] = node.options;
+    expect(a.hasAttribute("selected")).toBe(true);
+    expect(b.hasAttribute("selected")).toBe(false);
+    expect(c.hasAttribute("selected")).toBe(true);
+  });
+
+  test("textarea mirror writes the cursor-safe data-value attribute", () => {
+    const node = el("<textarea></textarea>");
+    carrierFor(node).write("hello", { silent: true });
+    expect(node.getAttribute("data-value")).toBe("hello");
+  });
+
+  test("transient strips serializable attributes including data-value", () => {
+    const node = el("<textarea transient></textarea>");
+    node.setAttribute("data-value", "stale");
+    carrierFor(node).write("secret", { silent: true });
+    expect(node.hasAttribute("data-value")).toBe(false);
+  });
 });

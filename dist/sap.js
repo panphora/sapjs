@@ -396,6 +396,67 @@ ${src}` : `"use strict"; return (${src});`;
     return out;
   }
 
+  // src/control-serialize.js
+  function inputType(el) {
+    return (el.getAttribute("type") || "text").toLowerCase();
+  }
+  function serializeControlToAttributes(el) {
+    const tag = el.tagName;
+    if (tag === "INPUT") {
+      const type = inputType(el);
+      if (type === "checkbox" || type === "radio") {
+        if (el.checked) el.setAttribute("checked", "");
+        else el.removeAttribute("checked");
+      } else {
+        el.setAttribute("value", el.value);
+      }
+      return;
+    }
+    if (tag === "TEXTAREA") {
+      el.setAttribute("data-value", el.value);
+      return;
+    }
+    if (tag === "SELECT") {
+      const opts = el.options;
+      for (let i = 0; i < opts.length; i++) {
+        if (opts[i].selected) opts[i].setAttribute("selected", "");
+        else opts[i].removeAttribute("selected");
+      }
+    }
+  }
+  function finalizeControlForSave(target, source = target) {
+    const tag = target.tagName;
+    if (tag === "INPUT") {
+      const type = inputType(target);
+      if (type === "checkbox" || type === "radio") {
+        if (source.checked) target.setAttribute("checked", "");
+        else target.removeAttribute("checked");
+      } else {
+        target.setAttribute("value", source.value);
+      }
+      return;
+    }
+    if (tag === "TEXTAREA") {
+      target.textContent = source.value;
+      target.removeAttribute("data-value");
+      return;
+    }
+    if (tag === "SELECT") {
+      const tOpts = target.options;
+      const sOpts = source.options;
+      for (let i = 0; i < tOpts.length; i++) {
+        if (sOpts[i] && sOpts[i].selected) tOpts[i].setAttribute("selected", "");
+        else tOpts[i].removeAttribute("selected");
+      }
+    }
+  }
+  function rehydrateControlFromAttributes(el) {
+    if (el.tagName !== "TEXTAREA" || !el.hasAttribute("data-value")) return;
+    if (el === el.ownerDocument.activeElement) return;
+    el.textContent = el.getAttribute("data-value");
+    el.removeAttribute("data-value");
+  }
+
   // src/carrier.js
   function kindOf(el) {
     const tag = el.tagName;
@@ -471,26 +532,14 @@ ${src}` : `"use strict"; return (${src});`;
         el.value = v == null ? "" : String(v);
     }
   }
-  function mirror(el, kind) {
+  function mirror(el) {
     if (el.hasAttribute("transient")) {
       el.removeAttribute("value");
       el.removeAttribute("checked");
+      el.removeAttribute("data-value");
       return;
     }
-    switch (kind) {
-      case "checkbox":
-      case "radio":
-        if (el.checked) el.setAttribute("checked", "");
-        else el.removeAttribute("checked");
-        break;
-      case "number":
-      case "text":
-      case "hidden":
-        el.setAttribute("value", el.value);
-        break;
-      default:
-        break;
-    }
+    serializeControlToAttributes(el);
   }
   function fire(el) {
     el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -506,11 +555,11 @@ ${src}` : `"use strict"; return (${src});`;
       },
       write(v, opts = {}) {
         writeBy(el, kind, v);
-        if (!opts.noMirror) mirror(el, kind);
+        if (!opts.noMirror) mirror(el);
         if (!opts.silent) fire(el);
       },
       mirror() {
-        mirror(el, kind);
+        mirror(el);
       }
     };
   }
@@ -735,8 +784,18 @@ ${src}` : `"use strict"; return (${src});`;
     const paints = [];
     const effects = [];
     const invalids = [];
+    const pending = [];
+    const whenFields = /* @__PURE__ */ new Set();
     app.diag.errors = [];
     const rootCtx = { root: rootObj, state: rootObj, item: null, ownerEl: root, projection: false };
+    function resolveDefault(el, d) {
+      let raw = el.getAttribute(d.name);
+      if (raw == null) {
+        raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
+        pending.push({ el, name: d.name, value: serializeTyped(parseTyped(raw, d.type), d.type) });
+      }
+      return parseTyped(raw, d.type);
+    }
     function readState(el, obj) {
       const decls = parseStateDecl(el.getAttribute("state") || "");
       el._sapStateDecls = decls;
@@ -749,9 +808,7 @@ ${src}` : `"use strict"; return (${src});`;
           obj[d.name] = readTransient(el, d);
           continue;
         }
-        let raw = el.getAttribute(d.name);
-        if (raw == null) raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
-        obj[d.name] = parseTyped(raw, d.type);
+        obj[d.name] = resolveDefault(el, d);
       }
     }
     function readBindInto(el, ctx) {
@@ -790,6 +847,18 @@ ${src}` : `"use strict"; return (${src});`;
           effects.push({ el, entry: compile(val, true), ctx });
         } else if (name === "invalid") {
           invalids.push({ el, entry: compile(val), ctx });
+        } else if (name.startsWith("show-when:") || name.startsWith("option:")) {
+          const field = name.slice(name.indexOf(":") + 1);
+          whenFields.add(field);
+          paints.push({ el, kind: "when", match: "show", field, values: val.split("|"), ctx });
+        } else if (name.startsWith("hide-when:")) {
+          const field = name.slice(name.indexOf(":") + 1);
+          whenFields.add(field);
+          paints.push({ el, kind: "when", match: "hide", field, values: val.split("|"), ctx });
+        } else if (name.startsWith("option-not:")) {
+          const field = name.slice(name.indexOf(":") + 1);
+          whenFields.add(field);
+          paints.push({ el, kind: "when", match: "show-not", field, values: val.split("|"), ctx });
         }
       }
       if (ctx.projection && el.hasAttribute("bind")) {
@@ -856,11 +925,7 @@ ${src}` : `"use strict"; return (${src});`;
     }
     function handleDetail(el, parentObj, ctx) {
       for (const d of parseStateDecl(el.getAttribute("state") || "")) {
-        if (!(d.name in parentObj)) {
-          let raw = el.getAttribute(d.name);
-          if (raw == null) raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
-          parentObj[d.name] = parseTyped(raw, d.type);
-        }
+        if (!(d.name in parentObj)) parentObj[d.name] = resolveDefault(el, d);
       }
       el._sapScope = parentObj;
       const spec = el.getAttribute("detail") || "";
@@ -891,6 +956,19 @@ ${src}` : `"use strict"; return (${src});`;
       walkScope(el, row, dctx);
     }
     enterScope(root, rootObj, rootCtx);
+    if (pending.length && whenFields.size) {
+      const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+      if (u && u.pause) u.pause();
+      try {
+        for (const w of pending) {
+          if (whenFields.has(w.name) && w.el.getAttribute(w.name) == null) {
+            w.el.setAttribute(w.name, w.value);
+          }
+        }
+      } finally {
+        if (u && u.resume) u.resume();
+      }
+    }
     const groups = /* @__PURE__ */ new Map();
     for (const c of calcs) {
       let g = groups.get(c.owner);
@@ -942,7 +1020,19 @@ ${src}` : `"use strict"; return (${src});`;
     if (p.kind === "attr") return "attr:" + p.arg;
     if (p.kind === "class") return "class:" + p.arg;
     if (p.kind === "css") return "css:" + p.arg;
+    if (p.kind === "when") return (p.match === "hide" ? "hide-when:" : p.match === "show-not" ? "option-not:" : "show-when:") + p.field;
     return p.kind;
+  }
+  function nearestMode(el, field, values2, notMode) {
+    let cur = el;
+    while (cur && cur.nodeType === 1) {
+      if (cur.hasAttribute && cur.hasAttribute(field)) {
+        const inList = values2.includes(cur.getAttribute(field));
+        if (notMode ? !inList : inList) return true;
+      }
+      cur = cur.parentElement;
+    }
+    return false;
   }
   function applyProjection(el, v) {
     if (el === el.ownerDocument.activeElement) return 0;
@@ -958,6 +1048,9 @@ ${src}` : `"use strict"; return (${src});`;
   function paintOne(p, app) {
     if (p.kind === "projection") {
       return applyProjection(p.el, p.ctx.item ? p.ctx.item[p.field] : "");
+    }
+    if (p.kind === "when") {
+      return applyPaint(p, null);
     }
     const ctx = { state: p.ctx.state, item: p.ctx.item, el: p.el, root: p.ctx.root };
     try {
@@ -988,6 +1081,28 @@ ${src}` : `"use strict"; return (${src});`;
       }
       case "show": {
         const hide = !value;
+        if (el.hidden !== hide) {
+          el.hidden = hide;
+          return 1;
+        }
+        return 0;
+      }
+      case "when": {
+        const ov = typeof window !== "undefined" && window.hyperclay && window.hyperclay.optionVisibility;
+        if (ov && ov._started) {
+          if (el._sapWhen && el.hidden) {
+            el.hidden = false;
+            el._sapWhen = false;
+            return 1;
+          }
+          return 0;
+        }
+        let visible;
+        if (p.match === "hide") visible = !nearestMode(el, p.field, p.values, false);
+        else if (p.match === "show-not") visible = nearestMode(el, p.field, p.values, true);
+        else visible = nearestMode(el, p.field, p.values, false);
+        el._sapWhen = true;
+        const hide = !visible;
         if (el.hidden !== hide) {
           el.hidden = hide;
           return 1;
@@ -1067,7 +1182,7 @@ ${src}` : `"use strict"; return (${src});`;
 
   // src/lint.js
   var NATIVE_BOOLEAN_SET2 = new Set(NATIVE_BOOLEANS);
-  var COLON_PREFIXES = /* @__PURE__ */ new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "editmode"]);
+  var COLON_PREFIXES = /* @__PURE__ */ new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode"]);
   function isControl(el) {
     return el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA";
   }
@@ -1256,6 +1371,7 @@ ${src}` : `"use strict"; return (${src});`;
       return appRec;
     }
     injectStyles(root.ownerDocument);
+    for (const ta of root.querySelectorAll("textarea[data-value]")) rehydrateControlFromAttributes(ta);
     const t0 = now();
     runPass(appRec, { trigger: "mount" });
     appRec._mountMs = now() - t0;
@@ -1723,6 +1839,7 @@ ${src}` : `"use strict"; return (${src});`;
       if (!t || t.nodeType !== 1) return;
       const appRec = runtime2.appFor(t);
       if (!appRec) return;
+      if (t.hasAttribute("persist")) serializeControlToAttributes(t);
       const detailEl = isInsideDetail(t);
       if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind")) {
         const src = ownedBind(detailEl._sapDetailRow, t.getAttribute("bind"));
@@ -2047,6 +2164,9 @@ ${src}` : `"use strict"; return (${src});`;
   Sap.doctor = debugApi.doctor;
   Sap.greenLine = debugApi.greenLine;
   Sap.formats = formats;
+  Sap.serializeControlToAttributes = serializeControlToAttributes;
+  Sap.finalizeControlForSave = finalizeControlForSave;
+  Sap.rehydrateControlFromAttributes = rehydrateControlFromAttributes;
   Sap.mount = mount;
   Sap.config = function config(options = {}) {
     if (options.formats) Object.assign(formats, options.formats);
