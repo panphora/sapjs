@@ -143,7 +143,7 @@ The control is the contract. No modifiers, ever.
 
 Binding a `type=file` is always a mount error (`E32`); files never serialize into an HTML file. Binding a `type=password` halts unless you add `transient` (`E31`). `transient` (the bare attribute, or a `state="field:transient"` suffix) keeps a value in the live DOM only: Sap drives the app from it but strips it from the saved file, so passwords and search boxes never persist.
 
-Note: `<select>` and `[contenteditable]`/text-leaf bindings are **not** mirrored to an attribute the way checkbox/radio/number/text are; they persist only because the live DOM is saved as-is, so a programmatic `<select>` change may not survive a save unless you set its `selected` attribute yourself.
+Note: `<select>` and `<textarea>` now mirror their live value to attributes the way checkbox/radio/number/text do — a `<select>` writes `selected` on the chosen option, a `<textarea>` writes a cursor-safe `data-value` that finalizes to `textContent` on save — so a programmatic change survives a save. `[contenteditable]`/text-leaf bindings carry no attribute: they persist because their `textContent` is saved with the DOM as-is.
 
 ### `calc:` — computed fields
 
@@ -171,6 +171,20 @@ A throwing paint writes nothing: the DOM keeps its last-good value, the element 
 `effect=` is for side effects only: touch `el`, set `document.title`, call a chart library. Assigning to `state.*` inside an effect does nothing, since it mutates a per-pass snapshot that is then discarded; and writing `value=` or `checked=` on a bound control inside an effect halts the app at mount (`E30`). Write state through `onclick` + `Sap(this)` instead.
 
 `invalid=` is the one expression that fails quiet: if it throws, the field is treated as **valid** and nothing is logged, unlike `text`/`calc`/`effect`. Guard `invalid` expressions against undefined, or a bug there silently disables the gate.
+
+### Visibility: `show` vs `show-when`
+
+Two ways to toggle visibility. The shape tells you which engine runs it:
+
+| Attribute | Resolves | Without sapjs |
+|---|---|---|
+| `show="expr"` | a JS expression, e.g. `show="state.tab === 'overview'"` | no |
+| `show-when:FIELD="a\|b"` | literal equality: visible when the nearest ancestor `FIELD` attribute equals `a` or `b` | yes — compiles to CSS via hyperclay's `optionVisibility` |
+| `hide-when:FIELD="a\|b"` | the inverse: hidden when `FIELD` equals `a` or `b` (shown otherwise, including when absent) | yes |
+| `option:FIELD="a"` | alias of `show-when:` | yes |
+| `option-not:FIELD="a"` | visible when `FIELD` is present but not equal to `a` | yes |
+
+`show-when:` and its family compare against a **literal** value, not an expression, so `show-when:tab="overview"` matches the bare `tab="overview"` an ancestor carries. Writing an expression there (`show-when:tab="state.tab"`) is a mistake sapjs warns about (`W04`) — reach for `show=` for anything beyond literal equality. When hyperclay's CSS floor is present, sapjs defers visibility to it, so the two never fight and the markup works with either library loaded alone.
 
 ### Actions (attributes)
 

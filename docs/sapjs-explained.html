@@ -599,6 +599,7 @@ ${src}` : `"use strict"; return (${src});`;
     E32: { slug: "file-bind", behavior: "HALT" },
     E33: { slug: "dialog-state-open", behavior: "HALT" },
     W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
+    W04: { slug: "expression-in-when", behavior: "WARN" },
     W30: { slug: "nonzero-mount-writes", behavior: "WARN" }
   };
   var NATIVE_BOOLEANS = [
@@ -1194,6 +1195,8 @@ ${src}` : `"use strict"; return (${src});`;
   // src/lint.js
   var NATIVE_BOOLEAN_SET2 = new Set(NATIVE_BOOLEANS);
   var COLON_PREFIXES = /* @__PURE__ */ new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode"]);
+  var WHEN_PREFIXES = /* @__PURE__ */ new Set(["show-when", "hide-when", "option", "option-not"]);
+  var EXPR_SHAPED = /\b(?:state|item|root)\.|===|!==|&&|\|\||[()]|^\s*!/;
   function isControl(el) {
     return el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA";
   }
@@ -1255,6 +1258,14 @@ ${src}` : `"use strict"; return (${src});`;
               attr: name,
               problem: `unknown "${prefix}:" attribute`,
               didYouMean: dym ? `${dym}:` : null
+            });
+          } else if (WHEN_PREFIXES.has(prefix) && EXPR_SHAPED.test(a.value)) {
+            const field = name.slice(name.indexOf(":") + 1);
+            diag.warn("W04", el, {
+              attr: name,
+              expr: a.value,
+              problem: `${prefix}: compares the "${field}" attribute against a literal value, not a JS expression`,
+              fix: `use show="${a.value}" for an expression, or a literal like ${prefix}:${field}="overview"`
             });
           }
         }

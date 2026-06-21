@@ -24,6 +24,7 @@ export const REGISTRY = {
   E32: { slug: "file-bind", behavior: "HALT" },
   E33: { slug: "dialog-state-open", behavior: "HALT" },
   W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
+  W04: { slug: "expression-in-when", behavior: "WARN" },
   W30: { slug: "nonzero-mount-writes", behavior: "WARN" },
 };
 

@@ -86,4 +86,23 @@ describe("mount lint: warnings never halt", () => {
   test("attr:hidden warns and redirects to show", () => {
     expect(warnsFor(`<main sap><p attr:hidden="state.x">hi</p></main>`)).toContain("W03");
   });
+
+  test("W04 expression-shaped show-when value warns and points to show=", () => {
+    mount(`<main sap state="tab=overview"><p show-when:tab="state.tab">hi</p></main>`);
+    const w = Sap.report().warnings.find((w) => w.code === "W04");
+    expect(w).toBeTruthy();
+    expect(w.fix).toMatch(/show=/);
+    expect(Sap.status().apps[0].ok).toBe(true);
+  });
+
+  test("W04 covers the whole show-when family", () => {
+    expect(warnsFor(`<main sap state="tab=overview"><p hide-when:tab="!state.tab">hi</p></main>`)).toContain("W04");
+    expect(warnsFor(`<main sap state="tab=overview"><p option:tab="state.tab === 'x'">hi</p></main>`)).toContain("W04");
+    expect(warnsFor(`<main sap state="tab=overview"><p option-not:tab="a && b">hi</p></main>`)).toContain("W04");
+  });
+
+  test("W04 does not fire on literal values (including |-lists)", () => {
+    expect(warnsFor(`<main sap state="tab=overview"><p show-when:tab="overview">hi</p></main>`)).not.toContain("W04");
+    expect(warnsFor(`<main sap state="tab=overview"><p show-when:tab="overview|pricing">hi</p></main>`)).not.toContain("W04");
+  });
 });

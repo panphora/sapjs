@@ -9,6 +9,11 @@ import {
 
 const NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
 const COLON_PREFIXES = new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode"]);
+// The show-when family compares against a literal attribute value (or `|`-list),
+// never a JS expression. An expression-shaped value means the author reached for
+// show= by mistake; catch it loudly instead of failing the match silently.
+const WHEN_PREFIXES = new Set(["show-when", "hide-when", "option", "option-not"]);
+const EXPR_SHAPED = /\b(?:state|item|root)\.|===|!==|&&|\|\||[()]|^\s*!/;
 const KNOWN_BARE = new Set([
   "sap", "scope", "items", "item", "template", "bind", "show", "effect", "invalid",
   "detail", "state", "transient", "confirm", "default", "persist", "sortable",
@@ -76,7 +81,7 @@ export function lintApp(root, diag) {
         continue;
       }
 
-      // unknown colon-prefixed attribute
+      // colon-prefixed attribute checks
       if (name.includes(":")) {
         const prefix = name.slice(0, name.indexOf(":"));
         if (!COLON_PREFIXES.has(prefix)) {
@@ -85,6 +90,13 @@ export function lintApp(root, diag) {
             attr: name,
             problem: `unknown "${prefix}:" attribute`,
             didYouMean: dym ? `${dym}:` : null,
+          });
+        } else if (WHEN_PREFIXES.has(prefix) && EXPR_SHAPED.test(a.value)) {
+          const field = name.slice(name.indexOf(":") + 1);
+          diag.warn("W04", el, {
+            attr: name, expr: a.value,
+            problem: `${prefix}: compares the "${field}" attribute against a literal value, not a JS expression`,
+            fix: `use show="${a.value}" for an expression, or a literal like ${prefix}:${field}="overview"`,
           });
         }
       }
