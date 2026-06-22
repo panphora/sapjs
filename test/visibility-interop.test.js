@@ -108,13 +108,13 @@ describe("default materialization", () => {
     expect(hidden(root, "a")).toBe(false);        // show= drives visibility from the store
   });
 
-  test("materialization and derived paints are undo-paused so they do not dirty history", () => {
+  test("the whole pass is undo-paused so derived writes do not dirty history", () => {
     const pause = jest.fn();
     const resume = jest.fn();
     window.hyperclay = { undo: { pause, resume } };
     mount(TABS);
-    // Materialization pauses once; the derived paint window pauses again. Both are
-    // balanced (every pause has a matching resume) so undo depth never leaks.
+    // The whole pass runs inside one mutation-pause; with only undo present (no hub),
+    // withDomMutationPaused falls back to undo.pause/resume. Balanced, so depth never leaks.
     expect(pause).toHaveBeenCalled();
     expect(resume).toHaveBeenCalledTimes(pause.mock.calls.length);
   });

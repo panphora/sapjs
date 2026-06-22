@@ -32,9 +32,16 @@ export function installBridges(runtime) {
   if (typeof window === "undefined" || typeof document === "undefined") return;
 
   const refreshConnected = () => {
+    let disconnected = false;
     for (const app of runtime.apps()) {
       if (app.root.isConnected) runtime.runNow(app, "platform");
-      else runtime.remountIfPresent();
+      else disconnected = true;
+    }
+    // A morph may have replaced a root wholesale: drop the dead app records (so they
+    // don't pile up in order) and re-mount to pick up the replacement.
+    if (disconnected) {
+      runtime.pruneDisconnected();
+      runtime.remountIfPresent();
     }
   };
 
@@ -47,8 +54,9 @@ export function installBridges(runtime) {
     undo.on("undo", refreshConnected);
     undo.on("redo", refreshConnected);
   } else {
-    // Lazy handshake: the platform may load after us.
-    window.addEventListener("hyperclay:mutation-ready", () => {
+    // Lazy handshake: the platform may load after us. The hub dispatches
+    // hyperclay:mutation-ready non-bubbling on `document`, so listen there (not window).
+    document.addEventListener("hyperclay:mutation-ready", () => {
       const u = window.hyperclay && window.hyperclay.undo;
       if (u && typeof u.on === "function") {
         u.on("undo", refreshConnected);

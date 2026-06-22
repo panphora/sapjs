@@ -20,6 +20,7 @@ import { createAccessor } from "./scope.js";
 import { createActions } from "./actions.js";
 import { createDebug } from "./debug.js";
 import { batch, installBridges } from "./platform.js";
+import { installMutationBridge, resetMutationBridge } from "./mutation-bridge.js";
 import { formats } from "./helpers.js";
 import { serializeControlToAttributes, finalizeControlForSave, rehydrateControlFromAttributes } from "./control-serialize.js";
 
@@ -41,6 +42,19 @@ function appFor(el) {
   return null;
 }
 
+// Splice apps whose roots have left the DOM out of order/registry. The mutation
+// bridge calls this each batch so a disconnected app cannot force a full-document
+// re-scan on every change; it also fixes the pre-existing append-only order leak.
+function pruneDisconnected() {
+  for (let i = order.length - 1; i >= 0; i--) {
+    const app = order[i];
+    if (!app.root.isConnected) {
+      registry.delete(app.root);
+      order.splice(i, 1);
+    }
+  }
+}
+
 function moveInto(parent, el) {
   if (parent.moveBefore) {
     try { parent.moveBefore(el, null); return; } catch { /* fall through */ }
@@ -60,6 +74,8 @@ function placeBefore(el, ref) {
 const runtime = {
   apps: () => order.slice(),
   appFor,
+  isRegistered: (el) => registry.has(el),
+  pruneDisconnected,
   schedule: (app, trigger) => scheduler.schedule(app, trigger),
   runNow: (app, trigger) => scheduler.runNow(app, trigger),
   moveInto,
@@ -81,6 +97,7 @@ function installOnce() {
 
 function mountAll(docRoot = document) {
   installOnce();
+  installMutationBridge(runtime);
   const roots = docRoot.querySelectorAll("[sap]");
   const fresh = [];
   for (const root of roots) {
@@ -100,6 +117,7 @@ function mountAll(docRoot = document) {
 
 function mount(rootOrSel) {
   installOnce();
+  installMutationBridge(runtime);
   if (!rootOrSel) return mountAll();
   const root = typeof rootOrSel === "string" ? document.querySelector(rootOrSel) : rootOrSel;
   if (!root) return null;
@@ -140,6 +158,7 @@ Sap._registry = registry;
 Sap._reset = function reset() {
   registry.clear();
   order.length = 0;
+  resetMutationBridge();
 };
 
 function autoMount() {

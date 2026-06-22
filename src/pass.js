@@ -9,6 +9,7 @@ import { compile, run, topoSort } from "./compile.js";
 import { carrierFor } from "./carrier.js";
 import { applyFormat } from "./helpers.js";
 import { NATIVE_BOOLEANS, setBeacon, clearBeacon } from "./errors.js";
+import { withDomMutationPaused } from "./mutation-bridge.js";
 
 const NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
 
@@ -20,7 +21,15 @@ export function runPass(app, opts = {}) {
     setBeacon(app.root, "loop");
     return;
   }
+  // The whole pass runs inside one DOM-mutation pause: every engine-derived write
+  // (intake strips, id stamps, default materialization, paints, effects, validity,
+  // beacons) is vacuumed away from the mutation bridge so it never schedules another
+  // pass, and away from undo/autosave so a single user edit collapses to one entry.
+  // No-op standalone with no hub/observer present. See mutation-bridge.js.
+  withDomMutationPaused(() => runPassBody(app, opts));
+}
 
+function runPassBody(app, opts) {
   const root = app.root;
   const rootObj = {};
   const calcs = [];
@@ -223,20 +232,14 @@ export function runPass(app, opts = {}) {
 
   // --- materialize defaults a visibility verb references, so the CSS floor
   // (hyperclayjs optionVisibility) and our own show-when can match them before any
-  // write. Undo-paused and not counted as paints: this completes the file, it is
-  // not a user edit. Only whenFields are touched, so apps without show-when/option
-  // see no DOM change. ---
+  // write. Not counted as paints: this completes the file, it is not a user edit.
+  // Only whenFields are touched, so apps without show-when/option see no DOM change.
+  // (The whole-pass mutation pause keeps these writes off undo/autosave.) ---
   if (pending.length && whenFields.size) {
-    const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
-    if (u && u.pause) u.pause();
-    try {
-      for (const w of pending) {
-        if (whenFields.has(w.name) && w.el.getAttribute(w.name) == null) {
-          w.el.setAttribute(w.name, w.value);
-        }
+    for (const w of pending) {
+      if (whenFields.has(w.name) && w.el.getAttribute(w.name) == null) {
+        w.el.setAttribute(w.name, w.value);
       }
-    } finally {
-      if (u && u.resume) u.resume();
     }
   }
 
@@ -273,21 +276,15 @@ export function runPass(app, opts = {}) {
 
   // --- paint ---
   // Engine-derived output (text/hidden/attr/class/css), effects, and validity
-  // complete the file from current state; they are not user edits. Pause undo
-  // around them, like the materialization block above, so one user edit does not
-  // spawn N undoable derived writes: undo restores the source attribute and we
-  // re-derive on undo/redo (platform.js), so a single undo reverts the action and
-  // its derived effects together. No-op standalone (window.hyperclay.undo absent).
+  // complete the file from current state; they are not user edits. The whole-pass
+  // mutation pause (runPass) keeps these writes off the bridge, undo, and autosave,
+  // so one user edit does not spawn N undoable/dirtying derived writes: undo restores
+  // the source attribute and we re-derive on undo/redo (platform.js), so a single
+  // undo reverts the action and its derived effects together.
   let writes = 0;
-  const up = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
-  if (up && up.pause) up.pause();
-  try {
-    for (const p of paints) writes += paintOne(p, app);
-    for (const e of effects) runEffect(e, app);
-    for (const iv of invalids) runInvalid(iv);
-  } finally {
-    if (up && up.resume) up.resume();
-  }
+  for (const p of paints) writes += paintOne(p, app);
+  for (const e of effects) runEffect(e, app);
+  for (const iv of invalids) runInvalid(iv);
 
   app._state = rootObj;
   app._stats = {

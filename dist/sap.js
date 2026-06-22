@@ -477,9 +477,14 @@ ${src}` : `"use strict"; return (${src});`;
   function installBridges(runtime2) {
     if (typeof window === "undefined" || typeof document === "undefined") return;
     const refreshConnected = () => {
+      let disconnected = false;
       for (const app of runtime2.apps()) {
         if (app.root.isConnected) runtime2.runNow(app, "platform");
-        else runtime2.remountIfPresent();
+        else disconnected = true;
+      }
+      if (disconnected) {
+        runtime2.pruneDisconnected();
+        runtime2.remountIfPresent();
       }
     };
     document.addEventListener("hyperclay:livesync-applied", refreshConnected);
@@ -488,7 +493,7 @@ ${src}` : `"use strict"; return (${src});`;
       undo.on("undo", refreshConnected);
       undo.on("redo", refreshConnected);
     } else {
-      window.addEventListener("hyperclay:mutation-ready", () => {
+      document.addEventListener("hyperclay:mutation-ready", () => {
         const u = window.hyperclay && window.hyperclay.undo;
         if (u && typeof u.on === "function") {
           u.on("undo", refreshConnected);
@@ -819,6 +824,178 @@ ${src}` : `"use strict"; return (${src});`;
     return dp[m][n2];
   }
 
+  // src/mutation-bridge.js
+  var activeSource = null;
+  var installed = false;
+  var lateHubListener = null;
+  function hubSource(M) {
+    let unsub = null;
+    return {
+      kind: "hub",
+      subscribe(onChanges) {
+        const ret = M.onAnyChange({ debounce: 0, require: "observed" }, onChanges);
+        if (typeof ret === "function") unsub = ret;
+      },
+      suppress(fn) {
+        M.pause();
+        try {
+          return fn();
+        } finally {
+          M.resume();
+        }
+      },
+      teardown() {
+        if (unsub) {
+          try {
+            unsub();
+          } catch {
+          }
+          unsub = null;
+        }
+      }
+    };
+  }
+  function nativeSource() {
+    let observer = null;
+    return {
+      kind: "native",
+      subscribe(onChanges) {
+        observer = new MutationObserver((records) => onChanges(changesFromRecords(records)));
+        const target = typeof document !== "undefined" && document.body || typeof document !== "undefined" && document.documentElement;
+        if (target) {
+          observer.observe(target, { childList: true, subtree: true, attributes: true, characterData: true });
+        }
+      },
+      suppress(fn) {
+        const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+        if (u && u.pause) u.pause();
+        try {
+          return fn();
+        } finally {
+          if (observer) observer.takeRecords();
+          if (u && u.resume) u.resume();
+        }
+      },
+      teardown() {
+        if (observer) {
+          observer.disconnect();
+          observer = null;
+        }
+      }
+    };
+  }
+  function changesFromRecords(records) {
+    const out = [];
+    for (const rec of records) {
+      if (rec.type === "attributes") {
+        const el = rec.target;
+        if (el && el.nodeType === 1 && !inertSubtree(el)) out.push({ type: "attribute", element: el });
+      } else if (rec.type === "characterData") {
+        const el = rec.target && rec.target.parentElement;
+        if (el && !inertSubtree(el)) out.push({ type: "characterData", element: el });
+      } else if (rec.type === "childList") {
+        for (const node of rec.addedNodes) {
+          if (node.nodeType !== 1 || inertSubtree(node)) continue;
+          out.push({ type: "add", element: node });
+          if (node.querySelectorAll) {
+            for (const desc of node.querySelectorAll("*")) {
+              if (!inertSubtree(desc)) out.push({ type: "add", element: desc });
+            }
+          }
+        }
+        for (const node of rec.removedNodes) {
+          if (node.nodeType !== 1) continue;
+          out.push({ type: "remove", element: node, parent: rec.target });
+        }
+      }
+    }
+    return out;
+  }
+  function inertSubtree(el) {
+    return !!(el.closest && el.closest("[sap-ignore],[template]"));
+  }
+  function scheduleAffectedApps(runtime2, changes) {
+    runtime2.pruneDisconnected();
+    const affected = /* @__PURE__ */ new Set();
+    let needRemount = false;
+    for (const c of changes) {
+      const target = c.type === "remove" ? c.parent : c.element;
+      const app = target && runtime2.appFor(target);
+      if (app) affected.add(app);
+      if (c.type === "add" && c.element && c.element.nodeType === 1 && c.element.hasAttribute && c.element.hasAttribute("sap") && !(runtime2.isRegistered && runtime2.isRegistered(c.element))) {
+        needRemount = true;
+      }
+    }
+    if (needRemount) runtime2.remountIfPresent();
+    for (const app of affected) if (app.root.isConnected) runtime2.schedule(app, "mutation");
+  }
+  function withDomMutationPaused(fn) {
+    if (activeSource) return activeSource.suppress(fn);
+    const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+    if (u && u.pause && u.resume) {
+      u.pause();
+      try {
+        return fn();
+      } finally {
+        u.resume();
+      }
+    }
+    return fn();
+  }
+  function activate(source, runtime2) {
+    installed = true;
+    activeSource = source;
+    source.subscribe((changes) => scheduleAffectedApps(runtime2, changes));
+  }
+  function installMutationBridge(runtime2) {
+    if (installed) return;
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const w = window;
+    const M = w.hyperclay && w.hyperclay.Mutation;
+    if (M && typeof M.onAnyChange === "function") {
+      activate(hubSource(M), runtime2);
+      return;
+    }
+    if (w.hyperclay) {
+      lateHubListener = function onReady() {
+        const M2 = w.hyperclay && w.hyperclay.Mutation;
+        if (!M2 || installed) return;
+        document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
+        lateHubListener = null;
+        activate(hubSource(M2), runtime2);
+      };
+      document.addEventListener("hyperclay:mutation-ready", lateHubListener);
+      return;
+    }
+    if (typeof MutationObserver === "function") {
+      activate(nativeSource(), runtime2);
+      lateHubListener = function onLateHub() {
+        const M3 = w.hyperclay && w.hyperclay.Mutation;
+        if (!M3) return;
+        document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
+        lateHubListener = null;
+        if (activeSource) activeSource.teardown();
+        installed = false;
+        activate(hubSource(M3), runtime2);
+      };
+      document.addEventListener("hyperclay:mutation-ready", lateHubListener);
+    }
+  }
+  function resetMutationBridge() {
+    if (activeSource) {
+      try {
+        activeSource.teardown();
+      } catch {
+      }
+    }
+    if (lateHubListener && typeof document !== "undefined") {
+      document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
+    }
+    activeSource = null;
+    installed = false;
+    lateHubListener = null;
+  }
+
   // src/pass.js
   var NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
   function runPass(app, opts = {}) {
@@ -829,6 +1006,9 @@ ${src}` : `"use strict"; return (${src});`;
       setBeacon(app.root, "loop");
       return;
     }
+    withDomMutationPaused(() => runPassBody(app, opts));
+  }
+  function runPassBody(app, opts) {
     const root = app.root;
     const rootObj = {};
     const calcs = [];
@@ -1008,16 +1188,10 @@ ${src}` : `"use strict"; return (${src});`;
     }
     enterScope(root, rootObj, rootCtx);
     if (pending.length && whenFields.size) {
-      const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
-      if (u && u.pause) u.pause();
-      try {
-        for (const w of pending) {
-          if (whenFields.has(w.name) && w.el.getAttribute(w.name) == null) {
-            w.el.setAttribute(w.name, w.value);
-          }
+      for (const w of pending) {
+        if (whenFields.has(w.name) && w.el.getAttribute(w.name) == null) {
+          w.el.setAttribute(w.name, w.value);
         }
-      } finally {
-        if (u && u.resume) u.resume();
       }
     }
     const groups = /* @__PURE__ */ new Map();
@@ -1050,15 +1224,9 @@ ${src}` : `"use strict"; return (${src});`;
       }
     }
     let writes = 0;
-    const up = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
-    if (up && up.pause) up.pause();
-    try {
-      for (const p of paints) writes += paintOne(p, app);
-      for (const e of effects) runEffect(e, app);
-      for (const iv of invalids) runInvalid(iv);
-    } finally {
-      if (up && up.resume) up.resume();
-    }
+    for (const p of paints) writes += paintOne(p, app);
+    for (const e of effects) runEffect(e, app);
+    for (const iv of invalids) runInvalid(iv);
     app._state = rootObj;
     app._stats = {
       fields: Object.keys(rootObj).filter((k) => typeof rootObj[k] !== "function").length,
@@ -2156,6 +2324,15 @@ ${src}` : `"use strict"; return (${src});`;
     }
     return null;
   }
+  function pruneDisconnected() {
+    for (let i = order.length - 1; i >= 0; i--) {
+      const app = order[i];
+      if (!app.root.isConnected) {
+        registry.delete(app.root);
+        order.splice(i, 1);
+      }
+    }
+  }
   function moveInto(parent, el) {
     if (parent.moveBefore) {
       try {
@@ -2181,6 +2358,8 @@ ${src}` : `"use strict"; return (${src});`;
   var runtime = {
     apps: () => order.slice(),
     appFor,
+    isRegistered: (el) => registry.has(el),
+    pruneDisconnected,
     schedule: (app, trigger) => scheduler.schedule(app, trigger),
     runNow: (app, trigger) => scheduler.runNow(app, trigger),
     moveInto,
@@ -2190,15 +2369,16 @@ ${src}` : `"use strict"; return (${src});`;
   var accessor = createAccessor(runtime);
   var actions = createActions(runtime, accessor);
   var debugApi = createDebug(runtime);
-  var installed = false;
+  var installed2 = false;
   function installOnce() {
-    if (installed) return;
-    installed = true;
+    if (installed2) return;
+    installed2 = true;
     actions.install(document);
     installBridges(runtime);
   }
   function mountAll(docRoot = document) {
     installOnce();
+    installMutationBridge(runtime);
     const roots = docRoot.querySelectorAll("[sap]");
     const fresh = [];
     for (const root of roots) {
@@ -2217,6 +2397,7 @@ ${src}` : `"use strict"; return (${src});`;
   }
   function mount(rootOrSel) {
     installOnce();
+    installMutationBridge(runtime);
     if (!rootOrSel) return mountAll();
     const root = typeof rootOrSel === "string" ? document.querySelector(rootOrSel) : rootOrSel;
     if (!root) return null;
@@ -2254,6 +2435,7 @@ ${src}` : `"use strict"; return (${src});`;
   Sap._reset = function reset() {
     registry.clear();
     order.length = 0;
+    resetMutationBridge();
   };
   function autoMount() {
     if (typeof document === "undefined") return;
