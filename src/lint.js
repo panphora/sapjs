@@ -8,6 +8,10 @@ import {
 } from "./errors.js";
 
 const NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
+// `editmode` is a hyperclayjs platform prefix (editmode:onclick etc.), not a Sap
+// verb. It is allow-listed here so Sap stays quiet about it when co-loaded; the
+// single entry covers the whole editmode:* family, so new editmode: attributes in
+// hyperclayjs need no change. Sap has no engine branch for it (it is a no-op in Sap).
 const COLON_PREFIXES = new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode"]);
 // The show-when family compares against a literal attribute value (or `|`-list),
 // never a JS expression. An expression-shaped value means the author reached for
@@ -19,6 +23,9 @@ const KNOWN_BARE = new Set([
   "detail", "state", "transient", "confirm", "default", "persist", "sortable",
   "trigger-add", "trigger-remove", "trigger-reset", "sap-ignore", "sap-error",
   "no-save", "no-watch", "no-undo",
+  // hyperclayjs platform region markers (canonical + legacy aliases). sapjs tolerates
+  // them so a co-loaded region attribute inside a [sap] root is never flagged a typo.
+  "no-trigger-autosave", "freeze", "mutations-ignore", "save-remove", "save-ignore", "save-freeze",
 ]);
 
 function isControl(el) {
@@ -99,6 +106,21 @@ export function lintApp(root, diag) {
             fix: `use show="${a.value}" for an expression, or a literal like ${prefix}:${field}="overview"`,
           });
         }
+      } else if (
+        !KNOWN_BARE.has(name) &&
+        !HTML_GLOBALS.has(name) &&
+        !NATIVE_BOOLEAN_SET.has(name) &&
+        !/^(data-|aria-|on)/.test(name) &&
+        !(name in el)
+      ) {
+        // Bare (no-colon) attribute that looks like a typo'd Sap directive. Only
+        // warn when it is near a known directive (didYouMean returns a match) and
+        // is not a native HTML attribute (no matching IDL property), so ordinary
+        // HTML attributes never trip it.
+        const dym = didYouMean(name, [...KNOWN_BARE]);
+        if (dym) {
+          diag.warn("W03", el, { attr: name, problem: `unknown "${name}" attribute`, didYouMean: dym });
+        }
       }
 
       // attr:hidden redirect
@@ -164,6 +186,16 @@ export function lintApp(root, diag) {
           halt("E20", el, { attr: "bind", problem: "bind on a container element is not a control; a write would overwrite its children", fix: "bind a control (input/select/textarea), a contenteditable, or an empty text leaf" });
         }
       }
+    }
+
+    // transient + persist are opposite intents on one control: transient strips
+    // the value every pass (never serialized); persist forces it into the saved
+    // bytes and wins, leaking exactly what transient promised to drop.
+    if (el.hasAttribute("transient") && el.hasAttribute("persist")) {
+      halt("E34", el, {
+        problem: "transient and persist are opposite: persist forces the live value into the saved bytes, leaking exactly what transient drops",
+        fix: "remove one — transient to keep it out of the file, or persist to save it",
+      });
     }
 
     // orphan item

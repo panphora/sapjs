@@ -186,6 +186,8 @@ Two ways to toggle visibility. The shape tells you which engine runs it:
 
 `show-when:` and its family compare against a **literal** value, not an expression, so `show-when:tab="overview"` matches the bare `tab="overview"` an ancestor carries. Writing an expression there (`show-when:tab="state.tab"`) is a mistake sapjs warns about (`W04`) — reach for `show=` for anything beyond literal equality. When hyperclay's CSS floor is present, sapjs defers visibility to it, so the two never fight and the markup works with either library loaded alone.
 
+**Edit-mode-aware UI (with hyperclay):** hyperclay stamps `editmode="true|false"` and `pageowner="true|false"` on `<html>` on load, and resets them to `false` before a save. So `show-when:editmode="true"` is the canonical way to show edit-only UI: it is visible while editing and always hidden in the saved file, with no sapjs `state=` needed (the verb reads the `<html>` attribute through its nearest-ancestor walk). Standalone, nothing stamps `editmode`, so the UI stays hidden until you set the attribute yourself.
+
 ### Actions (attributes)
 
 | Attribute | Does |

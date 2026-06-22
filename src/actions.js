@@ -10,6 +10,7 @@ import {
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
 import { serializeControlToAttributes } from "./control-serialize.js";
+import { regionSkipsSave } from "./platform.js";
 import { compile, run } from "./compile.js";
 
 const TRIGGER_WORDS = ["trigger-add", "trigger-remove", "trigger-reset"];
@@ -237,7 +238,8 @@ export function createActions(runtime, accessor) {
     // Opt-in durability: a [persist] control mirrors its live value to a
     // serializable attribute on every edit, so a typed value survives a save
     // even without the host platform. bind is reactivity; persist is durability.
-    if (t.hasAttribute("persist")) serializeControlToAttributes(t);
+    // Skip in a no-save / frozen region: the platform strips those bytes anyway.
+    if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
     const detailEl = isInsideDetail(t);
     if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind")) {
       const src = ownedBind(detailEl._sapDetailRow, t.getAttribute("bind"));

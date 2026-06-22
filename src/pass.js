@@ -272,10 +272,22 @@ export function runPass(app, opts = {}) {
   }
 
   // --- paint ---
+  // Engine-derived output (text/hidden/attr/class/css), effects, and validity
+  // complete the file from current state; they are not user edits. Pause undo
+  // around them, like the materialization block above, so one user edit does not
+  // spawn N undoable derived writes: undo restores the source attribute and we
+  // re-derive on undo/redo (platform.js), so a single undo reverts the action and
+  // its derived effects together. No-op standalone (window.hyperclay.undo absent).
   let writes = 0;
-  for (const p of paints) writes += paintOne(p, app);
-  for (const e of effects) runEffect(e, app);
-  for (const iv of invalids) runInvalid(iv);
+  const up = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+  if (up && up.pause) up.pause();
+  try {
+    for (const p of paints) writes += paintOne(p, app);
+    for (const e of effects) runEffect(e, app);
+    for (const iv of invalids) runInvalid(iv);
+  } finally {
+    if (up && up.resume) up.resume();
+  }
 
   app._state = rootObj;
   app._stats = {

@@ -18,6 +18,8 @@ const hidden = (root, id) => root.querySelector("#" + id).hidden;
 
 afterEach(() => {
   delete window.hyperclay;
+  document.documentElement.removeAttribute("editmode");
+  document.documentElement.removeAttribute("pageowner");
 });
 
 describe("show-when (sapjs, no floor present)", () => {
@@ -106,13 +108,15 @@ describe("default materialization", () => {
     expect(hidden(root, "a")).toBe(false);        // show= drives visibility from the store
   });
 
-  test("materialization is undo-paused so it does not dirty history", () => {
+  test("materialization and derived paints are undo-paused so they do not dirty history", () => {
     const pause = jest.fn();
     const resume = jest.fn();
     window.hyperclay = { undo: { pause, resume } };
     mount(TABS);
-    expect(pause).toHaveBeenCalledTimes(1);
-    expect(resume).toHaveBeenCalledTimes(1);
+    // Materialization pauses once; the derived paint window pauses again. Both are
+    // balanced (every pause has a matching resume) so undo depth never leaks.
+    expect(pause).toHaveBeenCalled();
+    expect(resume).toHaveBeenCalledTimes(pause.mock.calls.length);
   });
 });
 
@@ -132,5 +136,32 @@ describe("coordination handshake: defer to the CSS floor when present", () => {
     window.hyperclay = { optionVisibility: { _started: false } };
     const root = mount(TABS);
     expect(hidden(root, "sp")).toBe(true); // sapjs still paints when floor isn't owning it
+  });
+});
+
+describe("editmode Layer-0 bridge (hyperclayjs stamps editmode on <html>)", () => {
+  // hyperclayjs sets <html editmode="true|false"> on load (and resets it to false
+  // before save). show-when:editmode reads it via the nearest-ancestor walk, so
+  // edit-only UI shows in edit mode with no sapjs state declaration needed.
+  const EDITUI = `<main sap><button id="edit" show-when:editmode="true">Edit</button></main>`;
+
+  test('shows edit-only UI when <html editmode="true">', () => {
+    document.documentElement.setAttribute("editmode", "true");
+    const root = mount(EDITUI);
+    expect(hidden(root, "edit")).toBe(false);
+  });
+
+  test('hides edit-only UI when <html editmode="false"> (the saved-file state)', () => {
+    document.documentElement.setAttribute("editmode", "false");
+    const root = mount(EDITUI);
+    expect(hidden(root, "edit")).toBe(true);
+  });
+
+  test("defers to the hyperclayjs CSS floor when optionVisibility is started", () => {
+    document.documentElement.setAttribute("editmode", "false");
+    window.hyperclay = { optionVisibility: { _started: true } };
+    const root = mount(EDITUI);
+    // floor owns visibility; sapjs leaves hidden untouched even though editmode=false
+    expect(hidden(root, "edit")).toBe(false);
   });
 });

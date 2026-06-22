@@ -1,4 +1,5 @@
 import { mount, type } from "./helpers/mount.js";
+import { carrierFor } from "../src/carrier.js";
 
 // persist is opt-in durability, honored by the sap engine itself (no host
 // platform required). bind is reactivity; persist is what makes a typed value
@@ -57,5 +58,72 @@ describe("persist: opt-in durability honored by the sap engine", () => {
   test("a textarea without data-value loads its textContent unchanged", () => {
     const root = mount(`<main sap><textarea bind="bio">plain</textarea></main>`);
     expect(root.querySelector("textarea").value).toBe("plain");
+  });
+});
+
+describe("persist: defers to the platform no-save / freeze region (Win 1)", () => {
+  afterEach(() => { delete window.hyperclay; });
+
+  // Minimal stand-in for hyperclayjs region-policy: a control inside [no-save]
+  // (or [freeze]) reports persist none/frozen; skipForPolicy honors the save tokens.
+  function installRegionMock() {
+    window.hyperclay = {
+      region: {
+        resolveRegionPolicy(el) {
+          const noSave = el.closest && el.closest("[no-save], [save-remove]");
+          const frozen = el.closest && el.closest("[freeze], [save-freeze]");
+          return { persist: noSave ? "none" : frozen ? "frozen" : "full", extension: false };
+        },
+        skipForPolicy(policy, _require, skip) {
+          if (policy.extension) return true;
+          return (skip || []).some((tok) =>
+            ((tok === "no-save" || tok === "save-remove") && policy.persist === "none") ||
+            ((tok === "freeze" || tok === "save-freeze") && policy.persist === "frozen")
+          );
+        },
+      },
+    };
+  }
+
+  test("a [persist] control inside a no-save region does not write save-bytes (stays live)", () => {
+    installRegionMock();
+    const root = mount(`<main sap><div no-save><input bind="q" value="" persist></div></main>`);
+    const input = root.querySelector("[bind=q]");
+    type(input, "secret");
+    expect(input.getAttribute("value")).not.toBe("secret"); // platform strips it anyway
+    expect(input.value).toBe("secret");                      // live control untouched
+  });
+
+  test("the same control outside a no-save region still mirrors", () => {
+    installRegionMock();
+    const root = mount(`<main sap><input bind="q" value="" persist></main>`);
+    const input = root.querySelector("[bind=q]");
+    type(input, "kept");
+    expect(input.getAttribute("value")).toBe("kept");
+  });
+
+  test("standalone (no region API) mirrors as before", () => {
+    const root = mount(`<main sap><div no-save><input bind="q" value="" persist></div></main>`);
+    const input = root.querySelector("[bind=q]");
+    type(input, "kept");
+    expect(input.getAttribute("value")).toBe("kept");
+  });
+
+  test("a [persist] control inside a freeze region also skips the mirror", () => {
+    installRegionMock();
+    const root = mount(`<main sap><div freeze><input bind="q" value="" persist></div></main>`);
+    const input = root.querySelector("[bind=q]");
+    type(input, "secret");
+    expect(input.getAttribute("value")).not.toBe("secret");
+    expect(input.value).toBe("secret");
+  });
+
+  test("the programmatic carrier mirror path also honors the no-save region", () => {
+    installRegionMock();
+    const root = mount(`<main sap><div no-save><input bind="q" value="" persist></div></main>`);
+    const input = root.querySelector("[bind=q]");
+    carrierFor(input).write("written");
+    expect(input.value).toBe("written");                     // live control updated
+    expect(input.getAttribute("value")).not.toBe("written"); // mirror skipped
   });
 });

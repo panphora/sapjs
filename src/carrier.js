@@ -2,6 +2,7 @@
 // Writes dispatch synthetic input + change events (the one write path) unless silent.
 
 import { serializeControlToAttributes } from "./control-serialize.js";
+import { regionSkipsSave } from "./platform.js";
 
 function kindOf(el) {
   const tag = el.tagName;
@@ -93,6 +94,10 @@ function mirror(el) {
     el.removeAttribute("data-value");
     return;
   }
+  // A no-save / frozen region is stripped from the saved file by the platform, so
+  // writing the serializable attributes would only produce bytes that get deleted.
+  // Skip the mirror there; the live control is untouched and stays reactive.
+  if (regionSkipsSave(el)) return;
   serializeControlToAttributes(el);
 }
 

@@ -23,6 +23,7 @@ export const REGISTRY = {
   E31: { slug: "password-without-transient", behavior: "HALT" },
   E32: { slug: "file-bind", behavior: "HALT" },
   E33: { slug: "dialog-state-open", behavior: "HALT" },
+  E34: { slug: "transient-persist-collision", behavior: "HALT" },
   W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
   W04: { slug: "expression-in-when", behavior: "WARN" },
   W30: { slug: "nonzero-mount-writes", behavior: "WARN" },
@@ -37,12 +38,16 @@ export const HTML_GLOBALS = new Set([
   "title", "style", "hidden", "lang", "dir", "translate", "class", "id",
   "nonce", "autofocus", "tabindex", "contenteditable", "spellcheck",
   "draggable", "role", "slot", "part", "name", "value", "type",
+  "itemscope", "itemtype", "itemid", "itemprop", "itemref",
 ]);
 
 export const RESERVED = new Set([
   "sap", "scope", "items", "item", "template", "bind", "calc", "text", "show",
   "attr", "set", "trigger", "move", "sort", "detail", "effect", "invalid",
-  "confirm", "transient", "default", "persist", "sortable", "editmode",
+  "confirm", "transient", "default", "persist", "sortable",
+  // editmode is a hyperclayjs platform prefix (editmode:onclick), reserved so a
+  // co-loaded admin attribute never collides with a Sap state field name.
+  "editmode",
 ]);
 
 export function cssPath(el) {

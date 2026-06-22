@@ -2,6 +2,20 @@
 // window.hyperclay is absent, so Sap runs standalone in any HTML file. When the
 // platform is present, Sap rides its live-sync, undo, and autosave for free.
 
+// Region-aware save guard. When the platform's region model is present, a control
+// inside a no-save (or frozen) region must not write save-bytes the platform would
+// strip anyway. The control stays fully live and reactive; only the serialization
+// mirror is skipped. Standalone (no region API) returns false, so Sap mirrors as
+// before — same "use the platform feature if present, degrade otherwise" pattern
+// as the undo and optionVisibility handshakes.
+export function regionSkipsSave(el) {
+  const region = typeof window !== "undefined" && window.hyperclay && window.hyperclay.region;
+  if (!region || typeof region.resolveRegionPolicy !== "function" || typeof region.skipForPolicy !== "function") {
+    return false;
+  }
+  return region.skipForPolicy(region.resolveRegionPolicy(el), undefined, ["no-save", "freeze"]);
+}
+
 export function batch(label, fn) {
   if (typeof fn !== "function") throw new Error("Sap.batch(label, fn): fn must be a function");
   const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;

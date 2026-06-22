@@ -71,6 +71,15 @@ describe("mount lint: loud, attributed, halting failures", () => {
     expect(codesFor(`<main sap><dialog state="open"></dialog></main>`)).toContain("E33");
   });
 
+  test("E34 transient + persist collide (privacy leak)", () => {
+    expect(codesFor(`<main sap><input transient persist></main>`)).toContain("E34");
+  });
+
+  test("E34 does not fire for transient alone or persist alone", () => {
+    expect(codesFor(`<main sap><input transient></main>`)).not.toContain("E34");
+    expect(codesFor(`<main sap><input persist></main>`)).not.toContain("E34");
+  });
+
   test("nested items inside a detail panel halts (v1)", () => {
     expect(codesFor(`<main sap state="s"><form detail="xs by state.s"><ul items="ys"><li item template></li></ul></form></main>`)).toContain("E17");
   });
@@ -104,5 +113,31 @@ describe("mount lint: warnings never halt", () => {
   test("W04 does not fire on literal values (including |-lists)", () => {
     expect(warnsFor(`<main sap state="tab=overview"><p show-when:tab="overview">hi</p></main>`)).not.toContain("W04");
     expect(warnsFor(`<main sap state="tab=overview"><p show-when:tab="overview|pricing">hi</p></main>`)).not.toContain("W04");
+  });
+
+  test("editmode: is a hyperclayjs platform prefix, not a typo — no W03", () => {
+    expect(warnsFor(`<main sap><button editmode:onclick="doThing()">x</button></main>`)).not.toContain("W03");
+  });
+
+  test("W03 also catches a typo'd bare directive (did-you-mean a Sap word)", () => {
+    mount(`<main sap><span shwo="state.x">hi</span></main>`);
+    const w = Sap.report().warnings.find((w) => w.code === "W03");
+    expect(w).toBeTruthy();
+    expect(w.didYouMean).toBe("show");
+    expect(Sap.status().apps[0].ok).toBe(true);
+  });
+
+  test("W03 does not fire on ordinary HTML attributes", () => {
+    expect(warnsFor(`<main sap><a href="/x" title="t">link</a><img src="/y" alt="a"></main>`)).not.toContain("W03");
+  });
+
+  test("W03 does not fire on hyperclayjs platform region markers (co-loaded aliases)", () => {
+    for (const m of ["no-save", "no-trigger-autosave", "no-undo", "no-watch", "freeze", "save-remove", "save-ignore", "save-freeze", "mutations-ignore"]) {
+      expect(warnsFor(`<main sap><div ${m}>x</div></main>`)).not.toContain("W03");
+    }
+  });
+
+  test("W03 does not fire on microdata globals (itemid is near 'items')", () => {
+    expect(warnsFor(`<main sap><div itemscope itemtype="x" itemid="y"><span itemprop="p">v</span></div></main>`)).not.toContain("W03");
   });
 });

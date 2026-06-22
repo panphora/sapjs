@@ -457,6 +457,47 @@ ${src}` : `"use strict"; return (${src});`;
     el.removeAttribute("data-value");
   }
 
+  // src/platform.js
+  function regionSkipsSave(el) {
+    const region = typeof window !== "undefined" && window.hyperclay && window.hyperclay.region;
+    if (!region || typeof region.resolveRegionPolicy !== "function" || typeof region.skipForPolicy !== "function") {
+      return false;
+    }
+    return region.skipForPolicy(region.resolveRegionPolicy(el), void 0, ["no-save", "freeze"]);
+  }
+  function batch(label, fn) {
+    if (typeof fn !== "function") throw new Error("Sap.batch(label, fn): fn must be a function");
+    const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+    if (u && u.flush) u.flush();
+    const r = fn();
+    if (r && typeof r.then === "function") throw new Error("Sap.batch fn must be synchronous (it returned a promise)");
+    if (u && u.commitCaptured) u.commitCaptured(label);
+    return r;
+  }
+  function installBridges(runtime2) {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const refreshConnected = () => {
+      for (const app of runtime2.apps()) {
+        if (app.root.isConnected) runtime2.runNow(app, "platform");
+        else runtime2.remountIfPresent();
+      }
+    };
+    document.addEventListener("hyperclay:livesync-applied", refreshConnected);
+    const undo = window.hyperclay && window.hyperclay.undo;
+    if (undo && typeof undo.on === "function") {
+      undo.on("undo", refreshConnected);
+      undo.on("redo", refreshConnected);
+    } else {
+      window.addEventListener("hyperclay:mutation-ready", () => {
+        const u = window.hyperclay && window.hyperclay.undo;
+        if (u && typeof u.on === "function") {
+          u.on("undo", refreshConnected);
+          u.on("redo", refreshConnected);
+        }
+      });
+    }
+  }
+
   // src/carrier.js
   function kindOf(el) {
     const tag = el.tagName;
@@ -539,6 +580,7 @@ ${src}` : `"use strict"; return (${src});`;
       el.removeAttribute("data-value");
       return;
     }
+    if (regionSkipsSave(el)) return;
     serializeControlToAttributes(el);
   }
   function fire(el) {
@@ -587,6 +629,7 @@ ${src}` : `"use strict"; return (${src});`;
     E31: { slug: "password-without-transient", behavior: "HALT" },
     E32: { slug: "file-bind", behavior: "HALT" },
     E33: { slug: "dialog-state-open", behavior: "HALT" },
+    E34: { slug: "transient-persist-collision", behavior: "HALT" },
     W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
     W04: { slug: "expression-in-when", behavior: "WARN" },
     W30: { slug: "nonzero-mount-writes", behavior: "WARN" }
@@ -624,7 +667,12 @@ ${src}` : `"use strict"; return (${src});`;
     "part",
     "name",
     "value",
-    "type"
+    "type",
+    "itemscope",
+    "itemtype",
+    "itemid",
+    "itemprop",
+    "itemref"
   ]);
   var RESERVED = /* @__PURE__ */ new Set([
     "sap",
@@ -649,6 +697,8 @@ ${src}` : `"use strict"; return (${src});`;
     "default",
     "persist",
     "sortable",
+    // editmode is a hyperclayjs platform prefix (editmode:onclick), reserved so a
+    // co-loaded admin attribute never collides with a Sap state field name.
     "editmode"
   ]);
   function cssPath(el) {
@@ -1000,9 +1050,15 @@ ${src}` : `"use strict"; return (${src});`;
       }
     }
     let writes = 0;
-    for (const p of paints) writes += paintOne(p, app);
-    for (const e of effects) runEffect(e, app);
-    for (const iv of invalids) runInvalid(iv);
+    const up = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+    if (up && up.pause) up.pause();
+    try {
+      for (const p of paints) writes += paintOne(p, app);
+      for (const e of effects) runEffect(e, app);
+      for (const iv of invalids) runInvalid(iv);
+    } finally {
+      if (up && up.resume) up.resume();
+    }
     app._state = rootObj;
     app._stats = {
       fields: Object.keys(rootObj).filter((k) => typeof rootObj[k] !== "function").length,
@@ -1186,6 +1242,40 @@ ${src}` : `"use strict"; return (${src});`;
   var COLON_PREFIXES = /* @__PURE__ */ new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode"]);
   var WHEN_PREFIXES = /* @__PURE__ */ new Set(["show-when", "hide-when", "option", "option-not"]);
   var EXPR_SHAPED = /\b(?:state|item|root)\.|===|!==|&&|\|\||[()]|^\s*!/;
+  var KNOWN_BARE = /* @__PURE__ */ new Set([
+    "sap",
+    "scope",
+    "items",
+    "item",
+    "template",
+    "bind",
+    "show",
+    "effect",
+    "invalid",
+    "detail",
+    "state",
+    "transient",
+    "confirm",
+    "default",
+    "persist",
+    "sortable",
+    "trigger-add",
+    "trigger-remove",
+    "trigger-reset",
+    "sap-ignore",
+    "sap-error",
+    "no-save",
+    "no-watch",
+    "no-undo",
+    // hyperclayjs platform region markers (canonical + legacy aliases). sapjs tolerates
+    // them so a co-loaded region attribute inside a [sap] root is never flagged a typo.
+    "no-trigger-autosave",
+    "freeze",
+    "mutations-ignore",
+    "save-remove",
+    "save-ignore",
+    "save-freeze"
+  ]);
   function isControl(el) {
     return el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA";
   }
@@ -1257,6 +1347,11 @@ ${src}` : `"use strict"; return (${src});`;
               fix: `use show="${a.value}" for an expression, or a literal like ${prefix}:${field}="overview"`
             });
           }
+        } else if (!KNOWN_BARE.has(name) && !HTML_GLOBALS.has(name) && !NATIVE_BOOLEAN_SET2.has(name) && !/^(data-|aria-|on)/.test(name) && !(name in el)) {
+          const dym = didYouMean(name, [...KNOWN_BARE]);
+          if (dym) {
+            diag.warn("W03", el, { attr: name, problem: `unknown "${name}" attribute`, didYouMean: dym });
+          }
         }
         if (name === "attr:hidden") {
           diag.warn("W03", el, { attr: name, problem: "attr:hidden paints the wrong attribute", fix: 'use show="expr"' });
@@ -1306,6 +1401,12 @@ ${src}` : `"use strict"; return (${src});`;
             halt("E20", el, { attr: "bind", problem: "bind on a container element is not a control; a write would overwrite its children", fix: "bind a control (input/select/textarea), a contenteditable, or an empty text leaf" });
           }
         }
+      }
+      if (el.hasAttribute("transient") && el.hasAttribute("persist")) {
+        halt("E34", el, {
+          problem: "transient and persist are opposite: persist forces the live value into the saved bytes, leaking exactly what transient drops",
+          fix: "remove one \u2014 transient to keep it out of the file, or persist to save it"
+        });
       }
       if (el.hasAttribute("item") && !el.hasAttribute("template")) {
         const list = el.parentElement;
@@ -1850,7 +1951,7 @@ ${src}` : `"use strict"; return (${src});`;
       if (!t || t.nodeType !== 1) return;
       const appRec = runtime2.appFor(t);
       if (!appRec) return;
-      if (t.hasAttribute("persist")) serializeControlToAttributes(t);
+      if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
       const detailEl = isInsideDetail(t);
       if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind")) {
         const src = ownedBind(detailEl._sapDetailRow, t.getAttribute("bind"));
@@ -2038,40 +2139,6 @@ ${src}` : `"use strict"; return (${src});`;
       return findings;
     }
     return { status, report, why, debug, doctor, greenLine, printGreenLines, REGISTRY };
-  }
-
-  // src/platform.js
-  function batch(label, fn) {
-    if (typeof fn !== "function") throw new Error("Sap.batch(label, fn): fn must be a function");
-    const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
-    if (u && u.flush) u.flush();
-    const r = fn();
-    if (r && typeof r.then === "function") throw new Error("Sap.batch fn must be synchronous (it returned a promise)");
-    if (u && u.commitCaptured) u.commitCaptured(label);
-    return r;
-  }
-  function installBridges(runtime2) {
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    const refreshConnected = () => {
-      for (const app of runtime2.apps()) {
-        if (app.root.isConnected) runtime2.runNow(app, "platform");
-        else runtime2.remountIfPresent();
-      }
-    };
-    document.addEventListener("hyperclay:livesync-applied", refreshConnected);
-    const undo = window.hyperclay && window.hyperclay.undo;
-    if (undo && typeof undo.on === "function") {
-      undo.on("undo", refreshConnected);
-      undo.on("redo", refreshConnected);
-    } else {
-      window.addEventListener("hyperclay:mutation-ready", () => {
-        const u = window.hyperclay && window.hyperclay.undo;
-        if (u && typeof u.on === "function") {
-          u.on("undo", refreshConnected);
-          u.on("redo", refreshConnected);
-        }
-      });
-    }
   }
 
   // src/sap.js
