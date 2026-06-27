@@ -248,4 +248,64 @@ describe("collections", () => {
     expect(root.querySelectorAll("[item]:not([template])").length).toBe(0);
     window.confirm = orig;
   });
+
+  test("confirm uses the platform's themed consent dialog when present", async () => {
+    const root = mount(`
+      <main sap>
+        <ul items="xs">
+          <li item template><button trigger-remove confirm="Sure?">x</button></li>
+          <li item><button trigger-remove confirm="Sure?">x</button></li>
+        </ul>
+      </main>`);
+    const origConfirm = window.confirm;
+    window.confirm = () => { throw new Error("native confirm must not fire when consent is present"); };
+    let seenMsg = null;
+    window.hyperclay = { consent: (msg, cb) => { seenMsg = msg; cb(); return { catch() {} }; } };
+    root.querySelector("[item]:not([template]) button").click();
+    await flush();
+    expect(seenMsg).toBe("Sure?");
+    expect(root.querySelectorAll("[item]:not([template])").length).toBe(0);
+    delete window.hyperclay;
+    window.confirm = origConfirm;
+  });
+
+  test("a declined themed consent leaves the action unrun", async () => {
+    const root = mount(`
+      <main sap>
+        <ul items="xs">
+          <li item template><button trigger-remove confirm="Sure?">x</button></li>
+          <li item><button trigger-remove confirm="Sure?">x</button></li>
+        </ul>
+      </main>`);
+    // consent that never fires the callback = the user clicked Cancel.
+    window.hyperclay = { consent: () => ({ catch() {} }) };
+    root.querySelector("[item]:not([template]) button").click();
+    await flush();
+    expect(root.querySelectorAll("[item]:not([template])").length).toBe(1);
+    delete window.hyperclay;
+  });
+
+  test("a pending themed consent guards against a double-click re-firing", async () => {
+    const root = mount(`
+      <main sap>
+        <ul items="xs">
+          <li item template><button trigger-remove confirm="Sure?">x</button></li>
+          <li item><button trigger-remove confirm="Sure?">x</button></li>
+          <li item><button trigger-remove confirm="Sure?">x</button></li>
+        </ul>
+      </main>`);
+    let calls = 0;
+    let captured = null;
+    window.hyperclay = { consent: (msg, cb) => { calls++; captured = cb; return { catch() { return this; } }; } };
+    const btn = root.querySelector("[item]:not([template]) button");
+    btn.click();
+    btn.click();
+    await flush();
+    expect(calls).toBe(1);
+    expect(root.querySelectorAll("[item]:not([template])").length).toBe(2);
+    captured();
+    await flush();
+    expect(root.querySelectorAll("[item]:not([template])").length).toBe(1);
+    delete window.hyperclay;
+  });
 });

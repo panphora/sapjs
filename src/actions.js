@@ -10,7 +10,7 @@ import {
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
 import { serializeControlToAttributes } from "./control-serialize.js";
-import { regionSkipsSave } from "./platform.js";
+import { regionSkipsSave, platformConsent } from "./platform.js";
 import { compile, run } from "./compile.js";
 
 const TRIGGER_WORDS = ["trigger-add", "trigger-remove", "trigger-reset"];
@@ -54,8 +54,15 @@ export function createActions(runtime, accessor) {
     return { state, item, el, root: appRec._state || {} };
   }
 
-  function confirmGate(el, appRec) {
-    if (!el.hasAttribute("confirm")) return true;
+  // Gate an action behind a `confirm` attribute, then run it. With no confirm
+  // attribute the action runs immediately. Standalone, this blocks on the native
+  // window.confirm and runs synchronously in the same tick (unchanged behavior).
+  // On the platform, it uses the themed window.hyperclay.consent dialog, which fires
+  // its callback on confirm; because that dialog does not block the page like
+  // window.confirm does, a per-element guard prevents a second click from opening a
+  // second dialog (or double-running the action) while one is pending.
+  function gateThenRun(el, appRec, proceed) {
+    if (!el.hasAttribute("confirm")) { proceed(); return; }
     const raw = el.getAttribute("confirm");
     let msg = raw;
     const entry = compile(raw);
@@ -65,7 +72,12 @@ export function createActions(runtime, accessor) {
         if (typeof v === "string" || typeof v === "number") msg = String(v);
       } catch { /* fall back to the literal string */ }
     }
-    return window.confirm(msg);
+    const consent = platformConsent();
+    if (!consent) { if (window.confirm(msg)) proceed(); return; }
+    if (el._sapGatePending) return;
+    el._sapGatePending = true;
+    const done = () => { el._sapGatePending = false; };
+    consent(msg, () => { done(); proceed(); }).catch(done);
   }
 
   function runSet(el, appRec) {
@@ -144,22 +156,23 @@ export function createActions(runtime, accessor) {
   }
 
   function runAction(actionEl, appRec) {
-    if (!confirmGate(actionEl, appRec)) return;
-    const proxy = Sap(actionEl);
-    for (const a of [...actionEl.attributes]) {
-      const n = a.name;
-      if (n === "trigger-remove") proxy && proxy.$remove();
-      else if (n === "trigger-reset") proxy && proxy.$reset();
-      else if (n === "trigger-add") {
-        const row = proxy && proxy.$add(a.value);
-        if (row) focusFirstEditable(row.$el);
+    gateThenRun(actionEl, appRec, () => {
+      const proxy = Sap(actionEl);
+      for (const a of [...actionEl.attributes]) {
+        const n = a.name;
+        if (n === "trigger-remove") proxy && proxy.$remove();
+        else if (n === "trigger-reset") proxy && proxy.$reset();
+        else if (n === "trigger-add") {
+          const row = proxy && proxy.$add(a.value);
+          if (row) focusFirstEditable(row.$el);
+        }
+        else if (n === "move:up") { moveStep(actionEl, "up"); runtime.schedule(appRec, "move:up"); }
+        else if (n === "move:down") { moveStep(actionEl, "down"); runtime.schedule(appRec, "move:down"); }
+        else if (n.startsWith("move:to")) proxy && proxy.$move(a.value);
+        else if (n.startsWith("sort:")) runSort(actionEl, n.slice(5), a.value, appRec);
       }
-      else if (n === "move:up") { moveStep(actionEl, "up"); runtime.schedule(appRec, "move:up"); }
-      else if (n === "move:down") { moveStep(actionEl, "down"); runtime.schedule(appRec, "move:down"); }
-      else if (n.startsWith("move:to")) proxy && proxy.$move(a.value);
-      else if (n.startsWith("sort:")) runSort(actionEl, n.slice(5), a.value, appRec);
-    }
-    if ([...actionEl.attributes].some((a) => a.name.startsWith("set:"))) runSet(actionEl, appRec);
+      if ([...actionEl.attributes].some((a) => a.name.startsWith("set:"))) runSet(actionEl, appRec);
+    });
   }
 
   function onClick(e) {
@@ -207,8 +220,7 @@ export function createActions(runtime, accessor) {
     const appRec = runtime.appFor(form);
     if (!appRec) return;
     e.preventDefault();
-    if (!confirmGate(form, appRec)) return;
-    addFromForm(form, appRec, form.getAttribute("trigger-add"));
+    gateThenRun(form, appRec, () => addFromForm(form, appRec, form.getAttribute("trigger-add")));
   }
 
   function onReset(e) {

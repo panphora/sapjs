@@ -16,6 +16,17 @@ export function regionSkipsSave(el) {
   return region.skipForPolicy(region.resolveRegionPolicy(el), undefined, ["no-save", "freeze"]);
 }
 
+// Themed confirmation dialog. When the platform's consent() is present (the
+// `everything` preset bundles both dialogs and sap), a confirm-gated action uses
+// it instead of the native window.confirm box. consent(msg, yesCallback) fires the
+// callback synchronously on confirm and rejects on cancel, so Sap passes its action
+// as the callback and never goes async. Returns null standalone, so Sap falls back
+// to window.confirm — same degrade-otherwise pattern as the region/undo handshakes.
+export function platformConsent() {
+  const h = typeof window !== "undefined" && window.hyperclay;
+  return h && typeof h.consent === "function" ? h.consent : null;
+}
+
 export function batch(label, fn) {
   if (typeof fn !== "function") throw new Error("Sap.batch(label, fn): fn must be a function");
   const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;

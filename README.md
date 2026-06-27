@@ -199,7 +199,7 @@ Two ways to toggle visibility. The shape tells you which engine runs it:
 | `move:up` / `move:down` | reorder a row |
 | `move:to="list"` | move a row to another list |
 | `sort:FIELD` | stable column sort, direction toggles statelessly |
-| `confirm="msg"` | gate any action behind `window.confirm` |
+| `confirm="msg"` | gate any action behind a confirm dialog: the platform's themed dialog when Hyperclay is loaded, native `window.confirm` otherwise |
 | `detail="LIST by KEYEXPR"` | project the selected row into a panel |
 
 ### Actions (JavaScript)

@@ -465,6 +465,10 @@ ${src}` : `"use strict"; return (${src});`;
     }
     return region.skipForPolicy(region.resolveRegionPolicy(el), void 0, ["no-save", "freeze"]);
   }
+  function platformConsent() {
+    const h = typeof window !== "undefined" && window.hyperclay;
+    return h && typeof h.consent === "function" ? h.consent : null;
+  }
   function batch(label, fn) {
     if (typeof fn !== "function") throw new Error("Sap.batch(label, fn): fn must be a function");
     const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
@@ -1948,8 +1952,11 @@ ${src}` : `"use strict"; return (${src});`;
       const state = scopeEl._sapScope || appRec._state || {};
       return { state, item, el, root: appRec._state || {} };
     }
-    function confirmGate(el, appRec) {
-      if (!el.hasAttribute("confirm")) return true;
+    function gateThenRun(el, appRec, proceed) {
+      if (!el.hasAttribute("confirm")) {
+        proceed();
+        return;
+      }
       const raw = el.getAttribute("confirm");
       let msg = raw;
       const entry = compile(raw);
@@ -1960,7 +1967,20 @@ ${src}` : `"use strict"; return (${src});`;
         } catch {
         }
       }
-      return window.confirm(msg);
+      const consent = platformConsent();
+      if (!consent) {
+        if (window.confirm(msg)) proceed();
+        return;
+      }
+      if (el._sapGatePending) return;
+      el._sapGatePending = true;
+      const done = () => {
+        el._sapGatePending = false;
+      };
+      consent(msg, () => {
+        done();
+        proceed();
+      }).catch(done);
     }
     function runSet(el, appRec) {
       for (const a of el.attributes) {
@@ -2034,25 +2054,26 @@ ${src}` : `"use strict"; return (${src});`;
       if (f && typeof f.focus === "function") f.focus();
     }
     function runAction(actionEl, appRec) {
-      if (!confirmGate(actionEl, appRec)) return;
-      const proxy = Sap2(actionEl);
-      for (const a of [...actionEl.attributes]) {
-        const n2 = a.name;
-        if (n2 === "trigger-remove") proxy && proxy.$remove();
-        else if (n2 === "trigger-reset") proxy && proxy.$reset();
-        else if (n2 === "trigger-add") {
-          const row = proxy && proxy.$add(a.value);
-          if (row) focusFirstEditable(row.$el);
-        } else if (n2 === "move:up") {
-          moveStep(actionEl, "up");
-          runtime2.schedule(appRec, "move:up");
-        } else if (n2 === "move:down") {
-          moveStep(actionEl, "down");
-          runtime2.schedule(appRec, "move:down");
-        } else if (n2.startsWith("move:to")) proxy && proxy.$move(a.value);
-        else if (n2.startsWith("sort:")) runSort(actionEl, n2.slice(5), a.value, appRec);
-      }
-      if ([...actionEl.attributes].some((a) => a.name.startsWith("set:"))) runSet(actionEl, appRec);
+      gateThenRun(actionEl, appRec, () => {
+        const proxy = Sap2(actionEl);
+        for (const a of [...actionEl.attributes]) {
+          const n2 = a.name;
+          if (n2 === "trigger-remove") proxy && proxy.$remove();
+          else if (n2 === "trigger-reset") proxy && proxy.$reset();
+          else if (n2 === "trigger-add") {
+            const row = proxy && proxy.$add(a.value);
+            if (row) focusFirstEditable(row.$el);
+          } else if (n2 === "move:up") {
+            moveStep(actionEl, "up");
+            runtime2.schedule(appRec, "move:up");
+          } else if (n2 === "move:down") {
+            moveStep(actionEl, "down");
+            runtime2.schedule(appRec, "move:down");
+          } else if (n2.startsWith("move:to")) proxy && proxy.$move(a.value);
+          else if (n2.startsWith("sort:")) runSort(actionEl, n2.slice(5), a.value, appRec);
+        }
+        if ([...actionEl.attributes].some((a) => a.name.startsWith("set:"))) runSet(actionEl, appRec);
+      });
     }
     function onClick(e) {
       const t = e.target;
@@ -2095,8 +2116,7 @@ ${src}` : `"use strict"; return (${src});`;
       const appRec = runtime2.appFor(form);
       if (!appRec) return;
       e.preventDefault();
-      if (!confirmGate(form, appRec)) return;
-      addFromForm(form, appRec, form.getAttribute("trigger-add"));
+      gateThenRun(form, appRec, () => addFromForm(form, appRec, form.getAttribute("trigger-add")));
     }
     function onReset(e) {
       const form = e.target;

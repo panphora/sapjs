@@ -1105,7 +1105,7 @@
     <tr><td><code>trigger-remove</code> / <code>trigger-reset</code></td><td>Remove the nearest row / reset the scope to defaults.</td></tr>
     <tr><td><code>move:up</code> / <code>down</code> / <code>to="list"</code></td><td>Reorder a row, or move it to another list.</td></tr>
     <tr><td><code>sort:FIELD</code></td><td>Stable column sort; direction toggles statelessly.</td></tr>
-    <tr><td><code>confirm="msg"</code></td><td>Gate a Sap action (<code>set:</code>, <code>move:</code>, <code>sort:</code>, <code>trigger-*</code>) or a form's <code>trigger-add</code>. For a native <code>onclick</code>, call <code>window.confirm()</code> in the handler.</td></tr>
+    <tr><td><code>confirm="msg"</code></td><td>Gate a Sap action (<code>set:</code>, <code>move:</code>, <code>sort:</code>, <code>trigger-*</code>) or a form's <code>trigger-add</code>. Uses the platform's themed dialog when Hyperclay is loaded, native <code>window.confirm</code> otherwise. For a native <code>onclick</code>, call <code>window.confirm()</code> in the handler.</td></tr>
     <tr><td><code>detail="LIST by KEY"</code></td><td>Project the selected row into a panel; edits route back to the source.</td></tr>
     <tr><td><code>Sap(el).field = v</code></td><td>Live write-through proxy. Verbs: <code>$add</code>, <code>$remove</code>, <code>$move</code>, <code>$reset</code>.</td></tr>
   </table>
