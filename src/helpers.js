@@ -4,7 +4,7 @@
 export function num(v) {
   if (typeof v === "number") return v;
   if (v == null || v === "") return 0;
-  const n = Number(v);
+  const n = Number(typeof v === "string" ? v.replace(/[$,%\s]/g, "") : v);
   return Number.isNaN(n) ? 0 : n;
 }
 

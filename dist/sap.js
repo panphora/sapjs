@@ -232,7 +232,7 @@ var Sap = (() => {
   function num(v) {
     if (typeof v === "number") return v;
     if (v == null || v === "") return 0;
-    const n2 = Number(v);
+    const n2 = Number(typeof v === "string" ? v.replace(/[$,%\s]/g, "") : v);
     return Number.isNaN(n2) ? 0 : n2;
   }
   function values(rows, k) {
@@ -2150,6 +2150,24 @@ ${src}` : `"use strict"; return (${src});`;
       }
       runtime2.schedule(appRec, e.type + " " + (t.id || t.tagName.toLowerCase()));
     }
+    function onKeydown(e) {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      const t = e.target;
+      if (!t || t.nodeType !== 1 || t.tagName !== "INPUT") return;
+      if (!t.hasAttribute("bind") || !t.hasAttribute("step")) return;
+      const type = (t.getAttribute("type") || "text").toLowerCase();
+      if (type !== "text" && type !== "tel" && type !== "search") return;
+      const appRec = runtime2.appFor(t);
+      if (!appRec) return;
+      e.preventDefault();
+      const step = num(t.getAttribute("step")) || 1;
+      const dir = e.key === "ArrowUp" ? 1 : -1;
+      let next = num(t.value) + step * (e.shiftKey ? 10 : 1) * dir;
+      const min2 = t.getAttribute("min"), max2 = t.getAttribute("max");
+      if (min2 !== null && min2 !== "" && next < num(min2)) next = num(min2);
+      if (max2 !== null && max2 !== "" && next > num(max2)) next = num(max2);
+      carrierFor(t).write(String(Number(next.toFixed(2))));
+    }
     function install(doc = document) {
       doc.addEventListener("click", onClick);
       doc.addEventListener("submit", onSubmit);
@@ -2157,6 +2175,7 @@ ${src}` : `"use strict"; return (${src});`;
       doc.addEventListener("toggle", onToggle, true);
       doc.addEventListener("input", onInput);
       doc.addEventListener("change", onInput);
+      doc.addEventListener("keydown", onKeydown);
     }
     return { install };
   }

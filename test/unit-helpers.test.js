@@ -11,6 +11,15 @@ describe("aggregate helpers", () => {
     expect(num(7)).toBe(7);
   });
 
+  test("num strips $ , % and whitespace before parsing", () => {
+    expect(num("$1,200")).toBe(1200);
+    expect(num("$1,200.50")).toBe(1200.5);
+    expect(num("12%")).toBe(12);
+    expect(num(" 5 000")).toBe(5000);
+    expect(num("12px")).toBe(0);
+    expect(num("-5")).toBe(-5);
+  });
+
   test("sum over a field or mapper", () => {
     expect(sum(rows, "p")).toBe(6);
     expect(sum(rows, (r) => r.p * 2)).toBe(12);

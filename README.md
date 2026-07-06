@@ -145,6 +145,10 @@ Binding a `type=file` is always a mount error (`E32`); files never serialize int
 
 Note: `<select>` and `<textarea>` now mirror their live value to attributes the way checkbox/radio/number/text do — a `<select>` writes `selected` on the chosen option, a `<textarea>` writes a cursor-safe `data-value` that finalizes to `textContent` on save — so a programmatic change survives a save. `[contenteditable]`/text-leaf bindings carry no attribute: they persist because their `textContent` is saved with the DOM as-is.
 
+#### `step` on a bound text input
+
+A `step` attribute on a bound text-kind input (`type=text/tel/search`) makes ArrowUp/ArrowDown adjust the value, the way a native `type=number` already does, but without the spinner and with centered styling intact. ArrowUp adds `step`, ArrowDown subtracts it, Shift multiplies the step by 10, and optional `min`/`max` attributes clamp the result. The write goes through the one write path, so calcs and paints recompute on the next pass. Opt-in only: no `step`, no stepping. Native `type=number` inputs are left alone.
+
 ### `calc:` — computed fields
 
 ```html
@@ -229,7 +233,7 @@ The compile signature is frozen forever:
 
 Expressions are **read-only**. Writing happens through `Sap(el)` or the action attributes.
 
-`num(v)` coerces any non-number (`"12px"`, `"abc"`, blank) to `0`, never `NaN`, and `sum`/`avg`/`min`/`max` inherit that, so a typo'd field name silently sums to 0 rather than erroring. (A numeric *format* on a non-finite value still throws `E22`; see Formats below.)
+`num(v)` coerces any non-number (`"12px"`, `"abc"`, blank) to `0`, never `NaN`, and `sum`/`avg`/`min`/`max` inherit that, so a typo'd field name silently sums to 0 rather than erroring. It strips `$`, `,`, `%`, and whitespace first, so pasted values like `"$1,200"` and `"12%"` parse to `1200` and `12`. (A numeric *format* on a non-finite value still throws `E22`; see Formats below.)
 
 ### Formats
 

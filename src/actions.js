@@ -9,6 +9,7 @@ import {
   resolveListEl, walkOwned,
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
+import { num } from "./helpers.js";
 import { serializeControlToAttributes } from "./control-serialize.js";
 import { regionSkipsSave, platformConsent } from "./platform.js";
 import { compile, run } from "./compile.js";
@@ -263,6 +264,25 @@ export function createActions(runtime, accessor) {
     runtime.schedule(appRec, e.type + " " + (t.id || t.tagName.toLowerCase()));
   }
 
+  function onKeydown(e) {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    const t = e.target;
+    if (!t || t.nodeType !== 1 || t.tagName !== "INPUT") return;
+    if (!t.hasAttribute("bind") || !t.hasAttribute("step")) return;
+    const type = (t.getAttribute("type") || "text").toLowerCase();
+    if (type !== "text" && type !== "tel" && type !== "search") return; // native numeric types already step
+    const appRec = runtime.appFor(t);
+    if (!appRec) return;
+    e.preventDefault();
+    const step = num(t.getAttribute("step")) || 1;
+    const dir = e.key === "ArrowUp" ? 1 : -1;
+    let next = num(t.value) + step * (e.shiftKey ? 10 : 1) * dir;
+    const min = t.getAttribute("min"), max = t.getAttribute("max");
+    if (min !== null && min !== "" && next < num(min)) next = num(min);
+    if (max !== null && max !== "" && next > num(max)) next = num(max);
+    carrierFor(t).write(String(Number(next.toFixed(2))));
+  }
+
   function install(doc = document) {
     doc.addEventListener("click", onClick);
     doc.addEventListener("submit", onSubmit);
@@ -270,6 +290,7 @@ export function createActions(runtime, accessor) {
     doc.addEventListener("toggle", onToggle, true);
     doc.addEventListener("input", onInput);
     doc.addEventListener("change", onInput);
+    doc.addEventListener("keydown", onKeydown);
   }
 
   return { install };
