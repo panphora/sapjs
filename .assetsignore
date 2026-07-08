@@ -1,0 +1,18 @@
+# Not part of the public site served at saphtml.com (gitignore syntax).
+# Everything else in the repo root is uploaded as a static asset.
+node_modules/
+src/
+test/
+scripts/
+build/
+coverage/
+docs/*.template.html
+*.cjs
+package.json
+package-lock.json
+README.md
+LICENSE
+.gitignore
+.DS_Store
+shot-*.png
+wrangler.jsonc
