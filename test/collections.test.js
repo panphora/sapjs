@@ -309,3 +309,65 @@ describe("collections", () => {
     delete window.hyperclay;
   });
 });
+
+// A hyperclay `sortable` drag reorder announces itself with a dedicated
+// `clay:sorted` event. Sap's document listener re-derives the app(s) the drag
+// touched, independent of the mutation bridge (so it works even inside a pause window).
+describe("clay:sorted reorder event", () => {
+  test("schedules a re-derive of the touched list with no MutationObserver at all", async () => {
+    const RealMO = global.MutationObserver;
+    delete global.MutationObserver; // onSorted is the only re-derive path left
+    try {
+      const root = mount(`
+        <main sap>
+          <span effect="window.__c = (window.__c||0)+1"></span>
+          <ul items="xs">
+            <li item template><span bind="v"></span></li>
+            <li item><span bind="v">a</span></li>
+            <li item><span bind="v">b</span></li>
+          </ul>
+        </main>`);
+      const list = root.querySelector("[items=xs]");
+      const base = window.__c; // effect ran during the mount pass
+      list.dispatchEvent(new CustomEvent("clay:sorted", {
+        bubbles: true,
+        detail: { item: list.querySelectorAll("[item]")[1], from: list, to: list, oldIndex: 1, newIndex: 0 },
+      }));
+      await flush();
+      expect(window.__c).toBeGreaterThan(base);
+      delete window.__c;
+    } finally {
+      global.MutationObserver = RealMO;
+    }
+  });
+
+  test("a cross-list drag re-derives both apps it spans", async () => {
+    const RealMO = global.MutationObserver;
+    delete global.MutationObserver;
+    try {
+      document.body.innerHTML = `
+        <main sap id="A"><span effect="window.__a = (window.__a||0)+1"></span>
+          <ul items="xs"><li item template><span bind="v"></span></li><li item><span bind="v">a</span></li></ul>
+        </main>
+        <main sap id="B"><span effect="window.__b = (window.__b||0)+1"></span>
+          <ul items="ys"><li item template><span bind="v"></span></li></ul>
+        </main>`;
+      Sap._reset();
+      Sap.mount(document.querySelector("#A"));
+      Sap.mount(document.querySelector("#B"));
+      const listA = document.querySelector("#A [items=xs]");
+      const listB = document.querySelector("#B [items=ys]");
+      const baseA = window.__a, baseB = window.__b;
+      listA.dispatchEvent(new CustomEvent("clay:sorted", {
+        bubbles: true,
+        detail: { from: listA, to: listB, oldIndex: 0, newIndex: 0 },
+      }));
+      await flush();
+      expect(window.__a).toBeGreaterThan(baseA);
+      expect(window.__b).toBeGreaterThan(baseB);
+      delete window.__a; delete window.__b;
+    } finally {
+      global.MutationObserver = RealMO;
+    }
+  });
+});

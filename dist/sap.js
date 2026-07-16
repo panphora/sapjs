@@ -2150,6 +2150,14 @@ ${src}` : `"use strict"; return (${src});`;
       }
       runtime2.schedule(appRec, e.type + " " + (t.id || t.tagName.toLowerCase()));
     }
+    function onSorted(e) {
+      const d = e.detail || {};
+      for (const el of [d.from, d.to, e.target]) {
+        if (!el || el.nodeType !== 1) continue;
+        const appRec = runtime2.appFor(el);
+        if (appRec) runtime2.schedule(appRec, "sorted");
+      }
+    }
     function onKeydown(e) {
       if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
       const t = e.target;
@@ -2175,6 +2183,7 @@ ${src}` : `"use strict"; return (${src});`;
       doc.addEventListener("toggle", onToggle, true);
       doc.addEventListener("input", onInput);
       doc.addEventListener("change", onInput);
+      doc.addEventListener("clay:sorted", onSorted);
       doc.addEventListener("keydown", onKeydown);
     }
     return { install };

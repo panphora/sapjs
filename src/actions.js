@@ -264,6 +264,18 @@ export function createActions(runtime, accessor) {
     runtime.schedule(appRec, e.type + " " + (t.id || t.tagName.toLowerCase()));
   }
 
+  // A hyperclay `sortable` drag reorder announces itself with a dedicated event.
+  // Re-derive both lists it touched (same-list drag: from === to; cross-list: two
+  // apps). schedule() dedups per app, so overlapping targets are still one pass.
+  function onSorted(e) {
+    const d = e.detail || {};
+    for (const el of [d.from, d.to, e.target]) {
+      if (!el || el.nodeType !== 1) continue;
+      const appRec = runtime.appFor(el);
+      if (appRec) runtime.schedule(appRec, "sorted");
+    }
+  }
+
   function onKeydown(e) {
     if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
     const t = e.target;
@@ -290,6 +302,7 @@ export function createActions(runtime, accessor) {
     doc.addEventListener("toggle", onToggle, true);
     doc.addEventListener("input", onInput);
     doc.addEventListener("change", onInput);
+    doc.addEventListener("clay:sorted", onSorted);
     doc.addEventListener("keydown", onKeydown);
   }
 

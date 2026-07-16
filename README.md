@@ -330,6 +330,7 @@ Errors that contradict the file's structure halt the app at mount (no listeners 
 Sap runs standalone in any HTML file. When `window.hyperclay` is present it rides the platform for free:
 
 - live-sync morphs trigger a synchronous re-derive (`hyperclay:livesync-applied`),
+- a `sortable` drag reorder triggers a re-derive (`clay:sorted`),
 - undo/redo replays heal derived paints,
 - `Sap.batch` labels grouped edits in the undo history,
 - a morph that replaces the `[sap]` element re-mounts itself.
