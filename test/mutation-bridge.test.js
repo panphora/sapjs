@@ -83,19 +83,28 @@ describe("source selection", () => {
     expect(_activeSourceKind()).toBe("native");
   });
 
-  test("hyperclay present but Mutation not yet -> waits; mutation-ready on document subscribes", () => {
-    window.hyperclay = {}; // no Mutation
+  test("bare window.hyperclay (namespace only, no Mutation) -> native now, cedes to a real late hub", () => {
+    window.hyperclay = {}; // a namespace owner, but no Mutation hub will publish here
     mount(`<main sap state="m=hi"><span text="state.m"></span></main>`);
-    expect(_activeSourceKind()).toBe(null); // waiting, no native started
+    expect(_activeSourceKind()).toBe("native"); // do NOT strand on a hub that may never come
 
-    // a window-dispatched ready event must NOT subscribe (locks the platform.js:51 target)
+    // a window-dispatched ready event must NOT cede (the hub fires on document)
     window.dispatchEvent(new Event("hyperclay:mutation-ready"));
-    expect(_activeSourceKind()).toBe(null);
+    expect(_activeSourceKind()).toBe("native");
 
-    // the real, document-dispatched event subscribes the hub
+    // a real, document-dispatched hub cedes native -> hub, no double-observe
     window.hyperclay.Mutation = { onAnyChange: jest.fn(() => () => {}) };
     document.dispatchEvent(new Event("hyperclay:mutation-ready"));
     expect(_activeSourceKind()).toBe("hub");
+  });
+
+  test("bare window.hyperclay with no hub ever -> reactivity still works (the consent-shim trap)", async () => {
+    window.hyperclay = {}; // e.g. clay-ui's consent shim created the namespace; core never boots
+    const root = mount(`<main sap state="m=hi"><span id="out" text="state.m"></span></main>`);
+    expect(root.querySelector("#out").textContent).toBe("hi");
+    root.setAttribute("m", "bye"); // external write, no sap event, no hub to catch it
+    await tick();
+    expect(root.querySelector("#out").textContent).toBe("bye"); // native caught it, not stranded
   });
 
   test("native cedes to a late-arriving hub (no double-observe)", () => {

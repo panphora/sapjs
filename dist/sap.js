@@ -960,27 +960,16 @@ ${src}` : `"use strict"; return (${src});`;
       activate(hubSource(M), runtime2);
       return;
     }
-    if (w.hyperclay) {
-      lateHubListener = function onReady() {
-        const M2 = w.hyperclay && w.hyperclay.Mutation;
-        if (!M2 || installed) return;
-        document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
-        lateHubListener = null;
-        activate(hubSource(M2), runtime2);
-      };
-      document.addEventListener("hyperclay:mutation-ready", lateHubListener);
-      return;
-    }
     if (typeof MutationObserver === "function") {
       activate(nativeSource(), runtime2);
       lateHubListener = function onLateHub() {
-        const M3 = w.hyperclay && w.hyperclay.Mutation;
-        if (!M3) return;
+        const M2 = w.hyperclay && w.hyperclay.Mutation;
+        if (!M2) return;
         document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
         lateHubListener = null;
         if (activeSource) activeSource.teardown();
         installed = false;
-        activate(hubSource(M3), runtime2);
+        activate(hubSource(M2), runtime2);
       };
       document.addEventListener("hyperclay:mutation-ready", lateHubListener);
     }

@@ -17,6 +17,7 @@
     "build": "node build/bundle.mjs",
     "build:docs": "node scripts/build-doc.mjs",
     "copy-to-hyperclayjs": "npm run build && node scripts/copy-to-hyperclayjs.js",
+    "copy-to-clayjs": "npm run build && node scripts/copy-to-clayjs.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "serve": "node build/bundle.mjs && python3 -m http.server 8123"

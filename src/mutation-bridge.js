@@ -153,32 +153,24 @@ export function installMutationBridge(runtime) {
 
   if (M && typeof M.onAnyChange === "function") { activate(hubSource(M), runtime); return; }
 
-  // hyperclay present but Mutation not yet: the hub owns observation, wait for it (do
-  // NOT start native, or we double-observe). Listen on `document` (where the hub fires).
-  if (w.hyperclay) {
-    lateHubListener = function onReady() {
-      const M2 = w.hyperclay && w.hyperclay.Mutation;
-      if (!M2 || installed) return;
-      document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
-      lateHubListener = null;
-      activate(hubSource(M2), runtime);
-    };
-    document.addEventListener("hyperclay:mutation-ready", lateHubListener);
-    return;
-  }
-
-  // No hyperclay at all: go native, but watch for a late hub and CEDE to it so the two
-  // never observe simultaneously.
+  // No usable Mutation hub yet. We do NOT treat a bare window.hyperclay as a promise that
+  // a hub is coming: another library may merely own that namespace (e.g. a consent shim)
+  // and never publish a Mutation hub, which would strand us in a permanent wait with dead
+  // reactivity. So observe natively now and CEDE to a real hub if one arrives later
+  // (teardown + re-subscribe on the document-dispatched hyperclay:mutation-ready — a
+  // window-dispatched event is ignored, matching the hub's own target). The handoff is
+  // safe: passes are idempotent, so the brief pre-hub native window costs at most a little
+  // redundant work, never correctness, and the two never observe simultaneously.
   if (typeof MutationObserver === "function") {
     activate(nativeSource(), runtime);
     lateHubListener = function onLateHub() {
-      const M3 = w.hyperclay && w.hyperclay.Mutation;
-      if (!M3) return;
+      const M2 = w.hyperclay && w.hyperclay.Mutation;
+      if (!M2) return;
       document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
       lateHubListener = null;
       if (activeSource) activeSource.teardown();
       installed = false;
-      activate(hubSource(M3), runtime);
+      activate(hubSource(M2), runtime);
     };
     document.addEventListener("hyperclay:mutation-ready", lateHubListener);
   }
