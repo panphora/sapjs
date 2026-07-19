@@ -48,5 +48,10 @@
     "esbuild": "^0.21.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0"
+  },
+  "hyper": {
+    "kind": "lib",
+    "status": "active",
+    "url": "https://saphtml.com"
   }
 }
