@@ -1,6 +1,6 @@
 {
-  "name": "sapjs",
-  "version": "0.2.0",
+  "name": "@panphora/sapjs",
+  "version": "0.2.1",
   "description": "A reactive HTML library where the DOM is the only state store. Structure-first, one write path, transient rebuild. An Alpine alternative built for malleable, self-saving HTML.",
   "type": "module",
   "main": "src/sap.js",
@@ -37,7 +37,7 @@
     "type": "git",
     "url": "git+https://github.com/panphora/sapjs.git"
   },
-  "homepage": "https://github.com/panphora/sapjs#readme",
+  "homepage": "https://saphtml.com",
   "bugs": {
     "url": "https://github.com/panphora/sapjs/issues"
   },

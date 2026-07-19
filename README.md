@@ -5,7 +5,7 @@
 Sap is a tiny reactive layer for hand-written HTML files. You declare state, formulas, and paints as plain attributes; Sap rebuilds everything from the live DOM on every change. The DOM is the only store, so the file you save *is* the app: open it in any browser, it runs.
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@panphora/sapjs/dist/sap.min.js"></script>
 
 <main sap>
   <input type="number" bind="qty" value="3">
@@ -47,17 +47,17 @@ Reads are expressions over `state` (the nearest scope) and `item` (the nearest r
 Drop-in (auto-mounts every `[sap]` on load):
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@panphora/sapjs/dist/sap.min.js"></script>
 ```
 
 Or as a module:
 
 ```js
-import Sap from "sapjs";
+import Sap from "@panphora/sapjs";
 ```
 
 ```bash
-npm install sapjs
+npm install @panphora/sapjs
 ```
 
 Importing the module also auto-mounts every `[sap]` on `DOMContentLoaded`. Call `Sap.mount(rootOrSelector)` to mount a root added later, or `Sap.mount()` to rescan; `Sap.config({ formats })` registers custom formats as a config-object alternative to `Sap.formats.x`.
@@ -81,7 +81,7 @@ That regenerates `docs/sapjs-explained.html` and refreshes the inlined engine fr
 A complete todo app, with no JavaScript at all. Copy it into a `.html` file and open it.
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/sapjs/dist/sap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@panphora/sapjs/dist/sap.min.js"></script>
 
 <main sap>
   <form trigger-add="todos">
