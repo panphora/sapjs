@@ -2,8 +2,8 @@
 // means, not just its own delegated events. Two interchangeable backends sit behind
 // one MutationSource seam:
 //
-//   - hubSource:    when window.hyperclay.Mutation is present, ride the platform's
-//                   central, pause-gated observer. The hub already coordinates the
+//   - hubSource:    when the platform's Mutation hub is present, ride its central,
+//                   pause-gated observer. The hub already coordinates the
 //                   live-sync / undo pause windows, so we inherit them for free.
 //   - nativeSource: standalone, a sapjs-owned MutationObserver on document.body.
 //
@@ -17,6 +17,8 @@
 // Exactly one source is active at a time. A native source CEDES to a hub that arrives
 // late (teardown + re-subscribe), so the two never observe at once. Degrades to a
 // plain no-op when neither a hub nor a MutationObserver is present.
+
+import { capability, MUTATION_READY, onPlatformEvent } from "./platform.js";
 
 let activeSource = null;
 let installed = false;
@@ -55,7 +57,7 @@ function nativeSource() {
     suppress(fn) {
       // No hub to gate us: drop our own pass's records before the browser delivers them.
       // Pause undo too if it somehow exists hub-less (presence-guarded; normally it does not).
-      const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+      const u = capability("undo");
       if (u && u.pause) u.pause();
       try {
         return fn();
@@ -130,7 +132,7 @@ function scheduleAffectedApps(runtime, changes) {
 // historical undo-pause-if-present behavior so derived writes still stay off the undo stack.
 export function withDomMutationPaused(fn) {
   if (activeSource) return activeSource.suppress(fn);
-  const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+  const u = capability("undo");
   if (u && u.pause && u.resume) {
     u.pause();
     try { return fn(); } finally { u.resume(); }
@@ -148,8 +150,7 @@ function activate(source, runtime) {
 export function installMutationBridge(runtime) {
   if (installed) return;
   if (typeof window === "undefined" || typeof document === "undefined") return;
-  const w = window;
-  const M = w.hyperclay && w.hyperclay.Mutation;
+  const M = capability("Mutation");
 
   if (M && typeof M.onAnyChange === "function") { activate(hubSource(M), runtime); return; }
 
@@ -157,22 +158,23 @@ export function installMutationBridge(runtime) {
   // a hub is coming: another library may merely own that namespace (e.g. a consent shim)
   // and never publish a Mutation hub, which would strand us in a permanent wait with dead
   // reactivity. So observe natively now and CEDE to a real hub if one arrives later
-  // (teardown + re-subscribe on the document-dispatched hyperclay:mutation-ready — a
+  // (teardown + re-subscribe on the document-dispatched mutation-ready — a
   // window-dispatched event is ignored, matching the hub's own target). The handoff is
   // safe: passes are idempotent, so the brief pre-hub native window costs at most a little
   // redundant work, never correctness, and the two never observe simultaneously.
   if (typeof MutationObserver === "function") {
     activate(nativeSource(), runtime);
-    lateHubListener = function onLateHub() {
-      const M2 = w.hyperclay && w.hyperclay.Mutation;
+    // lateHubListener holds the disposer, which unregisters BOTH spellings: dropping
+    // only the one that fired would leak the other under whichever client is loaded.
+    lateHubListener = onPlatformEvent(document, MUTATION_READY, function onLateHub() {
+      const M2 = capability("Mutation");
       if (!M2) return;
-      document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
+      lateHubListener();
       lateHubListener = null;
       if (activeSource) activeSource.teardown();
       installed = false;
       activate(hubSource(M2), runtime);
-    };
-    document.addEventListener("hyperclay:mutation-ready", lateHubListener);
+    });
   }
   // else: no DOM observer (SSR / ancient) -> event-only, exactly as before.
 }
@@ -182,7 +184,7 @@ export function installMutationBridge(runtime) {
 export function resetMutationBridge() {
   if (activeSource) { try { activeSource.teardown(); } catch { /* ignore */ } }
   if (lateHubListener && typeof document !== "undefined") {
-    document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
+    lateHubListener();
   }
   activeSource = null;
   installed = false;

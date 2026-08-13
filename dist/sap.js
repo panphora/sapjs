@@ -458,20 +458,43 @@ ${src}` : `"use strict"; return (${src});`;
   }
 
   // src/platform.js
+  function capability(name) {
+    if (typeof window === "undefined") return null;
+    const clay = window.clay, hyperclay = window.hyperclay;
+    if (name === "consent") return clay?.confirm || hyperclay?.consent || null;
+    return clay?.[name] || hyperclay?.[name] || null;
+  }
+  var MUTATION_READY = ["clay:mutation-ready", "hyperclay:mutation-ready"];
+  var LIVESYNC_APPLIED = ["clay:sync-applied", "hyperclay:livesync-applied"];
+  function onPlatformEvent(target, names, handler) {
+    let claimedBy = null;
+    const wrapped = (event) => {
+      if (claimedBy !== null && claimedBy !== event.type) return;
+      claimedBy = event.type;
+      queueMicrotask(() => {
+        claimedBy = null;
+      });
+      handler(event);
+    };
+    for (const name of names) target.addEventListener(name, wrapped);
+    return () => {
+      for (const name of names) target.removeEventListener(name, wrapped);
+    };
+  }
   function regionSkipsSave(el) {
-    const region = typeof window !== "undefined" && window.hyperclay && window.hyperclay.region;
+    const region = capability("region");
     if (!region || typeof region.resolveRegionPolicy !== "function" || typeof region.skipForPolicy !== "function") {
       return false;
     }
     return region.skipForPolicy(region.resolveRegionPolicy(el), void 0, ["no-save", "freeze"]);
   }
   function platformConsent() {
-    const h = typeof window !== "undefined" && window.hyperclay;
-    return h && typeof h.consent === "function" ? h.consent : null;
+    const fn = capability("consent");
+    return typeof fn === "function" ? fn : null;
   }
   function batch(label, fn) {
     if (typeof fn !== "function") throw new Error("Sap.batch(label, fn): fn must be a function");
-    const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+    const u = capability("undo");
     if (u && u.flush) u.flush();
     const r = fn();
     if (r && typeof r.then === "function") throw new Error("Sap.batch fn must be synchronous (it returned a promise)");
@@ -491,14 +514,14 @@ ${src}` : `"use strict"; return (${src});`;
         runtime2.remountIfPresent();
       }
     };
-    document.addEventListener("hyperclay:livesync-applied", refreshConnected);
-    const undo = window.hyperclay && window.hyperclay.undo;
+    onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
+    const undo = capability("undo");
     if (undo && typeof undo.on === "function") {
       undo.on("undo", refreshConnected);
       undo.on("redo", refreshConnected);
     } else {
-      document.addEventListener("hyperclay:mutation-ready", () => {
-        const u = window.hyperclay && window.hyperclay.undo;
+      onPlatformEvent(document, MUTATION_READY, () => {
+        const u = capability("undo");
         if (u && typeof u.on === "function") {
           u.on("undo", refreshConnected);
           u.on("redo", refreshConnected);
@@ -871,7 +894,7 @@ ${src}` : `"use strict"; return (${src});`;
         }
       },
       suppress(fn) {
-        const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+        const u = capability("undo");
         if (u && u.pause) u.pause();
         try {
           return fn();
@@ -935,7 +958,7 @@ ${src}` : `"use strict"; return (${src});`;
   }
   function withDomMutationPaused(fn) {
     if (activeSource) return activeSource.suppress(fn);
-    const u = typeof window !== "undefined" && window.hyperclay && window.hyperclay.undo;
+    const u = capability("undo");
     if (u && u.pause && u.resume) {
       u.pause();
       try {
@@ -954,24 +977,22 @@ ${src}` : `"use strict"; return (${src});`;
   function installMutationBridge(runtime2) {
     if (installed) return;
     if (typeof window === "undefined" || typeof document === "undefined") return;
-    const w = window;
-    const M = w.hyperclay && w.hyperclay.Mutation;
+    const M = capability("Mutation");
     if (M && typeof M.onAnyChange === "function") {
       activate(hubSource(M), runtime2);
       return;
     }
     if (typeof MutationObserver === "function") {
       activate(nativeSource(), runtime2);
-      lateHubListener = function onLateHub() {
-        const M2 = w.hyperclay && w.hyperclay.Mutation;
+      lateHubListener = onPlatformEvent(document, MUTATION_READY, function onLateHub() {
+        const M2 = capability("Mutation");
         if (!M2) return;
-        document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
+        lateHubListener();
         lateHubListener = null;
         if (activeSource) activeSource.teardown();
         installed = false;
         activate(hubSource(M2), runtime2);
-      };
-      document.addEventListener("hyperclay:mutation-ready", lateHubListener);
+      });
     }
   }
   function resetMutationBridge() {
@@ -982,7 +1003,7 @@ ${src}` : `"use strict"; return (${src});`;
       }
     }
     if (lateHubListener && typeof document !== "undefined") {
-      document.removeEventListener("hyperclay:mutation-ready", lateHubListener);
+      lateHubListener();
     }
     activeSource = null;
     installed = false;
@@ -1306,7 +1327,7 @@ ${src}` : `"use strict"; return (${src});`;
         return 0;
       }
       case "when": {
-        const ov = typeof window !== "undefined" && window.hyperclay && window.hyperclay.optionVisibility;
+        const ov = capability("optionVisibility");
         if (ov && ov._started) {
           if (el._sapWhen && el.hidden) {
             el.hidden = false;

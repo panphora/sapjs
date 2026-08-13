@@ -18,6 +18,7 @@ const hidden = (root, id) => root.querySelector("#" + id).hidden;
 
 afterEach(() => {
   delete window.hyperclay;
+  delete window.clay;
   document.documentElement.removeAttribute("editmode");
   document.documentElement.removeAttribute("pageowner");
 });
@@ -136,6 +137,18 @@ describe("coordination handshake: defer to the CSS floor when present", () => {
     window.hyperclay = { optionVisibility: { _started: false } };
     const root = mount(TABS);
     expect(hidden(root, "sp")).toBe(true); // sapjs still paints when floor isn't owning it
+  });
+
+  // clayjs publishes the same floor as clay.optionVisibility. Missing it here is
+  // silent and doubly wrong: sapjs paints hidden itself while the floor's CSS is
+  // already owning the same elements.
+  test("sapjs defers to the floor published as clay.optionVisibility", () => {
+    window.clay = { optionVisibility: { _started: true } };
+    const root = mount(TABS);
+    expect(hidden(root, "so")).toBe(false);
+    expect(hidden(root, "sp")).toBe(false);
+    expect(hidden(root, "sf")).toBe(false);
+    expect(root.getAttribute("tab")).toBe("overview");
   });
 });
 

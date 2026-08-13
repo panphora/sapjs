@@ -11,6 +11,7 @@ const tick = async (n = 4) => { for (let i = 0; i < n; i++) await Promise.resolv
 afterEach(() => {
   Sap._reset();                 // tears down any active observer / mini-hub subscription
   delete window.hyperclay;
+  delete window.clay;
   document.documentElement.removeAttribute("editmode");
   delete window.__c;
 });
@@ -218,6 +219,35 @@ describe("self-healing: sapjs re-reads the live DOM every pass", () => {
     root.setAttribute("m", "z"); // external; whether or not the bridge caught it...
     Sap.refresh();               // ...a refresh always re-derives from the live DOM
     expect(root.querySelector("#out").textContent).toBe("z");
+  });
+});
+
+// clayjs spells this moment clay:mutation-ready and hyperclayjs spells it
+// hyperclay:mutation-ready. sapjs has to listen for both forever, and under clayjs
+// both fire back to back in the same tick, so a plain listener per name would run
+// the handler twice per occurrence.
+describe("both mutation-ready spellings", () => {
+  test("a late hub announced only as clay:mutation-ready still cedes native -> hub", () => {
+    mount(`<main sap state="m=hi"><span text="state.m"></span></main>`);
+    expect(_activeSourceKind()).toBe("native");
+    window.clay = { Mutation: { onAnyChange: jest.fn(() => () => {}) } };
+    document.dispatchEvent(new Event("clay:mutation-ready"));
+    expect(_activeSourceKind()).toBe("hub");
+  });
+
+  test("bridge teardown unregisters BOTH spellings, so neither can cede afterwards", () => {
+    mount(`<main sap state="m=hi"><span text="state.m"></span></main>`);
+    expect(_activeSourceKind()).toBe("native");   // the late-hub listener is armed
+
+    Sap._reset();
+    expect(_activeSourceKind()).toBe(null);
+
+    window.clay = { Mutation: { onAnyChange: jest.fn(() => () => {}) } };
+    window.hyperclay = window.clay;
+    document.dispatchEvent(new Event("hyperclay:mutation-ready"));
+    document.dispatchEvent(new Event("clay:mutation-ready"));
+
+    expect(_activeSourceKind()).toBe(null);       // a leaked listener would have activated a hub
   });
 });
 

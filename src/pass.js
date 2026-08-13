@@ -10,6 +10,7 @@ import { carrierFor } from "./carrier.js";
 import { applyFormat } from "./helpers.js";
 import { NATIVE_BOOLEANS, setBeacon, clearBeacon } from "./errors.js";
 import { withDomMutationPaused } from "./mutation-bridge.js";
+import { capability } from "./platform.js";
 
 const NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
 
@@ -379,7 +380,7 @@ function applyPaint(p, value) {
       return 0;
     }
     case "when": {
-      const ov = typeof window !== "undefined" && window.hyperclay && window.hyperclay.optionVisibility;
+      const ov = capability("optionVisibility");
       if (ov && ov._started) {
         // The CSS floor owns visibility now; clear any hidden we set pre-floor.
         if (el._sapWhen && el.hidden) { el.hidden = false; el._sapWhen = false; return 1; }
