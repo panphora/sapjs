@@ -477,6 +477,7 @@ ${src}` : `"use strict"; return (${src});`;
   }
   var MUTATION_READY = ["clay:mutation-ready", "hyperclay:mutation-ready"];
   var LIVESYNC_APPLIED = ["clay:sync-applied", "hyperclay:livesync-applied"];
+  var PLATFORM_READY = ["clay:ready", "hyperclay:ready"];
   function onPlatformEvent(target, names, handler) {
     let claimedBy = null;
     const wrapped = (event) => {
@@ -526,17 +527,33 @@ ${src}` : `"use strict"; return (${src});`;
       }
     };
     onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
-    const undo = capability("undo");
-    if (undo && typeof undo.on === "function") {
-      undo.on("undo", refreshConnected);
-      undo.on("redo", refreshConnected);
-    } else {
-      onPlatformEvent(document, MUTATION_READY, () => {
-        const u = capability("undo");
-        if (u && typeof u.on === "function") {
-          u.on("undo", refreshConnected);
-          u.on("redo", refreshConnected);
-        }
+    let undoBound = false;
+    let stopWaiting = () => {
+    };
+    const bindUndo = () => {
+      if (undoBound) return true;
+      const undo = capability("undo");
+      if (!undo || typeof undo.on !== "function") return false;
+      const offUndo = undo.on("undo", refreshConnected);
+      if (typeof offUndo !== "function") return false;
+      const offRedo = undo.on("redo", refreshConnected);
+      if (typeof offRedo !== "function") {
+        offUndo();
+        return false;
+      }
+      undoBound = true;
+      stopWaiting();
+      return true;
+    };
+    if (!bindUndo()) {
+      const offMutationReady = onPlatformEvent(document, MUTATION_READY, bindUndo);
+      const offPlatformReady = onPlatformEvent(document, PLATFORM_READY, bindUndo);
+      stopWaiting = () => {
+        offMutationReady();
+        offPlatformReady();
+      };
+      const ready = capability("ready");
+      if (ready && typeof ready.then === "function") ready.then(bindUndo, () => {
       });
     }
   }

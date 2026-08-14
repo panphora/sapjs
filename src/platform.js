@@ -20,6 +20,7 @@ export function capability(name) {
 // twice per occurrence.
 export const MUTATION_READY = ["clay:mutation-ready", "hyperclay:mutation-ready"];
 export const LIVESYNC_APPLIED = ["clay:sync-applied", "hyperclay:livesync-applied"];
+export const PLATFORM_READY = ["clay:ready", "hyperclay:ready"];
 
 // The first name to arrive claims the tick, and only a DIFFERENT name is suppressed
 // while it holds the claim. Guarding on "have I run at all this tick" would collapse
@@ -93,20 +94,36 @@ export function installBridges(runtime) {
   // M2: livesync-applied must refresh synchronously inside the pause window.
   onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
 
-  // Undo/redo replay attributes with no events; re-derive after.
-  const undo = capability("undo");
-  if (undo && typeof undo.on === "function") {
-    undo.on("undo", refreshConnected);
-    undo.on("redo", refreshConnected);
-  } else {
-    // Lazy handshake: the platform may load after us. The hub dispatches
-    // mutation-ready non-bubbling on `document`, so listen there (not window).
-    onPlatformEvent(document, MUTATION_READY, () => {
-      const u = capability("undo");
-      if (u && typeof u.on === "function") {
-        u.on("undo", refreshConnected);
-        u.on("redo", refreshConnected);
-      }
-    });
+  // Undo/redo replay attributes with no events; re-derive after. Mutation readiness
+  // is only an early compatibility retry: it truthfully announces the Mutation hub
+  // and nothing else. Full platform readiness is the point at which optional plugins
+  // such as undo are guaranteed to have been published.
+  let undoBound = false;
+  let stopWaiting = () => {};
+
+  const bindUndo = () => {
+    if (undoBound) return true;
+    const undo = capability("undo");
+    if (!undo || typeof undo.on !== "function") return false;
+    // hyper-undo's delegator (src/index.js:142) returns undefined and silently drops
+    // the subscription when on() is called before start(). A real subscription returns
+    // its own unsubscribe function, so that return value is the only reliable proof the
+    // handler actually attached. Stay unbound otherwise so a later signal retries.
+    const offUndo = undo.on("undo", refreshConnected);
+    if (typeof offUndo !== "function") return false;
+    const offRedo = undo.on("redo", refreshConnected);
+    if (typeof offRedo !== "function") { offUndo(); return false; }
+    undoBound = true;
+    stopWaiting();
+    return true;
+  };
+
+  if (!bindUndo()) {
+    const offMutationReady = onPlatformEvent(document, MUTATION_READY, bindUndo);
+    const offPlatformReady = onPlatformEvent(document, PLATFORM_READY, bindUndo);
+    stopWaiting = () => { offMutationReady(); offPlatformReady(); };
+
+    const ready = capability("ready");
+    if (ready && typeof ready.then === "function") ready.then(bindUndo, () => {});
   }
 }

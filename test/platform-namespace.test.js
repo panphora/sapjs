@@ -7,7 +7,14 @@
 // file: importing sap.js anywhere here would arm a second handshake listener and the
 // "wired once" count would be meaningless.
 
-import { capability, regionSkipsSave, platformConsent, installBridges } from "../src/platform.js";
+import {
+  capability,
+  regionSkipsSave,
+  platformConsent,
+  installBridges,
+  onPlatformEvent,
+  MUTATION_READY,
+} from "../src/platform.js";
 
 const fakeRuntime = () => ({
   apps: () => [],
@@ -57,9 +64,45 @@ describe("capability resolution", () => {
   });
 });
 
+// The claim semantics belong to onPlatformEvent, so they are measured on it directly.
+// They used to be measured through the undo handshake, which cannot show them any
+// more: the handshake binds once and then removes its own listeners, so a second
+// occurrence of a name has nothing left to count.
 describe("both mutation-ready spellings", () => {
-  test("clay:mutation-ready alone wires the undo handshake, and both spellings in one tick wire it once", async () => {
-    const undo = { on: jest.fn() };
+  test("one name claims the tick, a different name is suppressed, a repeat of the same name is not", async () => {
+    const handler = jest.fn();
+    const off = onPlatformEvent(document, MUTATION_READY, handler);
+
+    try {
+      document.dispatchEvent(new Event("clay:mutation-ready"));
+      expect(handler).toHaveBeenCalledTimes(1);
+
+      await Promise.resolve();       // the claim is released on a microtask
+      handler.mockClear();
+
+      // clayjs fires both names back to back in one tick.
+      document.dispatchEvent(new Event("clay:mutation-ready"));
+      document.dispatchEvent(new Event("hyperclay:mutation-ready"));
+      expect(handler).toHaveBeenCalledTimes(1);   // one occurrence, not one per name
+
+      await Promise.resolve();
+      handler.mockClear();
+
+      // Two genuine occurrences of the SAME name in one tick are both real: the claim
+      // suppresses a different name, never a repeat.
+      document.dispatchEvent(new Event("clay:mutation-ready"));
+      document.dispatchEvent(new Event("clay:mutation-ready"));
+      expect(handler).toHaveBeenCalledTimes(2);
+    } finally {
+      off();
+    }
+  });
+
+  test("clay:mutation-ready alone wires the undo handshake, once", () => {
+    // A real emitter hands back an unsubscribe function, and that return value is
+    // what the handshake reads to know the subscription actually attached. A bare
+    // jest.fn() returns undefined, which is hyper-undo's dropped-subscription shape.
+    const undo = { on: jest.fn(() => () => {}) };
     const handshakes = () => undo.on.mock.calls.filter((c) => c[0] === "undo").length;
 
     installBridges(fakeRuntime());   // nothing on window yet -> the lazy handshake path
@@ -69,21 +112,10 @@ describe("both mutation-ready spellings", () => {
     expect(handshakes()).toBe(1);
     expect(undo.on.mock.calls.map((c) => c[0])).toEqual(["undo", "redo"]);
 
-    await Promise.resolve();         // the claim is released on a microtask
-    undo.on.mockClear();
-
-    // clayjs fires both names back to back in one tick.
+    // Bound is bound: the handshake removed its own listeners, so a later signal
+    // cannot subscribe a second pair of handlers.
     document.dispatchEvent(new Event("clay:mutation-ready"));
-    document.dispatchEvent(new Event("hyperclay:mutation-ready"));
-    expect(handshakes()).toBe(1);    // one occurrence, not one per name
-
-    await Promise.resolve();
-    undo.on.mockClear();
-
-    // Two genuine occurrences of the SAME name in one tick are both real: the claim
-    // suppresses a different name, never a repeat.
-    document.dispatchEvent(new Event("clay:mutation-ready"));
-    document.dispatchEvent(new Event("clay:mutation-ready"));
-    expect(handshakes()).toBe(2);
+    document.dispatchEvent(new Event("hyperclay:ready"));
+    expect(handshakes()).toBe(1);
   });
 });
