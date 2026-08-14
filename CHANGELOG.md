@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3] - 2026-08-14
+
+### Added
+- sapjs dependency updated
+
+
+
 ## [0.2.2] - 2026-08-12
 
 ### Added
