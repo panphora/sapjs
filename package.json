@@ -33,7 +33,7 @@
     "no-build"
   ],
   "author": "panphora",
-  "license": "MIT",
+  "license": "MIT-0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/panphora/sapjs.git"

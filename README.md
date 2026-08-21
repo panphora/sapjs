@@ -24,7 +24,7 @@ Type in either box and the total repaints. That is the whole program. There is n
 - **The saved file is correct before JS runs.** Every paint targets a real attribute (`hidden`, `value`, `textContent`, `disabled`), so view-source is legible and pre-JS renders right.
 - **One write path.** Every change is a property write plus a synthetic `input`/`change` event. Persistence, undo, and recompute all hang off the same event, so they never diverge.
 - **Failures are loud and attributed.** A typo'd field name, a foreign-dialect attribute, a calc cycle: each prints a stable error code, the element's CSS path, the authored source, and a copy-pasteable fix. Agents can author Sap files and read back exactly what is wrong.
-- **It runs anywhere.** Standalone in any `.html` file, or wired into [Hyperclay](https://hyperclay.com) for autosave, versioning, and real-time collaboration with zero extra code.
+- **It runs anywhere.** Standalone in any `.html` file, or wired into [Hyperclay™](https://hyperclay.com) for autosave, versioning, and real-time collaboration with zero extra code.
 
 ---
 
@@ -347,4 +347,5 @@ The full vocabulary above. Deferred to v1.1: `check:` in-file assertions, `$inva
 
 ## License
 
-MIT
+MIT-0 (MIT No Attribution). This covers everything in the repo, including
+src/control-serialize.js and its vendored copies downstream.
