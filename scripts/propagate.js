@@ -90,7 +90,7 @@ function buildSerializeVendor() {
 }
 
 const DESTINATIONS = [
-  { client: 'clayjs', path: 'clayjs/sap.js', build: buildSapClassic },
+  { client: 'clayjs', path: 'clayjs/entries/sap.js', build: buildSapClassic },
   { client: 'hyperclayjs', path: 'hyperclayjs/src/vendor/sapjs.vendor.js', build: buildSapEsm },
   { client: 'clayjs', path: 'clayjs/src/vendor/control-serialize.vendor.js', build: buildSerializeVendor },
   { client: 'hyperclayjs', path: 'hyperclayjs/src/vendor/control-serialize.vendor.js', build: buildSerializeVendor }
