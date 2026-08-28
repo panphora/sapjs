@@ -1,0 +1,868 @@
+# sapjs
+
+> sapjs is a reactive layer for hand-written HTML files. State, formulas and output are
+> plain attributes, and the DOM is the only store: every change rebuilds the whole state
+> tree by reading the live page, so there is no JavaScript state object that can drift.
+> One script tag, no build step, no virtual DOM. Because the data lives in the markup,
+> saving the file saves the app, rows and all.
+
+This file is the complete reference for agents writing sapjs apps. It is condensed from
+the source at https://github.com/panphora/sapjs and the human-readable site at
+https://saphtml.com. Every attribute name, helper, format and error code below was read
+out of the source. The npm package is `@panphora/sapjs`, the browser global is `Sap`, and
+the license is MIT-0 (MIT No Attribution).
+
+sapjs competes with Alpine plus a little hand-written JavaScript, not with React. It suits
+trackers, calculators, forms with real validation, small CRUD apps and prototypes that fit
+in one screen of readable HTML. It is a poor fit for large datasets, data behind
+permissions, or an app that is mostly a window onto a server.
+
+## Install
+
+Classic script tag, auto-mounts every `[sap]` root on load:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@panphora/sapjs/dist/sap.min.js"></script>
+```
+
+The bundle is an IIFE, about 49 KB minified. Do not add `type="module"` to that tag. Pin a
+version with `@panphora/sapjs@0.2.4` (or `@0.2`) in the URL. The same file is on unpkg at
+`https://unpkg.com/@panphora/sapjs/dist/sap.min.js`, and the site serves it at
+`https://saphtml.com/dist/sap.min.js`. Unminified: `dist/sap.js`.
+
+As a module:
+
+```bash
+npm install @panphora/sapjs
+```
+
+```js
+import Sap from "@panphora/sapjs";
+```
+
+The ES module entry is `src/sap.js` (untranspiled ES2022+, no dependencies). Importing it
+has the same side effects as the script tag: it mounts every `[sap]` root on
+`DOMContentLoaded` (or immediately if the document has already loaded) and assigns
+`window.Sap`. sapjs needs a DOM, so it does nothing under SSR.
+
+## Quick start
+
+A complete file. Save it as `app.html` and open it. No server, no build.
+
+```html
+<!doctype html>
+<script src="https://cdn.jsdelivr.net/npm/@panphora/sapjs/dist/sap.min.js"></script>
+
+<main sap>
+  <label>Quantity <input type="number" bind="qty" value="3"></label>
+  <label>Unit price <input type="number" bind="price" value="10"></label>
+  <output calc:total="state.qty * state.price" text:usd="state.total">$30</output>
+</main>
+```
+
+Typing in either box recomputes `total` and repaints the `<output>` as `$30`. Pre-filling
+the output with the value it will paint is deliberate: the file then renders correctly
+before JavaScript runs, and sapjs reports `mount writes 0`, meaning it changed no bytes at
+mount. Leave it empty and the app still works, but mount writes 1 and sapjs logs a `W30`
+warning telling you to save once so the file settles.
+
+## The pass: how everything works
+
+One change causes one pass, and a pass is the entire engine:
+
+1. Intake. Walk the app root top to bottom, reading every `state=` declaration, every
+   `bind` control and every `items` list into fresh plain objects.
+2. Compute. Run `calc:` expressions, deepest scope first, and in dependency order inside
+   each scope, so a calc that reads another calc evaluates after it.
+3. Paint. Evaluate `text`, `show`, `attr:`, `class:`, `css:`, then `effect=`, then
+   `invalid=`. A paint writes only when the new value differs from what is already there.
+4. Discard. The objects are thrown away. Nothing is retained between passes except the
+   compiled-expression cache.
+
+Because nothing is retained, a devtools edit, a console paste, a live-sync morph and a
+keystroke are all the same thing: input to the next pass.
+
+Passes are batched. A burst of writes coalesces into one pass on the next microtask, so
+reading painted output on the line right after a write still sees the old DOM. Call
+`Sap.refresh()` to force one synchronous pass and read the painted result immediately.
+
+A pass suppresses its own writes, so a paint can never schedule another pass. If an app
+does run away, a circuit breaker halts it after 50 passes in one macrotask and logs `E26`
+naming the recent triggers.
+
+## Roots
+
+`sap` marks a mount root. Apps are isolated from each other: linting, the DOM walk, scope
+resolution and scheduling all stop at the root. A page may hold any number of roots.
+
+```html
+<main sap>...</main>
+<aside sap="sidebar">...</aside>
+```
+
+The root's `id`, or the value of `sap=` when there is no id, names the app in diagnostics.
+
+`Sap.mount(rootOrSelector)` mounts a root added after load and returns its app record;
+already-mounted roots are returned unchanged. `Sap.mount()` with no argument rescans the
+document and returns the newly mounted records. A `[sap]` root injected into the page later
+is picked up automatically by the mutation bridge.
+
+## Declaring state
+
+Three attributes put a field into the state tree.
+
+```html
+<main sap state="filter=all step:num=1 done:bool secret:transient">
+```
+
+`state=` is a space-separated list of declarations, each `name`, `name:type`,
+`name=default` or `name:type=default`. Types are `string` (the default), `num` and `bool`.
+A declared field's value lives in a same-named attribute on the declaring element, so
+`state="filter=all"` pairs with `filter="all"`.
+
+- Names must be valid identifiers. A hyphen halts the app with `E08`, because `due-date`
+  parses as subtraction in an expression.
+- HTML lowercases attribute names, so field names are effectively lowercase. Write
+  `calc:linetotal`, not `calc:lineTotal`. The dependency scanner that orders calcs only
+  matches `[a-z][a-z0-9_]*` after `state.` or `item.`, so a camelCase name would also order
+  wrongly.
+- Declaring a reserved sapjs word halts with `E05`, a global HTML attribute name with
+  `E06`, the same name twice in one scope with `E04`, and `state="open"` on a `<dialog>`
+  with `E33` (use `showModal()` for a dialog; `state="open"` is fine on a `<details>`
+  that also carries `scope=`, see below).
+
+A declared field with no matching attribute reads its default and writes nothing. The one
+exception: a field that a visibility verb (`show-when:` and family) reads is materialized
+into its attribute at mount if missing, so the literal comparison has something to match.
+
+`state=` is only read on a scope element: the app root, an element carrying `scope=`, an
+`[item]` row, or a `[detail]` panel. On a plain element it is silently ignored, which is
+the most common way a first sapjs app fails to work. Where it lands differs too: on a row
+the fields belong to `item`, and a `[detail]` panel's declarations belong to the enclosing
+scope so that the row's `set:` and the panel's key expression address one field.
+
+```html
+<div state="n:num=5"></div>              <!-- ignored: no scope here -->
+<div scope="box" state="n:num=5"></div>  <!-- read, as state.box.n from the parent -->
+```
+
+When a declared field's name is a native boolean attribute and the element really has that
+IDL property, sapjs reads it by presence rather than by value. That is what makes a native
+`<details>` work as state, and it needs a `scope=` to be read at all:
+
+```html
+<details scope="sec" state="open" open>
+  <summary>Section A <span text="state.open ? 'open' : 'collapsed'">open</span></summary>
+  <p>The open attribute is real DOM state: it serializes and renders before JavaScript.</p>
+</details>
+```
+
+`bind="field"` declares a field carried by a form control or a text leaf. `items="name"`
+declares a field that is an array of rows. `scope="name"` opens a nested state object read
+as `state.name` from the parent; scopes nest to any depth (`state.a.b.n`).
+
+`sap-ignore` on any element makes it and its subtree invisible to sapjs: the pass never
+walks into it, the linter skips it whole, and mutations inside it schedule nothing. This is
+the escape hatch for third-party widgets and rich-text editors.
+
+## bind: two-way, by control type
+
+The control is the contract. There are no modifiers.
+
+| Control | Value read and written |
+|---|---|
+| `input[type=text]`, `email`, `url`, `date`, `time`, `search`, `tel`, `password` | string |
+| `input[type=number]`, `input[type=range]` | number |
+| `input[type=checkbox]` | boolean |
+| `input[type=radio]` (put `bind` on each radio in the `name` group) | the checked radio's value |
+| `input[type=hidden]` | string |
+| `textarea` | string |
+| `select` | the selected option's value |
+| `select[multiple]` | array of value strings |
+| `[contenteditable]` or an empty text leaf such as `<span bind="x">` | `textContent` |
+
+Number reads never produce `NaN`: an empty field reads `0`, and a value the browser flags
+as bad input falls back to the `value` attribute or the last good number.
+
+Mount errors on `bind`:
+
+- `bind` on `input[type=file]` always halts (`E32`); files never serialize into an HTML file.
+- `bind` on `input[type=password]` halts unless the input also carries `transient` (`E31`).
+  A saved file must never carry a cleartext password.
+- `bind` on an element that has child elements and is not `contenteditable` halts (`E20`),
+  because the first write would wipe the subtree.
+- `attr:value`, `attr:checked` or `attr:selected` on a bound control halts (`E30`); `bind`
+  owns those attributes. An `effect=` that assigns `value` or `checked` on a bound control
+  halts for the same reason.
+- `text` or `text:FMT` on a form control halts (`E18`); paint into an `<output>` or `<span>`.
+  `show=` on a control is allowed.
+
+### step on a bound text input
+
+A `step` attribute on a bound text-kind input (`type=text`, `tel` or `search`) makes
+ArrowUp and ArrowDown adjust the value the way a native number input does, without the
+spinner. Shift multiplies the step by 10, and `min` and `max` clamp the result. Native
+`type=number` inputs are left alone.
+
+```html
+<input bind="amount" value="200" step="10" min="0" max="1000">
+```
+
+### default: the reset value
+
+`default` on a bound control supplies the value `trigger-reset` and `$reset()` restore. Without
+it a reset falls back to the control's `value` attribute, or `checked` for checkboxes and
+radios. Attribute-carried state uses the default inside its own `state=` declaration instead.
+
+```html
+<main sap state="mode=compact">
+  <input bind="name" value="Ada" default="Ada">
+  <input type="checkbox" bind="updates" checked default="true">
+  <button trigger-reset>Reset</button>
+</main>
+```
+
+## calc: computed fields
+
+```html
+<dd calc:subtotal="sum(state.lines, 'linetotal')" text:usd2="state.subtotal"></dd>
+<dd calc:total="state.subtotal + state.tax" text:usd2="state.total"></dd>
+```
+
+A `calc:` field belongs to the nearest owner: the row when the element is inside an
+`[item]`, otherwise the nearest scope. Order is by dependency, not document position, so `total` waits for `subtotal` with no
+help. Deeper scopes compute before shallower ones, so a row calc is ready when the parent
+aggregates over it.
+
+A cycle logs `E07` naming the chain, then falls back to source-order evaluation: the values
+may be wrong, but the app keeps running. An expression that throws sets the field to
+`undefined`, logs `E24`, and puts a `sap-error` attribute on the element.
+
+Computed fields are read-only. Writing one from the scope that carries the `calc:`
+attribute is rejected with `E16`. Writing one from further out is not caught, but it never
+sticks either, because the next pass recomputes the field; all it leaves behind is a junk
+declaration on the root.
+
+## Paints
+
+| Attribute | Writes |
+|---|---|
+| `text="expr"` | `textContent` |
+| `text:FMT="expr"` | `textContent`, run through the named format |
+| `show="expr"` | toggles the native `hidden` attribute (falsy hides) |
+| `attr:NAME="expr"` | an attribute; native booleans toggle by presence |
+| `class:NAME="expr"` | adds or removes one class |
+| `css:NAME="expr"` | sets the `--NAME` custom property in the inline style |
+| `effect="statement"` | runs a statement after paint, for side effects only |
+| `invalid="expr"` | passes a truthy string to `setCustomValidity`, empty string clears it |
+
+```html
+<div css:fill="state.pct + '%'" class:hot="state.pct > 80"></div>
+<button attr:disabled="state.pct >= 100" set:pct="100">Finish</button>
+<p show="state.pct >= 100">Done</p>
+<input type="number" bind="hi"
+       invalid="state.hi < state.lo ? 'High must be at least Low' : ''">
+```
+
+Native boolean attributes recognised by `attr:`: `disabled`, `readonly`, `required`,
+`checked`, `selected`, `multiple`, `open`, `inert`, `autofocus`, `novalidate`, `hidden`.
+For visibility use `show=`, not `attr:hidden`, which warns with `W03`.
+
+A paint writes only what changed, and a throwing paint writes nothing: the element keeps
+its last good value, gets a `sap-error="E24"` attribute, and one attributed error is logged.
+
+`effect=` is compiled as a statement and is for side effects only: touch `el`, set
+`document.title`, drive a chart library. Assigning to `state.*` inside an effect does
+nothing, because it mutates a per-pass object that is then discarded. Write state through
+`onclick` and `Sap(this)` instead.
+
+`invalid=` is the one expression that fails quietly. If it throws, the field is treated as
+valid and nothing is logged, so guard those expressions against undefined or a bug there
+silently disables the gate.
+
+sapjs adopts three CSS rules at mount, through `adoptedStyleSheets` so they never serialize
+into the saved file (engines without constructable stylesheets get a `<style id="sap-styles">`
+node instead):
+
+```css
+[item][template] { display: none !important }
+[hidden]         { display: none !important }
+[sap-error]      { outline: 2px solid #e5484d; outline-offset: 1px }
+```
+
+The `[hidden]` rule matters: without it, any `display` rule of your own would beat the
+browser's default styling of `hidden` and `show=` would appear to do nothing.
+
+## Visibility: show versus show-when
+
+Two families, and the shape tells you which engine runs.
+
+| Attribute | Resolves | Works without sapjs |
+|---|---|---|
+| `show="expr"` | a JavaScript expression | no |
+| `show-when:FIELD="a\|b"` | visible when the nearest self-or-ancestor `FIELD` attribute equals `a` or `b` | yes, through hyperclay's CSS floor |
+| `hide-when:FIELD="a\|b"` | hidden when `FIELD` equals one of the values, shown otherwise, including when the attribute is absent | yes |
+| `option:FIELD="a"` | alias of `show-when:` | yes |
+| `option-not:FIELD="a"` | visible when `FIELD` is present and not equal to a listed value | yes |
+
+The `show-when` family compares a plain attribute against literal values separated by `|`.
+It never evaluates JavaScript. Writing an expression there (`show-when:tab="state.tab"`)
+warns with `W04`; use `show=` for anything beyond literal equality.
+
+```html
+<main sap state="tab=overview">
+  <button set:tab="'overview'">Overview</button>
+  <button set:tab="'pricing'">Pricing</button>
+  <section show-when:tab="overview">...</section>
+  <section show-when:tab="pricing|faq">...</section>
+</main>
+```
+
+Because `state="tab=overview"` materializes `tab="overview"` on the root, and `set:tab`
+writes that same attribute, the two halves line up. When hyperclay's `optionVisibility` CSS
+floor is loaded, sapjs stands down and lets CSS own visibility, so the two never fight and
+the same markup works with either library alone.
+
+With hyperclay or clayjs loaded, `<html>` carries `editmode="true|false"` and
+`pageowner="true|false"`, reset to `false` before a save. So `show-when:editmode="true"` is
+the way to show edit-only UI that is always hidden in the saved file, with no `state=` of
+your own. Standalone, nothing stamps `editmode`, so that UI stays hidden.
+
+## Actions as attributes
+
+A click walks up from the target to the app root and runs the first element carrying an
+action, so the innermost action wins.
+
+| Attribute | Does |
+|---|---|
+| `set:field="expr"` | writes a field on click |
+| `trigger-add="list"` | clones the list's `[item template]` and appends a row |
+| `trigger-remove` | removes the nearest row |
+| `trigger-reset` | resets the scope's controls and declared fields to their defaults |
+| `move:up`, `move:down` | swaps a row with its neighbour |
+| `move:to="list"` | moves a row into another list |
+| `sort:FIELD` | stable sort of the list by that field, direction toggles on each click |
+| `confirm="msg"` | gates any of the above behind a confirmation dialog |
+| `detail="LIST by KEYEXPR"` | projects the selected row into a panel |
+
+`sort:FIELD` takes an optional value naming the list (`sort:name="people"`); with no value
+it uses the nearest `[items]` ancestor, then the first list in the scope. The direction is
+stateless: sapjs sorts ascending, notices the order did not change, and reverses.
+
+`confirm="msg"` evaluates its value as an expression when it parses as one, otherwise uses
+it as a literal string. It calls the platform's themed dialog (`clay.confirm` or
+`hyperclay.consent`) when one is present, and `window.confirm` otherwise.
+
+`trigger-reset` and `$reset()` restore each bound control to its `default` attribute when
+it has one, otherwise to its `value` attribute (checkboxes and radios to their `checked`
+attribute), and each declared field to its `state=` default.
+
+### trigger-add on a form
+
+On a `<form>`, `trigger-add` fires on submit rather than click. It clones the template,
+copies every bound control in the form into the new row's field of the same name, clears
+the form, and refocuses the first field for rapid entry. Native `required` blocks empty
+submits with no code.
+
+```html
+<main sap>
+  <form trigger-add="todos">
+    <input bind="title" placeholder="What needs doing?" required autofocus>
+  </form>
+
+  <ul items="todos">
+    <li item template>
+      <input type="checkbox" bind="done">
+      <span bind="title" contenteditable="plaintext-only"></span>
+      <button trigger-remove>x</button>
+    </li>
+  </ul>
+
+  <output text="plural(count(state.todos, t => !t.done), 'task', 'tasks') + ' left'"></output>
+</main>
+```
+
+That is a complete todo app with no JavaScript. The form's field is named `title`, the same
+as the row's field, which is what lets the new row be composed from it.
+
+## Actions in JavaScript: Sap(el)
+
+`Sap(elOrSelector)` returns a live write-through proxy onto the scope or row that owns the
+element. Reads come from the DOM, writes go through the one write path. It returns `null`
+when the element is not inside a mounted app.
+
+```html
+<button onclick="['Buy milk','Walk dog'].forEach(t => Sap(this).$add('todos').title = t)">
+  Add starter tasks
+</button>
+<button onclick="Sap(this).inbox.filter(m => m.picked).forEach(m => m.$remove())">
+  Delete selected
+</button>
+```
+
+Proxy members:
+
+- `proxy.field` reads, `proxy.field = v` writes.
+- `$el` the owning element, `$key` its id (stamped if missing), `$index` its position among
+  its sibling rows, or `-1` outside a list.
+- `$add(nameOrPath)` clones that list's template, appends it, and returns the new row's
+  proxy.
+- `$reset()` resets the scope to defaults and returns the proxy.
+- `$remove()` removes the row. Throws on a stale handle to an already-removed row.
+- `$move(listElementOrPath)` moves the row into another list.
+
+List paths resolve nearest-scope-first: `"cards"` finds the nearest owned `items="cards"`,
+and `"doing.cards"` finds `[scope="doing"] [items="cards"]`.
+
+Writing a field that is not declared anywhere behaves in one of three ways:
+
+- If the name is within edit distance 2 of a known field and at least 4 characters long,
+  sapjs treats it as a typo and reports `E12` with a did-you-mean instead of creating it.
+- If the name is a reserved sapjs word or a global HTML attribute name, it reports `E15`.
+- Otherwise it is genuinely new, so sapjs appends a declaration to the app root's `state=`
+  (inferring `num`, `bool` or string from the value) and sets the attribute. The DOM stays
+  the truth.
+
+Reserved sapjs words: `sap`, `scope`, `items`, `item`, `template`, `bind`, `calc`, `text`,
+`show`, `attr`, `set`, `trigger`, `move`, `sort`, `detail`, `effect`, `invalid`, `confirm`,
+`transient`, `default`, `persist`, `sortable`, `editmode`.
+
+Global HTML names that cannot be fields: `title`, `style`, `hidden`, `lang`, `dir`,
+`translate`, `class`, `id`, `nonce`, `autofocus`, `tabindex`, `contenteditable`,
+`spellcheck`, `draggable`, `role`, `slot`, `part`, `name`, `value`, `type`, `itemscope`,
+`itemtype`, `itemid`, `itemprop`, `itemref`.
+
+## Expressions
+
+Every expression compiles once against a frozen signature and is cached by source text:
+
+```js
+(state, item, el, root, fmt, num, sum, count, avg, min, max, plural, days)
+```
+
+- `state` is the nearest scope object, `item` the nearest row (`null` outside a list),
+  `root` the app scope, `el` the element carrying the attribute.
+- `fmt` is the format registry, so `fmt.usd2(state.total)` works inside any expression.
+- Row metadata is on the row object: `item.$key`, `item.$index`, `item.$el`.
+- Expressions are read-only. All writing happens through `Sap(el)` or the action attributes.
+
+Helpers, all of which tolerate junk input rather than throwing:
+
+- `num(v)` coerces anything to a number, never `NaN`. It strips `$`, `,`, `%` and
+  whitespace first, so `"$1,200"` reads as `1200` and `"12%"` as `12`. Blank and unparsable
+  values read as `0`.
+- `sum(rows, key|fn)` adds `num()` of each row's key or callback result.
+- `count(rows, pred?)` counts rows, or rows matching the predicate.
+- `avg(rows, key|fn)` returns `0` for an empty list.
+- `min(rows, key|fn)` and `max(rows, key|fn)` skip null and empty values, compare
+  numerically when every value is numeric and as strings otherwise, and return `0` when
+  nothing is left.
+- `plural(n, singular, plural?)` returns `"3 tasks"`, defaulting the plural to `singular + "s"`.
+- `days(a, b)` returns whole days from `a` to `b`, and `0` if either date is unparsable.
+
+Because `num()` never yields `NaN`, a typo'd field name in an aggregate quietly sums to 0
+rather than exploding. A numeric format applied to a non-finite value does still throw, as
+`E22`, so bad numbers surface at the point where they would be shown.
+
+### Formats
+
+Built in: `usd`, `usd2`, `pct`, `pct1`, `int`, `num`, `num2`, `compact`, `date`, `clock`.
+
+| Format | `text:FMT` of a sample value |
+|---|---|
+| `usd` | `1234.5` becomes `$1,235` |
+| `usd2` | `1234.5` becomes `$1,234.50` |
+| `pct` | `42.4` becomes `42%` |
+| `pct1` | `42.44` becomes `42.4%` |
+| `int` | `1234567` becomes `1,234,567` |
+| `num` | locale-grouped number |
+| `num2` | always two decimals |
+| `compact` | `1234567` becomes `1.2M` |
+| `date` | a date string becomes a US-locale date, or the raw string if unparsable |
+| `clock` | milliseconds become `1:35.4` |
+
+All the numeric formats throw `E22` on `NaN` or `Infinity` instead of painting "NaN".
+Register your own, which is the library's only extension point:
+
+```js
+Sap.formats.eur = (n) => "EUR " + Number(n).toFixed(2);
+Sap.config({ formats: { eur: (n) => "EUR " + Number(n).toFixed(2) } });
+```
+
+```html
+<output text:eur="state.price"></output>
+```
+
+## Collections
+
+`items="name"` on a container makes its `[item]` children the rows of `state.name`. Rows
+must be direct children of the container. An `[item]` anywhere else halts with `E10`. The
+one child carrying `[item template]` is the prototype cloned by `trigger-add` and `$add()`;
+it is hidden by the runtime stylesheet and is never a row.
+
+Each row with no id of its own is stamped with a generated one (`row-4`, `row-1a`), and that id
+is the row's `$key`. Cloning a row assigns fresh ids throughout, so `$key` stays unique.
+
+```html
+<main sap>
+  <ul items="lines">
+    <li item template>
+      <input type="number" bind="qty" value="1">
+      <input type="number" bind="price" value="0">
+      <output calc:linetotal="item.qty * item.price" text:usd2="item.linetotal"></output>
+    </li>
+  </ul>
+  <output calc:total="sum(state.lines, 'linetotal')" text:usd2="state.total"></output>
+</main>
+```
+
+Nesting works past one level. A row that declares `items="cards"` exposes them as
+`item.cards`, and `Sap(this).$add('cards')` adds a card inside that row. Cloning the row
+keeps its inner template.
+
+```html
+<main sap items="columns">
+  <section item template>
+    <input bind="title">
+    <ul items="cards"><li item template bind="name"></li></ul>
+    <button onclick="Sap(this).$add('cards')">Add card</button>
+  </section>
+</main>
+```
+
+Filter by hiding, never by removing, so aggregates still see every row:
+
+```html
+<input type="search" bind="q" transient>
+<li item
+    calc:match="state.q === '' || item.name.toLowerCase().includes(state.q.toLowerCase())"
+    show="item.match">
+```
+
+### detail panels
+
+`detail="LIST by KEYEXPR"` projects one row of a list into a panel. Edits inside the panel
+are written through to the source row, and `Sap(this)` inside the panel resolves to that
+row, so `$remove()` and `$move()` work there.
+
+```html
+<main sap state="selected">
+  <ul items="contacts">
+    <li item template set:selected="item.$key"><span bind="name"></span></li>
+  </ul>
+
+  <form detail="contacts by state.selected">
+    <label>Name <input bind="name"></label>
+    <label>Email <input type="email" bind="email"></label>
+    <button onclick="Sap(this).$remove()">Delete</button>
+  </form>
+</main>
+```
+
+The panel sets `hidden` when nothing matches. It also hides silently when the `by` key
+expression throws or the spec does not parse: no error, no beacon. If a panel never
+appears, check that the key expression resolves to the selected row's `$key`. An `items=`
+list inside a `detail=` panel is a mount error (`E17`); that is the one nesting limit.
+
+## Persistence: what survives a save
+
+sapjs state lives in the DOM, so the markup, the rows, the attributes and every
+`textContent` are already in whatever HTML you save. There is one gap, and one attribute
+that closes it.
+
+Browser form state lives in JavaScript properties (`.value`, `.checked`, `.selected`), not
+in attributes, and serialization only sees attributes. So when a user types into an input,
+sapjs recomputes but does not touch the `value` attribute. A programmatic write does mirror:
+`Sap(el).x = v`, `set:`, a reset, a form compose and a detail projection all write the live
+property and then the serializable attribute.
+
+Add `persist` to any control whose typed value must survive a save. sapjs honours it
+itself, with no host platform involved, and it works with or without `bind`:
+
+```html
+<input bind="city" value="Lisbon" persist>
+<textarea bind="notes" persist></textarea>
+<select bind="plan" persist><option value="free">Free</option><option value="pro">Pro</option></select>
+```
+
+The rule of thumb: `bind` is reactivity, `persist` is durability. `persist` goes on the
+control itself, never on a wrapper.
+
+| Control | Does a typed value survive a plain save without `persist`? |
+|---|---|
+| `[contenteditable]` or bound text leaf | yes, it is `textContent` |
+| text or number input | no |
+| checkbox or radio | no |
+| select or select-multiple | no |
+| textarea | no |
+
+What the mirror writes per control: `checked` for checkboxes and radios, `value` for other
+inputs, `selected` on each option for selects, and a cursor-safe `data-value` attribute for
+textareas (writing a focused textarea's `textContent` would destroy the caret). At mount,
+any `textarea[data-value]` is rehydrated back into the live value, so the value round-trips
+across a reload even without a save step. A platform save resolves `data-value` into real
+`textContent` through `Sap.finalizeControlForSave`.
+
+### transient: the opposite of persist
+
+`transient` keeps a value out of the saved file. It is a bare attribute on a control, or a
+`:transient` suffix in a declaration:
+
+```html
+<input type="search" bind="q" transient>
+<input type="password" bind="pw" transient>
+<main sap state="draft:transient">
+```
+
+A transient control's `value`, `checked` and `data-value` attributes are stripped on every
+pass, including stale ones left over from an earlier save, and the live property carries the
+value instead. A transient declared field lives on a runtime-only property, so its
+attribute never appears at all while the `state=` declaration stays.
+
+`transient` and `persist` on one control halts the app with `E34`: their intents are
+opposite and `persist` would win, leaking exactly what `transient` promised to drop.
+
+## What triggers a pass
+
+sapjs installs one delegated listener set on `document`, plus a mutation observer.
+
+- `input` and `change` on any control inside a root.
+- `click` on an element carrying an action attribute.
+- `submit` on a `<form trigger-add>`, and native `reset` on any form.
+- `toggle` on `<details>`, in the capture phase, so a `<details scope="sec" state="open">`
+  recomputes when the user opens or closes it.
+- `keydown` for ArrowUp and ArrowDown on a bound text input carrying `step`.
+- `clay:sorted`, the event a hyperclay or clayjs `sortable` drag dispatches after a reorder.
+- Any DOM mutation. Standalone this is a `MutationObserver` on `document.body` watching
+  childList, subtree, attributes and characterData. When the platform's mutation hub is
+  present sapjs rides that instead, and a native observer hands over to a hub that arrives
+  late. Either way, edits made by devtools, a console paste, another library or a live-sync
+  morph all trigger a pass, and mutations inside `[sap-ignore]` or `[template]` are ignored.
+
+Every write a pass makes is suppressed at the observer, so paints never feed back.
+
+Because the bridge is a mutation observer, **anything that changes the DOM recomputes for
+free**, including changes made by code that has never heard of sapjs:
+
+```js
+document.querySelector("main[sap]").setAttribute("tax", "0.08");
+document.querySelector("[contenteditable][bind=title]").textContent = "Changed outside sapjs";
+```
+
+**But assigning a form control's property is not a DOM mutation and fires no event, so it
+triggers nothing:**
+
+```js
+document.querySelector("[bind=title]").value = "Changed";   // sapjs never notices
+```
+
+After a direct property assignment, either dispatch an `input` or `change` event, write through
+`Sap(el)` instead, or call `Sap.refresh()`. This is the usual reason a scripted change appears
+in the box but never reaches the state tree.
+
+## JavaScript API
+
+| Call | Behaviour |
+|---|---|
+| `Sap(elOrSelector)` | live write-through proxy onto the owning scope or row, or `null` |
+| `Sap.mount(rootOrSelector)` | mount one root and return its record; no argument rescans the document |
+| `Sap.refresh()` | one synchronous pass over every connected app |
+| `Sap.batch(label, fn)` | run `fn`, then commit it as one labelled undo entry when the platform's undo is present |
+| `Sap.formats` | the format registry, extend it with `Sap.formats.name = fn` |
+| `Sap.config({ formats })` | same, as a config object; returns `Sap` |
+| `Sap.status()` | machine-readable twin of the mount line |
+| `Sap.report()` | every error and warning as JSON |
+| `Sap.why(el, field?)` | log how a field resolves: attributes, scope snapshot, serialization note |
+| `Sap.debug(true)` | log a header for every pass with the trigger and the write count |
+| `Sap.doctor()` | full-page audit, returns an array of findings |
+| `Sap.version` | the engine version string |
+| `Sap.serializeControlToAttributes(el)` | mirror one control's live state into attributes, live and cursor-safe |
+| `Sap.finalizeControlForSave(target, source?)` | mirror for a save, resolving a textarea's `data-value` into `textContent` |
+| `Sap.rehydrateControlFromAttributes(el)` | load-time inverse for a textarea carrying `data-value` |
+
+`Sap.batch(label, fn)` throws if `fn` is not a function, and throws if `fn` returns a
+promise; the batch must be synchronous.
+
+```js
+Sap.batch("clear completed", () => {
+  Sap("#todos").todos.filter(t => t.done).forEach(t => t.$remove());
+});
+```
+
+Writing then reading needs a refresh, because passes are batched:
+
+```js
+Sap(el).qty = 12;
+Sap.refresh();
+el.querySelector("output").textContent; // now current
+```
+
+The entry module also exposes `Sap._registry` (the root-to-record `Map`), `Sap._reset()`, and a
+named `runtime` export carrying `apps()`, `appFor(el)`, `isRegistered(el)`,
+`pruneDisconnected()`, `schedule(app, trigger)`, `runNow(app, trigger)`, `moveInto()`,
+`placeBefore()` and `remountIfPresent()`. The site and the test suite use these. **They are
+internal surfaces, not application API**, and nothing outside the repository should depend on
+them.
+
+## The console contract
+
+Each app logs one machine-readable line when it mounts:
+
+```
+sap ✓ main[sap] · fields 12 · calcs 4 · paints 18 · actions 6 · lists 2 · rows 7 · warnings 0 · mount writes 0 · 1.8ms
+```
+
+A failing app logs `sap ✗ main[sap] · errors 1 · warnings 0 · 0.4ms` through `console.error`
+instead. `mount writes 0` is the zero-byte-mount guarantee: sapjs read the file and changed
+nothing in it.
+
+`Sap.status()` returns `{ ok, apps: [...] }`, where each app carries `root`, `fields`,
+`calcs`, `paints`, `actions`, `lists`, `rows`, `warnings`, `errors`, `mountWrites`, `ms`,
+`passes`, `lastPass` and `ok`.
+
+`Sap.report()` returns `{ ok, errors, warnings, counts }`. Each record is
+`{ code, slug, el, attr, expr, key, problem, didYouMean, fix, phase }`, where `el` is a
+short CSS path such as `main[sap] > p > output`.
+
+`Sap.doctor()` re-lints, then runs a dry pass and reports what a settled page should not
+have: writes on a quiet page (`W30`), fields declared but read nowhere (`I33`), duplicate
+ids (`W32`), expressions over 120 characters (`I33`), and paints showing more than four
+decimals (`I33`). Doctor findings are advisory, not blocking.
+
+Errors print with the element path, the authored attribute and source, and a fix:
+
+```
+sap ✗ E12 unknown-state-key
+  at main[sap] > p > output
+  problem: unknown state key "totl"
+  did you mean: total
+```
+
+For an agent, the definition of done for a sapjs file is three checks: no `sap ✗` line in
+the console, `Sap.status().ok === true`, and no elements matching `[sap-error]`.
+
+### Error codes
+
+Codes that halt are structural contradictions found by the mount linter. A halt skips the
+mount pass entirely, so the app paints nothing on load, the file's bytes are exactly as they
+were saved, and the root carries `sap-error="CODE"`. It is not a runtime guard: the
+delegated listeners are shared across the page, so a later click on an action inside a
+halted app can still write and repaint. Treat a halt as a build error to fix. Every other
+code degrades per element, and the rest of the app keeps running.
+
+| Code | Meaning | Halts at mount |
+|---|---|---|
+| `E01` | foreign-dialect attribute (`x-text`, `v-if`, `@click`, `:class`), teaches the sapjs spelling | yes |
+| `E02` | moustaches in text content, which is not a sapjs feature | yes |
+| `E04` | the same field declared twice in one scope | yes |
+| `E05` | a reserved sapjs word used as a field name | yes |
+| `E06` | a global HTML attribute name used as a field name | yes |
+| `E07` | `calc:` cycle, names the chain, then falls back to source order | no |
+| `E08` | expression does not parse, or a field name contains a hyphen | yes |
+| `E10` | an `[item]` that is not a direct child of an `[items]` list | yes |
+| `E12` | write to an unknown state key that looks like a typo, with a did-you-mean | no |
+| `E15` | write to an undeclared reserved or global name | no |
+| `E16` | write to a `calc:` field | no |
+| `E17` | an action target that cannot be resolved, or `items` inside `detail`, or `trigger-add` at a list with no template | yes for the structural cases |
+| `E18` | `text` or `text:FMT` on a form control | yes |
+| `E20` | `bind` on a container element that is not contenteditable | yes |
+| `E22` | a numeric format received `NaN` or `Infinity` | no |
+| `E24` | an expression threw during a pass, last good value preserved | no |
+| `E26` | the recompute circuit breaker tripped after 50 passes in one macrotask | halts at runtime |
+| `E30` | `attr:value`, `attr:checked`, `attr:selected` or an `effect` write on a bound control | yes |
+| `E31` | `bind` on a password input without `transient` | yes |
+| `E32` | `bind` on a file input | yes |
+| `E33` | `state="open"` on a `<dialog>` | yes |
+| `E34` | `transient` and `persist` on one control | yes |
+| `W03` | an unknown `prefix:` attribute, or a bare attribute close to a real one, with a did-you-mean | no |
+| `W04` | a JavaScript expression given to `show-when:` or its family | no |
+| `W30` | the app painted at mount, so the saved file was out of sync with its own state | no |
+
+## Hyperclay and clayjs integration
+
+sapjs runs standalone in any HTML file and needs no platform. When one of the malleable-HTML
+clients is loaded (`window.hyperclay` from hyperclayjs, or `window.clay` from clayjs) sapjs
+detects each capability independently and uses it:
+
+- Live-sync. `hyperclay:livesync-applied` or `clay:sync-applied` triggers a synchronous
+  re-derive, so a morph from another tab repaints immediately. If the morph replaced the
+  `[sap]` element itself, sapjs drops the dead record and remounts.
+- Mutations. `hyperclay.Mutation` or `clay.Mutation` replaces the native observer, so sapjs
+  inherits the platform's pause windows and its own writes stay off autosave and undo.
+- Undo. sapjs subscribes to the undo plugin's `undo` and `redo` events and re-derives after
+  each replay, because replaying an attribute fires no event. `Sap.batch(label, fn)` labels a
+  bulk mutation as one undo entry.
+- Dialogs. `confirm=` uses `clay.confirm` or `hyperclay.consent` when present, with a guard
+  so a second click cannot open a second dialog, and `window.confirm` otherwise.
+- Regions. Inside a `no-save` or `freeze` region the persist mirror is skipped, because the
+  platform strips those bytes anyway. The control stays fully live and reactive.
+- Sorting. A `sortable` drag dispatches `clay:sorted` and sapjs re-derives both lists it
+  touched.
+- Visibility. When `optionVisibility` has started, sapjs stops setting `hidden` for
+  `show-when` and lets the CSS floor own it.
+
+Region and platform attributes the linter tolerates inside a root without warning:
+`no-save`, `no-watch`, `no-undo`, `no-trigger-autosave`, `freeze`, `mutations-ignore`,
+`save-remove`, `save-ignore`, `save-freeze`, `sortable`, and the whole `editmode:` family.
+
+None of this needs configuration, and the same file works offline and online.
+
+## Rich text
+
+sapjs state is plaintext. A `bind` reads and writes `textContent`, never inner HTML, so
+every value is a scalar that round-trips as text. Pasting formatted content into a bound
+contenteditable flattens it to a string on read.
+
+To embed a real editor, put `sap-ignore` on its mount. The pass never descends into it, the
+linter skips it whole, so a third-party editor's own attributes never trip `E01`, and its
+markup round-trips because the live DOM is saved as-is. sapjs can then own the block list
+(`items`, `trigger-add`, `move:`, `trigger-remove`) while each block body stays rich.
+
+```html
+<li item template>
+  <input bind="label">
+  <div sap-ignore no-undo contenteditable="true">Rich <b>body</b> here.</div>
+</li>
+```
+
+Practical notes: `sap-ignore` stops the DOM walk but not event delegation, so call
+`stopPropagation()` on the editor's own `input` and `change` events to avoid needless
+passes. Put `no-undo` on the mount so its keystrokes do not flood the undo stack, and avoid
+`no-watch`, which turns autosave off too. sapjs cannot read the prose, so to compute over it
+mirror a derived plaintext value into a normal field.
+
+## Limits and non-goals
+
+- Expressions compile with `new Function`, so a Content Security Policy without
+  `'unsafe-eval'` breaks every expression in the page. There is no precompiled mode.
+- The vocabulary is frozen. There are no custom directives and no plugin system, precisely
+  so that an unknown attribute is always a typo and the did-you-mean guarantee holds. The
+  one extension point is a custom text format.
+- No moustache interpolation, and no `x-` or `v-` dialect. Both halt with a message naming
+  the sapjs spelling.
+- Field names must be lowercase identifiers with no hyphens.
+- Expressions are read-only. Writing state inside `effect=` silently does nothing.
+- Reading painted output on the line after a write sees the old DOM unless you call
+  `Sap.refresh()`.
+- `Sap.batch` must be synchronous.
+- Rows are DOM elements, so a very large list is a very large document. There is no
+  virtualization and no diffing beyond write-if-changed.
+- An `items=` list inside a `detail=` panel is a mount error.
+- State is plaintext scalars, arrays of rows and nested scope objects. Rich text, files and
+  binary data live outside sapjs state.
+- Nothing here is private. The data is in the markup, so a file that must hide data from
+  the person holding it is the wrong shape for sapjs, and the library says so rather than
+  pretending otherwise.
+- The compiled-expression cache clears wholesale past 512 entries, and the circuit breaker
+  halts an app after 50 passes in one macrotask.
+- sapjs requires a DOM. There is no server-side rendering path.
+
+## Links
+
+- Site, with live demos: https://saphtml.com
+- Source: https://github.com/panphora/sapjs
+- npm: https://www.npmjs.com/package/@panphora/sapjs
+- CDN: https://cdn.jsdelivr.net/npm/@panphora/sapjs/dist/sap.min.js
+- Issues: https://github.com/panphora/sapjs/issues
+- Hyperclay, the platform sapjs rides when present: https://hyperclay.com
+- clayjs, the malleable-HTML client that bundles sapjs as a satellite: https://clayjs.com
