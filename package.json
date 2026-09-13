@@ -9,6 +9,7 @@
   },
   "jsdelivr": "dist/sap.min.js",
   "files": [
+    "packed-contract.json",
     "src",
     "dist",
     "README.md"
