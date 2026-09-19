@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0] - 2026-09-19
+
+### Added
+- Deploy script for releases
+- SAPJS package to the packed contract
+- sapjs llms.txt reference
+
+### Changed
+- Include the packed contract in published package files
+- clayjs sapjs destination path to entries/sap.js
+
+### Fixed
+- Broken npm package link
+
+
+
 ## [0.2.4] - 2026-08-21
 
 ### Changed
