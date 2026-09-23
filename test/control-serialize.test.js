@@ -75,4 +75,47 @@ describe("finalizeControlForSave (save, clone <- live)", () => {
     expect(free.hasAttribute("selected")).toBe(true);
     expect(pro.hasAttribute("selected")).toBe(false);
   });
+
+  test("leaves an empty input with no value attribute alone, since it reloads the same", () => {
+    const live = el('<input type="text" placeholder="name">');
+    const clone = el('<input type="text" placeholder="name">');
+    finalizeControlForSave(clone, live);
+    expect(clone.hasAttribute("value")).toBe(false);
+  });
+
+  test("leaves a value attribute that already says the live value alone", () => {
+    const live = el('<input type="text" value="same">');
+    const clone = el('<input type="text" value="same">');
+    finalizeControlForSave(clone, live);
+    expect(clone.getAttribute("value")).toBe("same");
+  });
+
+  test("still writes an empty value over a stale one", () => {
+    const live = el('<input type="text" value="old">');
+    live.value = "";
+    const clone = el('<input type="text" value="old">');
+    finalizeControlForSave(clone, live);
+    expect(clone.getAttribute("value")).toBe("");
+  });
+
+  test("keeps the author's spelling of checked and selected while they are still true", () => {
+    const live = el('<input type="checkbox" checked="checked">');
+    const clone = el('<input type="checkbox" checked="checked">');
+    finalizeControlForSave(clone, live);
+    expect(clone.getAttribute("checked")).toBe("checked");
+
+    const liveSel = el('<select><option>a</option><option selected="selected">b</option></select>');
+    const cloneSel = el('<select><option>a</option><option selected="selected">b</option></select>');
+    finalizeControlForSave(cloneSel, liveSel);
+    expect(cloneSel.options[1].getAttribute("selected")).toBe("selected");
+    expect(cloneSel.options[0].hasAttribute("selected")).toBe(false);
+  });
+
+  test("leaves a textarea's text node alone when it already holds the live value", () => {
+    const live = el("<textarea>seed</textarea>");
+    const clone = el("<textarea>seed</textarea>");
+    const text = clone.firstChild;
+    finalizeControlForSave(clone, live);
+    expect(clone.firstChild).toBe(text);
+  });
 });
