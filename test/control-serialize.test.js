@@ -66,6 +66,28 @@ describe("finalizeControlForSave (save, clone <- live)", () => {
     expect(clone.hasAttribute("data-value")).toBe(false);
   });
 
+  test("keeps a textarea value's leading newlines through a save and reload", () => {
+    const live = el("<textarea></textarea>");
+    live.value = "\n\nstarts after a blank line";
+    const clone = el("<textarea></textarea>");
+    finalizeControlForSave(clone, live);
+    const reloaded = el(clone.outerHTML);
+    expect(reloaded.value).toBe("\n\nstarts after a blank line");
+
+    const cloneAgain = el(clone.outerHTML);
+    finalizeControlForSave(cloneAgain, reloaded);
+    expect(el(cloneAgain.outerHTML).value).toBe("\n\nstarts after a blank line");
+  });
+
+  test("writes a value without a leading newline unchanged", () => {
+    const live = el("<textarea></textarea>");
+    live.value = "no blank line\n\nhere";
+    const clone = el("<textarea></textarea>");
+    finalizeControlForSave(clone, live);
+    expect(clone.textContent).toBe("no blank line\n\nhere");
+    expect(el(clone.outerHTML).value).toBe("no blank line\n\nhere");
+  });
+
   test("syncs select selection from live onto the clone", () => {
     const live = el('<select><option value="free">Free</option><option value="pro" selected>Pro</option></select>');
     live.value = "free";
