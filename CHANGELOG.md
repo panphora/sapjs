@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.1] - 2026-09-28
+
+### Changed
+- Saving now preserves the author's original markup when the saved content matches the live page state
+
+### Fixed
+- A textarea's leading newline is now kept through save and reload
+
+
+
 ## [0.3.0] - 2026-09-19
 
 ### Added
