@@ -287,6 +287,32 @@ Click a row to select it; the detail panel projects that row. Edits in the panel
 
 The one nesting limit is an `items=` list placed inside a `detail=` panel, which is a mount error (`E17`).
 
+**Projection lists (`each`).** `items=` reads records that live in the file. `each=` renders a view of any array, such as a sorted, filtered or grouped copy of those records, without touching them:
+
+```html
+<nav each="state.entries.filter(e => e.match).slice().sort((a, b) => b.date.localeCompare(a.date))">
+  <template>
+    <a set:open="item.$key" class:on="state.open === item.$key">
+      <span text="item.title"></span>
+      <button trigger-remove>Delete</button>
+    </a>
+  </template>
+</nav>
+```
+
+- One row per array element, cloned from the container's `<template>` (exactly one element root) and placed after it in array order.
+- Rows are matched by key, `key="expr"`, default `item.$key`. A reorder moves the existing rows, so focus and scroll inside them survive. Nothing is rebuilt with `innerHTML`.
+- Inside a row, `item` is the element and `state` is the container's scope. Paints, `show`, `effect` and actions work. Rows are read-only views: `bind` inside one is `E43`, and `calc:` inside rows is not evaluated.
+- When the element is a row from an `items=` list, actions reach that record: `trigger-remove` removes it, `Sap(el)` returns its proxy.
+- Rows carry `clay="editor-ui"` and `data-key`, so ClayJS keeps them out of saves and live sync. They never count as mount writes.
+- A missing or duplicate key (`E41`), a non-array (`E40`) or a bad template (`E42`) is reported, and the list keeps its last good rows.
+- After a pass that changed any row, the app root fires `sap:views-updated` (bubbles), for code that decorates rows, such as search highlighting.
+- Nest them by placing an `each` container in the template: `each="item.rows"` reads the outer row's element.
+
+**Keys.** `$key` is the row's `data-id`, else its `id`, else a key that lives only in this tab. Mounting never writes an id. `$add` mints a fresh `data-id` when the template carries `data-id`, otherwise a fresh `id`.
+
+**`data-*` fields.** `state="data-date"` reads and writes the `data-date` attribute and appears in expressions as `item.date`, the same camelCase rule as `el.dataset`. A `detail` panel's bound control writes through to a field the selected row declares, so `<input type="date" bind="date">` in a panel edits that row's `data-date`.
+
 ---
 
 ## The console contract
@@ -320,6 +346,7 @@ sap ✓ main[sap] · fields 12 · calcs 4 · paints 18 · actions 6 · lists 2 �
 | `E24` | an expression threw (preserve-on-error + beacon) |
 | `E26` | recompute circuit breaker tripped |
 | `E31` | `bind` on a password without `transient` |
+| `E40`–`E43` | `each`: not an array, a missing or duplicate key, a bad template, `bind` inside a row |
 
 Errors that contradict the file's structure halt the app at mount (no listeners arm, the file stays byte-frozen). Everything else degrades per element.
 
@@ -333,7 +360,8 @@ Sap runs standalone in any HTML file. When `window.hyperclay` is present it ride
 - a `sortable` drag reorder triggers a re-derive (`clay:sorted`),
 - undo/redo replays heal derived paints,
 - `Sap.batch` labels grouped edits in the undo history,
-- a morph that replaces the `[sap]` element re-mounts itself.
+- a morph that replaces the `[sap]` element re-mounts itself,
+- with ClayJS (`window.clay`), Sap mounts once `clay.ready` settles, so `clay="freeze"` regions record their authored markup rather than Sap's first paint.
 
 No configuration. The same file works offline and online.
 
