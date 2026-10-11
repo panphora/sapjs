@@ -364,6 +364,10 @@ Sap runs standalone in any HTML file. When `window.hyperclay` is present it ride
 - a morph that replaces the `[sap]` element re-mounts itself,
 - with ClayJS (`window.clay`), Sap mounts once `clay.ready` settles, so `clay="freeze"` regions record their authored markup rather than Sap's first paint.
 
+**Where paints live in a malleable file.** A paint computed only from the records (a count, a total, a card's badge) is ordinary saved content: author the file pre-painted, and every tab computes the same value, so loading or merging writes nothing. A paint that differs per tab (today's date, the locale, the URL, the search box, runtime-loaded data) belongs in a `clay="freeze"` scratchpad: ClayJS saves and syncs the element but never its contents, and a scratchpad that arrives from a peer is empty. Fill it from an `effect` on the scratchpad, which runs on every pass:
+
+    <span class="due-slot" clay="freeze" effect="paintDue(el, item.$el)"></span>
+
 No configuration. The same file works offline and online.
 
 ---
