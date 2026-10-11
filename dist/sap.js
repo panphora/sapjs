@@ -83,12 +83,26 @@ var Sap = (() => {
 
   // src/dom.js
   var idSeq = 0;
-  function ensureId(el, prefix = "sap") {
-    if (!el.id) el.id = `${prefix}-${(idSeq++).toString(36)}`;
-    return el.id;
+  var runtimeKeys = /* @__PURE__ */ new WeakMap();
+  function keyOf(el, prefix = "sap") {
+    const dataId = el.getAttribute("data-id");
+    if (dataId) return dataId;
+    if (el.id) return el.id;
+    let key = runtimeKeys.get(el);
+    if (!key) {
+      key = `${prefix}-${(idSeq++).toString(36)}`;
+      runtimeKeys.set(el, key);
+    }
+    return key;
+  }
+  function mintId(doc, prefix = "row") {
+    for (; ; ) {
+      const id = `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+      if (!doc.getElementById(id) && !doc.querySelector(`[data-id="${id}"]`)) return id;
+    }
   }
   function isScopeBoundary(el) {
-    return el.hasAttribute("scope") || el.hasAttribute("items") || el.hasAttribute("detail");
+    return el.hasAttribute("scope") || el.hasAttribute("items") || el.hasAttribute("detail") || el.hasAttribute("each");
   }
   function isInert(el) {
     return el.hasAttribute("sap-ignore") || el.hasAttribute("template");
@@ -110,6 +124,13 @@ var Sap = (() => {
         return cur;
       }
       cur = cur.parentElement;
+    }
+    return null;
+  }
+  function nearestViewRow(el) {
+    for (let cur = el; cur && cur.nodeType === 1; cur = cur.parentElement) {
+      if (cur._sapEachRow) return cur;
+      if (cur.hasAttribute("item") || cur.hasAttribute("sap")) return null;
     }
     return null;
   }
@@ -171,7 +192,9 @@ var Sap = (() => {
         else if (p === "bool") type = "bool";
         else if (p === "transient") transient = true;
       }
-      out.push({ name, type, default: def, transient });
+      const attr = name;
+      const key = attr.startsWith("data-") && attr.length > 5 ? attr.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase()) : attr;
+      out.push({ name: key, attr, type, default: def, transient });
     }
     return out;
   }
@@ -189,18 +212,20 @@ var Sap = (() => {
     return value == null ? "" : String(value);
   }
   function readTransient(el, decl) {
+    const attr = decl.attr || decl.name;
     const store = el._sapTransient || (el._sapTransient = {});
     if (!(decl.name in store)) {
-      let raw = el.getAttribute(decl.name);
+      let raw = el.getAttribute(attr);
       if (raw == null) raw = decl.default != null ? decl.default : decl.type === "num" ? "0" : decl.type === "bool" ? "false" : "";
       store[decl.name] = parseTyped(raw, decl.type);
     }
-    if (el.hasAttribute(decl.name)) el.removeAttribute(decl.name);
+    if (el.hasAttribute(attr)) el.removeAttribute(attr);
     return store[decl.name];
   }
   function writeTransient(el, decl, value) {
+    const attr = decl.attr || decl.name;
     (el._sapTransient || (el._sapTransient = {}))[decl.name] = value;
-    if (el.hasAttribute(decl.name)) el.removeAttribute(decl.name);
+    if (el.hasAttribute(attr)) el.removeAttribute(attr);
   }
   function resolveListEl(appRoot, fromEl, path) {
     const segs = String(path).split(".");
@@ -483,6 +508,11 @@ ${src}` : `"use strict"; return (${src});`;
       for (const name of names) target.removeEventListener(name, wrapped);
     };
   }
+  function whenPlatformReady(fn) {
+    const ready = typeof window !== "undefined" && window.clay && window.clay.ready;
+    if (ready && typeof ready.then === "function") ready.then(() => fn(), () => fn());
+    else fn();
+  }
   function regionSkipsSave(el) {
     const region = capability("region");
     if (!region || typeof region.resolveRegionPolicy !== "function" || typeof region.skipForPolicy !== "function") {
@@ -680,6 +710,10 @@ ${src}` : `"use strict"; return (${src});`;
     E32: { slug: "file-bind", behavior: "HALT" },
     E33: { slug: "dialog-state-open", behavior: "HALT" },
     E34: { slug: "transient-persist-collision", behavior: "HALT" },
+    E40: { slug: "each-not-array", behavior: "ERR" },
+    E41: { slug: "each-bad-key", behavior: "ERR" },
+    E42: { slug: "each-template", behavior: "ERR" },
+    E43: { slug: "bind-in-each-row", behavior: "ERR" },
     W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
     W04: { slug: "expression-in-when", behavior: "WARN" },
     W30: { slug: "nonzero-mount-writes", behavior: "WARN" }
@@ -740,6 +774,7 @@ ${src}` : `"use strict"; return (${src});`;
     "move",
     "sort",
     "detail",
+    "each",
     "effect",
     "invalid",
     "confirm",
@@ -1039,6 +1074,10 @@ ${src}` : `"use strict"; return (${src});`;
       return;
     }
     withDomMutationPaused(() => runPassBody(app, opts));
+    if (app._viewsChanged) {
+      app._viewsChanged = false;
+      app.root.dispatchEvent(new CustomEvent("sap:views-updated", { bubbles: true }));
+    }
   }
   function runPassBody(app, opts) {
     const root = app.root;
@@ -1048,14 +1087,17 @@ ${src}` : `"use strict"; return (${src});`;
     const effects = [];
     const invalids = [];
     const pending = [];
+    const deferredDetails = [];
+    const eachList = [];
     const whenFields = /* @__PURE__ */ new Set();
     app.diag.errors = [];
     const rootCtx = { root: rootObj, state: rootObj, item: null, ownerEl: root, projection: false };
     function resolveDefault(el, d) {
-      let raw = el.getAttribute(d.name);
+      const attr = d.attr || d.name;
+      let raw = el.getAttribute(attr);
       if (raw == null) {
         raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
-        pending.push({ el, name: d.name, value: serializeTyped(parseTyped(raw, d.type), d.type) });
+        pending.push({ el, name: d.name, attr, value: serializeTyped(parseTyped(raw, d.type), d.type) });
       }
       return parseTyped(raw, d.type);
     }
@@ -1124,13 +1166,20 @@ ${src}` : `"use strict"; return (${src});`;
           paints.push({ el, kind: "when", match: "show-not", field, values: val.split("|"), ctx });
         }
       }
+      if (ctx.view && el.hasAttribute("bind")) {
+        app.diag.error("E43", el, {
+          attr: "bind",
+          expr: el.getAttribute("bind"),
+          problem: "bind inside an each row; rows are read-only views of the data",
+          fix: "change the record with set:, Sap(el), or a detail panel"
+        });
+      }
       if (ctx.projection && el.hasAttribute("bind")) {
         paints.push({ el, kind: "projection", field: el.getAttribute("bind"), ctx });
       }
     }
     function defineRowMeta(rowObj, rowEl, i) {
-      ensureId(rowEl, "row");
-      Object.defineProperty(rowObj, "$key", { value: rowEl.id, enumerable: false });
+      Object.defineProperty(rowObj, "$key", { value: keyOf(rowEl, "row"), enumerable: false });
       Object.defineProperty(rowObj, "$index", { value: i, enumerable: false });
       Object.defineProperty(rowObj, "$el", { value: rowEl, enumerable: false });
     }
@@ -1150,8 +1199,12 @@ ${src}` : `"use strict"; return (${src});`;
             collectEl(el, ctx);
             handleItems(el, scopeObj, ctx);
           } else if (el.hasAttribute("detail")) handleDetail(el, scopeObj, ctx);
+          else if (el.hasAttribute("each")) {
+            collectEl(el, ctx);
+            eachList.push({ el, ctx });
+          }
         } else {
-          if (!ctx.projection) readBindInto(el, ctx);
+          if (!ctx.projection && !ctx.view) readBindInto(el, ctx);
           collectEl(el, ctx);
         }
       });
@@ -1190,6 +1243,9 @@ ${src}` : `"use strict"; return (${src});`;
       for (const d of parseStateDecl(el.getAttribute("state") || "")) {
         if (!(d.name in parentObj)) parentObj[d.name] = resolveDefault(el, d);
       }
+      deferredDetails.push({ el, parentObj, ctx });
+    }
+    function resolveDetail(el, parentObj, ctx) {
       el._sapScope = parentObj;
       const spec = el.getAttribute("detail") || "";
       const m = /^([\w.]+)\s+by\s+(.+)$/.exec(spec);
@@ -1218,11 +1274,93 @@ ${src}` : `"use strict"; return (${src});`;
       collectEl(el, dctx);
       walkScope(el, row, dctx);
     }
+    function reconcileEach(el, ctx) {
+      const tmpl = [...el.children].find((c) => c.tagName === "TEMPLATE");
+      const blueprint = tmpl && tmpl.content.children.length === 1 ? tmpl.content.firstElementChild : null;
+      if (!blueprint) {
+        app.diag.error("E42", el, { attr: "each", problem: "each needs one <template> child with exactly one element root" });
+        return 0;
+      }
+      const src = el.getAttribute("each");
+      let list;
+      try {
+        list = run(compile(src), { state: ctx.state, item: ctx.item, el, root: ctx.root });
+      } catch (err) {
+        app.diag.error("E24", el, { attr: "each", expr: src, problem: String(err.message) });
+        return 0;
+      }
+      if (!Array.isArray(list)) {
+        app.diag.error("E40", el, { attr: "each", expr: src, problem: "each must evaluate to an array; the list keeps its last good rows" });
+        return 0;
+      }
+      const keyEntry = compile(el.getAttribute("key") || "item.$key");
+      const keys = [];
+      const seen = /* @__PURE__ */ new Set();
+      for (const item of list) {
+        let k;
+        try {
+          k = run(keyEntry, { state: ctx.state, item, el, root: ctx.root });
+        } catch {
+          k = void 0;
+        }
+        const ks = k == null ? "" : String(k);
+        if (ks === "" || seen.has(ks)) {
+          app.diag.error("E41", el, {
+            attr: "key",
+            expr: keyEntry.src,
+            problem: ks === "" ? "an item has no key; the list keeps its last good rows" : `duplicate key "${ks}"; the list keeps its last good rows`
+          });
+          return 0;
+        }
+        seen.add(ks);
+        keys.push(ks);
+      }
+      const prev = el._sapEach || /* @__PURE__ */ new Map();
+      const next = /* @__PURE__ */ new Map();
+      let changes = 0;
+      let after = tmpl;
+      keys.forEach((k, i) => {
+        let rowEl = prev.get(k);
+        if (!rowEl || rowEl.parentElement !== el) {
+          rowEl = el.ownerDocument.importNode(blueprint, true);
+          const clay = (rowEl.getAttribute("clay") || "").split(/\s+/).filter(Boolean);
+          if (!clay.includes("editor-ui")) rowEl.setAttribute("clay", [...clay, "editor-ui"].join(" "));
+          rowEl._sapEachRow = true;
+          changes++;
+        }
+        if (rowEl.getAttribute("data-key") !== k) rowEl.setAttribute("data-key", k);
+        if (after.nextElementSibling !== rowEl) {
+          placeAfter(el, rowEl, after);
+          changes++;
+        }
+        rowEl._sapEachItem = list[i];
+        next.set(k, rowEl);
+        after = rowEl;
+      });
+      for (const [k, rowEl] of prev) {
+        if (next.get(k) !== rowEl && rowEl.parentElement === el) {
+          rowEl.remove();
+          changes++;
+        }
+      }
+      el._sapEach = next;
+      keys.forEach((k, i) => {
+        const rowEl = next.get(k);
+        const rctx = { root: ctx.root, state: ctx.state, item: list[i], ownerEl: rowEl, projection: false, view: true };
+        collectEl(rowEl, rctx);
+        walkScope(rowEl, {}, rctx);
+      });
+      return changes;
+    }
     enterScope(root, rootObj, rootCtx);
+    for (let i = 0; i < deferredDetails.length; i++) {
+      const { el, parentObj, ctx } = deferredDetails[i];
+      resolveDetail(el, parentObj, ctx);
+    }
     if (pending.length && whenFields.size) {
       for (const w of pending) {
-        if (whenFields.has(w.name) && w.el.getAttribute(w.name) == null) {
-          w.el.setAttribute(w.name, w.value);
+        if (whenFields.has(w.attr) && w.el.getAttribute(w.attr) == null) {
+          w.el.setAttribute(w.attr, w.value);
         }
       }
     }
@@ -1255,8 +1393,15 @@ ${src}` : `"use strict"; return (${src});`;
         }
       }
     }
+    let viewChanges = 0;
+    for (let i = 0; i < eachList.length; i++) viewChanges += reconcileEach(eachList[i].el, eachList[i].ctx);
     let writes = 0;
-    for (const p of paints) writes += paintOne(p, app);
+    let viewWrites = viewChanges;
+    for (const p of paints) {
+      const n2 = paintOne(p, app);
+      if (p.ctx.view) viewWrites += n2;
+      else writes += n2;
+    }
     for (const e of effects) runEffect(e, app);
     for (const iv of invalids) runInvalid(iv);
     app._state = rootObj;
@@ -1265,8 +1410,10 @@ ${src}` : `"use strict"; return (${src});`;
       calcs: calcs.length,
       paints: paints.length,
       lists: groups.size,
-      writes
+      writes,
+      viewWrites
     };
+    app._viewsChanged = viewWrites > 0;
     app._lastPass = { trigger: opts.trigger || "refresh", writes };
     if (app._debug) {
       console.log(`sap pass \xB7 trigger: ${app._lastPass.trigger} \xB7 writes ${writes}/${paints.length}`);
@@ -1436,6 +1583,17 @@ ${src}` : `"use strict"; return (${src});`;
     }
     return d;
   }
+  function placeAfter(parent, node, ref) {
+    const before = ref.nextSibling;
+    if (node.isConnected && parent.moveBefore) {
+      try {
+        parent.moveBefore(node, before);
+        return;
+      } catch {
+      }
+    }
+    parent.insertBefore(node, before);
+  }
 
   // src/lint.js
   var NATIVE_BOOLEAN_SET2 = new Set(NATIVE_BOOLEANS);
@@ -1579,7 +1737,7 @@ ${src}` : `"use strict"; return (${src});`;
           if (seen.has(d.name)) halt("E04", el, { attr: "state", problem: `field "${d.name}" is declared twice in one scope` });
           seen.add(d.name);
           if (RESERVED.has(d.name)) halt("E05", el, { attr: "state", problem: `"${d.name}" is a reserved Sap word` });
-          if (HTML_GLOBALS.has(d.name)) halt("E06", el, { attr: "state", problem: `"${d.name}" is a global HTML attribute name; pick another field name` });
+          if (HTML_GLOBALS.has(d.attr)) halt("E06", el, { attr: "state", problem: `"${d.name}" is a global HTML attribute name; pick another field name` });
           if (d.name === "open" && el.tagName === "DIALOG") {
             halt("E33", el, { attr: "state", problem: "dialog open is transient", fix: "use showModal() \u2014 declare state= only on <details> or popovers" });
           }
@@ -1725,6 +1883,9 @@ ${src}` : `"use strict"; return (${src});`;
     function contextElFor(el) {
       const appRec = runtime2.appFor(el);
       if (!appRec) return null;
+      const viewRow = nearestViewRow(el);
+      const source = viewRow && viewRow._sapEachItem && viewRow._sapEachItem.$el;
+      if (source && source.isConnected) return { ctxEl: source, appRec, isRow: true };
       const detailEl = isInsideDetail(el);
       if (detailEl) {
         if (detailEl._sapDetailRow) return { ctxEl: detailEl._sapDetailRow, appRec, isRow: true };
@@ -1753,14 +1914,14 @@ ${src}` : `"use strict"; return (${src});`;
       const decl = declarerOf(ctxEl, appRec.root, field);
       if (decl) {
         if (decl.decl.transient) return readTransient(decl.el, decl.decl);
-        return parseTyped(decl.el.getAttribute(field), decl.decl.type);
+        return parseTyped(decl.el.getAttribute(decl.decl.attr || field), decl.decl.type);
       }
       const snap = ctxEl._sapScope;
       return snap ? snap[field] : void 0;
     }
     function setStateAttr(el, field, value, decl, appRec) {
       if (decl.transient) writeTransient(el, decl, value);
-      else el.setAttribute(field, serializeTyped(value, decl.type));
+      else el.setAttribute(decl.attr || field, serializeTyped(value, decl.type));
       runtime2.schedule(appRec, "set:" + field);
     }
     function knownFieldsFor(ctxEl, appRoot) {
@@ -1822,16 +1983,18 @@ ${src}` : `"use strict"; return (${src});`;
       setStateAttr(root, field, value, { name: field, type, transient: false }, appRec);
     }
     function freshIds(rootClone) {
-      const stamp = (el) => {
-        if (el.id) {
-          el.id = "";
-          ensureId(el, "row");
-        }
-        if (el.hasAttribute("sap-error")) el.removeAttribute("sap-error");
-      };
-      rootClone.id = "";
-      ensureId(rootClone, "row");
-      rootClone.querySelectorAll("[id]").forEach(stamp);
+      const doc = rootClone.ownerDocument;
+      rootClone.querySelectorAll("[id]").forEach((el) => {
+        el.id = mintId(doc);
+      });
+      rootClone.querySelectorAll("[sap-error]").forEach((el) => el.removeAttribute("sap-error"));
+      rootClone.removeAttribute("sap-error");
+      if (rootClone.hasAttribute("data-id")) {
+        rootClone.removeAttribute("id");
+        rootClone.setAttribute("data-id", mintId(doc));
+      } else {
+        rootClone.id = mintId(doc);
+      }
     }
     function doAdd(ctxEl, appRec, name) {
       const listEl = resolveListEl(appRec.root, ctxEl, name);
@@ -1866,7 +2029,7 @@ ${src}` : `"use strict"; return (${src});`;
       for (const d of parseStateDecl(ctxEl.getAttribute("state") || "")) {
         const dflt = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
         if (d.transient) writeTransient(ctxEl, d, parseTyped(dflt, d.type));
-        else ctxEl.setAttribute(d.name, dflt);
+        else ctxEl.setAttribute(d.attr, dflt);
       }
       runtime2.schedule(appRec, "trigger-reset");
     }
@@ -1898,7 +2061,7 @@ ${src}` : `"use strict"; return (${src});`;
           return ctxEl;
         },
         get $key() {
-          return ensureId(ctxEl, isRow ? "row" : "scope");
+          return keyOf(ctxEl, isRow ? "row" : "scope");
         },
         get $index() {
           return rowIndex(ctxEl);
@@ -1970,8 +2133,10 @@ ${src}` : `"use strict"; return (${src});`;
     const { Sap: Sap2 } = accessor2;
     function actionCtx(el, appRec) {
       let item = null;
+      const viewRow = nearestViewRow(el);
       const detailEl = isInsideDetail(el);
-      if (detailEl && detailEl._sapDetailRow) item = detailEl._sapDetailRow._sapScope || null;
+      if (viewRow) item = viewRow._sapEachItem ?? null;
+      else if (detailEl && detailEl._sapDetailRow) item = detailEl._sapDetailRow._sapScope || null;
       else {
         const itemEl = nearestItemEl(el);
         if (itemEl && itemEl.hasAttribute("item")) item = itemEl._sapScope || null;
@@ -2170,9 +2335,15 @@ ${src}` : `"use strict"; return (${src});`;
       if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
       const detailEl = isInsideDetail(t);
       if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind")) {
-        const src = ownedBind(detailEl._sapDetailRow, t.getAttribute("bind"));
+        const row = detailEl._sapDetailRow;
+        const field = t.getAttribute("bind");
+        const src = ownedBind(row, field);
         if (src && src !== t) {
           carrierFor(src).write(carrierFor(t).read());
+          return;
+        }
+        if (!src && parseStateDecl(row.getAttribute("state") || "").some((d) => d.name === field)) {
+          accessor2.writeField(row, appRec, field, carrierFor(t).read());
           return;
         }
       }
@@ -2515,10 +2686,11 @@ ${src}` : `"use strict"; return (${src});`;
   };
   function autoMount() {
     if (typeof document === "undefined") return;
+    const go = () => whenPlatformReady(() => mountAll());
     if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", () => mountAll());
+      document.addEventListener("DOMContentLoaded", go);
     } else {
-      mountAll();
+      go();
     }
   }
   autoMount();
