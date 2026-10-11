@@ -1105,8 +1105,8 @@ ${src}` : `"use strict"; return (${src});`;
       const decls = parseStateDecl(el.getAttribute("state") || "");
       el._sapStateDecls = decls;
       for (const d of decls) {
-        if (d.type === "string" && NATIVE_BOOLEAN_SET.has(d.name) && typeof el[d.name] === "boolean") {
-          obj[d.name] = el.hasAttribute(d.name);
+        if (d.type === "string" && NATIVE_BOOLEAN_SET.has(d.attr) && typeof el[d.attr] === "boolean") {
+          obj[d.name] = el.hasAttribute(d.attr);
           continue;
         }
         if (d.transient) {
@@ -1736,7 +1736,7 @@ ${src}` : `"use strict"; return (${src});`;
           }
           if (seen.has(d.name)) halt("E04", el, { attr: "state", problem: `field "${d.name}" is declared twice in one scope` });
           seen.add(d.name);
-          if (RESERVED.has(d.name)) halt("E05", el, { attr: "state", problem: `"${d.name}" is a reserved Sap word` });
+          if (RESERVED.has(d.attr)) halt("E05", el, { attr: "state", problem: `"${d.name}" is a reserved Sap word` });
           if (HTML_GLOBALS.has(d.attr)) halt("E06", el, { attr: "state", problem: `"${d.name}" is a global HTML attribute name; pick another field name` });
           if (d.name === "open" && el.tagName === "DIALOG") {
             halt("E33", el, { attr: "state", problem: "dialog open is transient", fix: "use showModal() \u2014 declare state= only on <details> or popovers" });
@@ -2195,8 +2195,14 @@ ${src}` : `"use strict"; return (${src});`;
         if (proxy) proxy[field] = value;
       }
     }
+    function sourceRowOf(el) {
+      const viewRow = nearestViewRow(el);
+      if (!viewRow) return el.closest("[item]");
+      const src = viewRow._sapEachItem && viewRow._sapEachItem.$el;
+      return src && src.nodeType === 1 && src.hasAttribute("item") ? src : null;
+    }
     function moveStep(el, dir) {
-      const row = el.closest("[item]");
+      const row = sourceRowOf(el);
       if (!row) return;
       const siblings = rowsOf(row.parentElement);
       const i = siblings.indexOf(row);
