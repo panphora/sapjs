@@ -4,7 +4,7 @@
 // $-verbs ($add/$reset/$remove/$move) expose the row/list machinery to handlers.
 
 import {
-  nearestScopeEl, nearestItemEl, isInsideDetail, ensureId,
+  nearestScopeEl, nearestItemEl, isInsideDetail, keyOf, mintId,
   ownedBind, ownedItems, rowsOf, templateOf, resolveListEl,
   parseStateDecl, parseTyped, serializeTyped, readTransient, writeTransient,
 } from "./dom.js";
@@ -155,16 +155,18 @@ export function createAccessor(runtime) {
   }
 
   function freshIds(rootClone) {
-    const stamp = (el) => {
-      if (el.id) {
-        el.id = "";
-        ensureId(el, "row");
-      }
-      if (el.hasAttribute("sap-error")) el.removeAttribute("sap-error");
-    };
-    rootClone.id = "";
-    ensureId(rootClone, "row");
-    rootClone.querySelectorAll("[id]").forEach(stamp);
+    const doc = rootClone.ownerDocument;
+    rootClone.querySelectorAll("[id]").forEach((el) => {
+      el.id = mintId(doc);
+    });
+    rootClone.querySelectorAll("[sap-error]").forEach((el) => el.removeAttribute("sap-error"));
+    rootClone.removeAttribute("sap-error");
+    if (rootClone.hasAttribute("data-id")) {
+      rootClone.removeAttribute("id");
+      rootClone.setAttribute("data-id", mintId(doc));
+    } else {
+      rootClone.id = mintId(doc);
+    }
   }
 
   function doAdd(ctxEl, appRec, name) {
@@ -234,7 +236,7 @@ export function createAccessor(runtime) {
   function makeProxy(ctxEl, appRec, isRow) {
     const verbs = {
       get $el() { return ctxEl; },
-      get $key() { return ensureId(ctxEl, isRow ? "row" : "scope"); },
+      get $key() { return keyOf(ctxEl, isRow ? "row" : "scope"); },
       get $index() { return rowIndex(ctxEl); },
       $add(name) { return doAdd(ctxEl, appRec, name); },
       $reset() { doReset(ctxEl, appRec); return proxy; },

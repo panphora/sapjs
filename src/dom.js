@@ -1,10 +1,28 @@
-// DOM walking that respects scope boundaries, plus declaration parsing and id stamping.
+// DOM walking that respects scope boundaries, plus declaration parsing and row keys.
 
 let idSeq = 0;
+const runtimeKeys = new WeakMap();
 
-export function ensureId(el, prefix = "sap") {
-  if (!el.id) el.id = `${prefix}-${(idSeq++).toString(36)}`;
-  return el.id;
+// A row's identity, read without writing: data-id, then id, then a key that lives
+// only in this tab. Mount must never stamp attributes onto saved records.
+export function keyOf(el, prefix = "sap") {
+  const dataId = el.getAttribute("data-id");
+  if (dataId) return dataId;
+  if (el.id) return el.id;
+  let key = runtimeKeys.get(el);
+  if (!key) {
+    key = `${prefix}-${(idSeq++).toString(36)}`;
+    runtimeKeys.set(el, key);
+  }
+  return key;
+}
+
+// A fresh id for a row being created, unique among both id and data-id in the document.
+export function mintId(doc, prefix = "row") {
+  for (;;) {
+    const id = `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
+    if (!doc.getElementById(id) && !doc.querySelector(`[data-id="${id}"]`)) return id;
+  }
 }
 
 export function isScopeBoundary(el) {

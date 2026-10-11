@@ -3,7 +3,7 @@
 // between passes except the compile cache.
 
 import {
-  walkOwned, rowsOf, parseStateDecl, parseTyped, serializeTyped, ensureId, readTransient,
+  walkOwned, rowsOf, parseStateDecl, parseTyped, serializeTyped, keyOf, readTransient,
 } from "./dom.js";
 import { compile, run, topoSort } from "./compile.js";
 import { carrierFor } from "./carrier.js";
@@ -130,8 +130,7 @@ function runPassBody(app, opts) {
   }
 
   function defineRowMeta(rowObj, rowEl, i) {
-    ensureId(rowEl, "row");
-    Object.defineProperty(rowObj, "$key", { value: rowEl.id, enumerable: false });
+    Object.defineProperty(rowObj, "$key", { value: keyOf(rowEl, "row"), enumerable: false });
     Object.defineProperty(rowObj, "$index", { value: i, enumerable: false });
     Object.defineProperty(rowObj, "$el", { value: rowEl, enumerable: false });
   }
