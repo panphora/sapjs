@@ -131,7 +131,11 @@ export function parseStateDecl(str) {
       else if (p === "bool") type = "bool";
       else if (p === "transient") transient = true;
     }
-    out.push({ name, type, default: def, transient });
+    const attr = name;
+    const key = attr.startsWith("data-") && attr.length > 5
+      ? attr.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+      : attr;
+    out.push({ name: key, attr, type, default: def, transient });
   }
   return out;
 }
@@ -155,19 +159,21 @@ export function serializeTyped(value, type) {
 // never an attribute, so they drive the app but are stripped from the saved DOM.
 // The value attribute is removed on read; the state= declaration itself stays.
 export function readTransient(el, decl) {
+  const attr = decl.attr || decl.name;
   const store = el._sapTransient || (el._sapTransient = {});
   if (!(decl.name in store)) {
-    let raw = el.getAttribute(decl.name);
+    let raw = el.getAttribute(attr);
     if (raw == null) raw = decl.default != null ? decl.default : decl.type === "num" ? "0" : decl.type === "bool" ? "false" : "";
     store[decl.name] = parseTyped(raw, decl.type);
   }
-  if (el.hasAttribute(decl.name)) el.removeAttribute(decl.name);
+  if (el.hasAttribute(attr)) el.removeAttribute(attr);
   return store[decl.name];
 }
 
 export function writeTransient(el, decl, value) {
+  const attr = decl.attr || decl.name;
   (el._sapTransient || (el._sapTransient = {}))[decl.name] = value;
-  if (el.hasAttribute(decl.name)) el.removeAttribute(decl.name);
+  if (el.hasAttribute(attr)) el.removeAttribute(attr);
 }
 
 // Find the list element a path points at, resolving nearest-scope-first.

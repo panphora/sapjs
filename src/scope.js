@@ -74,7 +74,7 @@ export function createAccessor(runtime) {
     const decl = declarerOf(ctxEl, appRec.root, field);
     if (decl) {
       if (decl.decl.transient) return readTransient(decl.el, decl.decl);
-      return parseTyped(decl.el.getAttribute(field), decl.decl.type);
+      return parseTyped(decl.el.getAttribute(decl.decl.attr || field), decl.decl.type);
     }
     const snap = ctxEl._sapScope;
     return snap ? snap[field] : undefined;
@@ -82,7 +82,7 @@ export function createAccessor(runtime) {
 
   function setStateAttr(el, field, value, decl, appRec) {
     if (decl.transient) writeTransient(el, decl, value);
-    else el.setAttribute(field, serializeTyped(value, decl.type));
+    else el.setAttribute(decl.attr || field, serializeTyped(value, decl.type));
     runtime.schedule(appRec, "set:" + field);
   }
 
@@ -203,7 +203,7 @@ export function createAccessor(runtime) {
     for (const d of parseStateDecl(ctxEl.getAttribute("state") || "")) {
       const dflt = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
       if (d.transient) writeTransient(ctxEl, d, parseTyped(dflt, d.type));
-      else ctxEl.setAttribute(d.name, dflt);
+      else ctxEl.setAttribute(d.attr, dflt);
     }
     runtime.schedule(appRec, "trigger-reset");
   }

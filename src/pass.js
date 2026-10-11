@@ -49,10 +49,11 @@ function runPassBody(app, opts) {
   // floor and show-when can match it before any write. Non-visibility fields are
   // never materialized, keeping this purely additive for existing apps.
   function resolveDefault(el, d) {
-    let raw = el.getAttribute(d.name);
+    const attr = d.attr || d.name;
+    let raw = el.getAttribute(attr);
     if (raw == null) {
       raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
-      pending.push({ el, name: d.name, value: serializeTyped(parseTyped(raw, d.type), d.type) });
+      pending.push({ el, name: d.name, attr, value: serializeTyped(parseTyped(raw, d.type), d.type) });
     }
     return parseTyped(raw, d.type);
   }
@@ -237,8 +238,8 @@ function runPassBody(app, opts) {
   // (The whole-pass mutation pause keeps these writes off undo/autosave.) ---
   if (pending.length && whenFields.size) {
     for (const w of pending) {
-      if (whenFields.has(w.name) && w.el.getAttribute(w.name) == null) {
-        w.el.setAttribute(w.name, w.value);
+      if (whenFields.has(w.attr) && w.el.getAttribute(w.attr) == null) {
+        w.el.setAttribute(w.attr, w.value);
       }
     }
   }

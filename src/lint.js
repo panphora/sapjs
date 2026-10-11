@@ -159,7 +159,7 @@ export function lintApp(root, diag) {
         if (seen.has(d.name)) halt("E04", el, { attr: "state", problem: `field "${d.name}" is declared twice in one scope` });
         seen.add(d.name);
         if (RESERVED.has(d.name)) halt("E05", el, { attr: "state", problem: `"${d.name}" is a reserved Sap word` });
-        if (HTML_GLOBALS.has(d.name)) halt("E06", el, { attr: "state", problem: `"${d.name}" is a global HTML attribute name; pick another field name` });
+        if (HTML_GLOBALS.has(d.attr)) halt("E06", el, { attr: "state", problem: `"${d.name}" is a global HTML attribute name; pick another field name` });
         // dialog state=open
         if (d.name === "open" && el.tagName === "DIALOG") {
           halt("E33", el, { attr: "state", problem: "dialog open is transient", fix: "use showModal() — declare state= only on <details> or popovers" });

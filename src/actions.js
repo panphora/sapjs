@@ -6,7 +6,7 @@
 
 import {
   nearestScopeEl, nearestItemEl, isInsideDetail, ownedBind, rowsOf,
-  resolveListEl, walkOwned,
+  resolveListEl, walkOwned, parseStateDecl,
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
 import { num } from "./helpers.js";
@@ -255,9 +255,15 @@ export function createActions(runtime, accessor) {
     if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
     const detailEl = isInsideDetail(t);
     if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind")) {
-      const src = ownedBind(detailEl._sapDetailRow, t.getAttribute("bind"));
+      const row = detailEl._sapDetailRow;
+      const field = t.getAttribute("bind");
+      const src = ownedBind(row, field);
       if (src && src !== t) {
         carrierFor(src).write(carrierFor(t).read());
+        return;
+      }
+      if (!src && parseStateDecl(row.getAttribute("state") || "").some((d) => d.name === field)) {
+        accessor.writeField(row, appRec, field, carrierFor(t).read());
         return;
       }
     }
