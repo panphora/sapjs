@@ -38,6 +38,7 @@ function runPassBody(app, opts) {
   const effects = [];
   const invalids = [];
   const pending = [];        // declared defaults missing from the DOM (candidates to materialize)
+  const deferredDetails = [];
   const whenFields = new Set(); // field names a show-when/option visibility verb reads
   app.diag.errors = [];
 
@@ -193,12 +194,18 @@ function runPassBody(app, opts) {
     return o;
   }
 
+  // A detail's own state= declarations name the key field; it lives on the
+  // enclosing scope so the row's set: and the panel's key expr see one field.
+  // The row lookup waits until the whole tree is read, so a panel placed before
+  // its list still finds it.
   function handleDetail(el, parentObj, ctx) {
-    // A detail's own state= declarations name the key field; it lives on the
-    // enclosing scope so the row's set: and the panel's key expr see one field.
     for (const d of parseStateDecl(el.getAttribute("state") || "")) {
       if (!(d.name in parentObj)) parentObj[d.name] = resolveDefault(el, d);
     }
+    deferredDetails.push({ el, parentObj, ctx });
+  }
+
+  function resolveDetail(el, parentObj, ctx) {
     el._sapScope = parentObj;
     const spec = el.getAttribute("detail") || "";
     const m = /^([\w.]+)\s+by\s+(.+)$/.exec(spec);
@@ -230,6 +237,11 @@ function runPassBody(app, opts) {
 
   // --- intake ---
   enterScope(root, rootObj, rootCtx);
+
+  for (let i = 0; i < deferredDetails.length; i++) {
+    const { el, parentObj, ctx } = deferredDetails[i];
+    resolveDetail(el, parentObj, ctx);
+  }
 
   // --- materialize defaults a visibility verb references, so the CSS floor
   // (hyperclayjs optionVisibility) and our own show-when can match them before any

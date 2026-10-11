@@ -19,7 +19,7 @@ import { mountApp } from "./mount.js";
 import { createAccessor } from "./scope.js";
 import { createActions } from "./actions.js";
 import { createDebug } from "./debug.js";
-import { batch, installBridges } from "./platform.js";
+import { batch, installBridges, whenPlatformReady } from "./platform.js";
 import { installMutationBridge, resetMutationBridge } from "./mutation-bridge.js";
 import { formats } from "./helpers.js";
 import { serializeControlToAttributes, finalizeControlForSave, rehydrateControlFromAttributes } from "./control-serialize.js";
@@ -163,10 +163,11 @@ Sap._reset = function reset() {
 
 function autoMount() {
   if (typeof document === "undefined") return;
+  const go = () => whenPlatformReady(() => mountAll());
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => mountAll());
+    document.addEventListener("DOMContentLoaded", go);
   } else {
-    mountAll();
+    go();
   }
 }
 

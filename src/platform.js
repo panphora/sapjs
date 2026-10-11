@@ -37,6 +37,15 @@ export function onPlatformEvent(target, names, handler) {
   return () => { for (const name of names) target.removeEventListener(name, wrapped); };
 }
 
+// Run fn once ClayJS has finished booting, or now if ClayJS is absent. Frozen
+// regions record their authored markup during that boot, so a first paint before it
+// would be recorded instead. A failed boot still runs fn: the app must not stay dead.
+export function whenPlatformReady(fn) {
+  const ready = typeof window !== "undefined" && window.clay && window.clay.ready;
+  if (ready && typeof ready.then === "function") ready.then(() => fn(), () => fn());
+  else fn();
+}
+
 // Region-aware save guard. When the platform's region model is present, a control
 // inside a no-save (or frozen) region must not write save-bytes the platform would
 // strip anyway. The control stays fully live and reactive; only the serialization
