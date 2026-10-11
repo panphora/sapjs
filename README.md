@@ -303,6 +303,7 @@ The one nesting limit is an `items=` list placed inside a `detail=` panel, which
 - One row per array element, cloned from the container's `<template>` (exactly one element root) and placed after it in array order.
 - Rows are matched by key, `key="expr"`, default `item.$key`. A reorder moves the existing rows, so focus and scroll inside them survive. Nothing is rebuilt with `innerHTML`.
 - Inside a row, `item` is the element and `state` is the container's scope. Paints, `show`, `effect` and actions work. Rows are read-only views: `bind` inside one is `E43`, and `calc:` inside rows is not evaluated.
+- A `detail=` panel inside a row is not supported: it never resolves. Put the panel outside the list and key it on the row instead.
 - When the element is a row from an `items=` list, actions reach that record: `trigger-remove` removes it, `Sap(el)` returns its proxy.
 - Rows carry `clay="editor-ui"` and `data-key`, so ClayJS keeps them out of saves and live sync. They never count as mount writes.
 - A missing or duplicate key (`E41`), a non-array (`E40`) or a bad template (`E42`) is reported, and the list keeps its last good rows.

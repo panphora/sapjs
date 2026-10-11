@@ -104,8 +104,16 @@ export function createActions(runtime, accessor) {
     }
   }
 
+  // A view row (each=) moves the record it projects; anything else moves its own row.
+  function sourceRowOf(el) {
+    const viewRow = nearestViewRow(el);
+    if (!viewRow) return el.closest("[item]");
+    const src = viewRow._sapEachItem && viewRow._sapEachItem.$el;
+    return src && src.nodeType === 1 && src.hasAttribute("item") ? src : null;
+  }
+
   function moveStep(el, dir) {
-    const row = el.closest("[item]");
+    const row = sourceRowOf(el);
     if (!row) return;
     const siblings = rowsOf(row.parentElement);
     const i = siblings.indexOf(row);

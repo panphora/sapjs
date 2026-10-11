@@ -68,8 +68,8 @@ function runPassBody(app, opts) {
     const decls = parseStateDecl(el.getAttribute("state") || "");
     el._sapStateDecls = decls;
     for (const d of decls) {
-      if (d.type === "string" && NATIVE_BOOLEAN_SET.has(d.name) && typeof el[d.name] === "boolean") {
-        obj[d.name] = el.hasAttribute(d.name); // presence semantics (e.g. <details open>)
+      if (d.type === "string" && NATIVE_BOOLEAN_SET.has(d.attr) && typeof el[d.attr] === "boolean") {
+        obj[d.name] = el.hasAttribute(d.attr); // presence semantics (e.g. <details open>)
         continue;
       }
       if (d.transient) {
