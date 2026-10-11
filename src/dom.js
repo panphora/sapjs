@@ -26,7 +26,7 @@ export function mintId(doc, prefix = "row") {
 }
 
 export function isScopeBoundary(el) {
-  return el.hasAttribute("scope") || el.hasAttribute("items") || el.hasAttribute("detail");
+  return el.hasAttribute("scope") || el.hasAttribute("items") || el.hasAttribute("detail") || el.hasAttribute("each");
 }
 
 export function isInert(el) {
@@ -54,6 +54,16 @@ export function nearestScopeEl(el) {
       return cur;
     }
     cur = cur.parentElement;
+  }
+  return null;
+}
+
+// The generated each-row an element sits in, if that row is nearer than any [item]
+// record or the app root. Rows are marked by the pass that creates them.
+export function nearestViewRow(el) {
+  for (let cur = el; cur && cur.nodeType === 1; cur = cur.parentElement) {
+    if (cur._sapEachRow) return cur;
+    if (cur.hasAttribute("item") || cur.hasAttribute("sap")) return null;
   }
   return null;
 }

@@ -28,6 +28,10 @@ export function runPass(app, opts = {}) {
   // pass, and away from undo/autosave so a single user edit collapses to one entry.
   // No-op standalone with no hub/observer present. See mutation-bridge.js.
   withDomMutationPaused(() => runPassBody(app, opts));
+  if (app._viewsChanged) {
+    app._viewsChanged = false;
+    app.root.dispatchEvent(new CustomEvent("sap:views-updated", { bubbles: true }));
+  }
 }
 
 function runPassBody(app, opts) {
@@ -39,6 +43,7 @@ function runPassBody(app, opts) {
   const invalids = [];
   const pending = [];        // declared defaults missing from the DOM (candidates to materialize)
   const deferredDetails = [];
+  const eachList = [];
   const whenFields = new Set(); // field names a show-when/option visibility verb reads
   app.diag.errors = [];
 
@@ -126,6 +131,13 @@ function runPassBody(app, opts) {
         paints.push({ el, kind: "when", match: "show-not", field, values: val.split("|"), ctx });
       }
     }
+    if (ctx.view && el.hasAttribute("bind")) {
+      app.diag.error("E43", el, {
+        attr: "bind", expr: el.getAttribute("bind"),
+        problem: "bind inside an each row; rows are read-only views of the data",
+        fix: "change the record with set:, Sap(el), or a detail panel",
+      });
+    }
     if (ctx.projection && el.hasAttribute("bind")) {
       paints.push({ el, kind: "projection", field: el.getAttribute("bind"), ctx });
     }
@@ -154,8 +166,12 @@ function runPassBody(app, opts) {
           collectEl(el, ctx);
           handleItems(el, scopeObj, ctx);
         } else if (el.hasAttribute("detail")) handleDetail(el, scopeObj, ctx);
+        else if (el.hasAttribute("each")) {
+          collectEl(el, ctx);
+          eachList.push({ el, ctx });
+        }
       } else {
-        if (!ctx.projection) readBindInto(el, ctx);
+        if (!ctx.projection && !ctx.view) readBindInto(el, ctx);
         collectEl(el, ctx);
       }
     });
@@ -235,6 +251,89 @@ function runPassBody(app, opts) {
     walkScope(el, row, dctx);
   }
 
+  // Reconcile one each= container against its array, by key. Rows are reused,
+  // moved and removed, never rebuilt, so focus and scroll inside them survive.
+  // Returns how many structural changes it made.
+  function reconcileEach(el, ctx) {
+    const tmpl = [...el.children].find((c) => c.tagName === "TEMPLATE");
+    const blueprint = tmpl && tmpl.content.children.length === 1 ? tmpl.content.firstElementChild : null;
+    if (!blueprint) {
+      app.diag.error("E42", el, { attr: "each", problem: "each needs one <template> child with exactly one element root" });
+      return 0;
+    }
+    const src = el.getAttribute("each");
+    let list;
+    try {
+      list = run(compile(src), { state: ctx.state, item: ctx.item, el, root: ctx.root });
+    } catch (err) {
+      app.diag.error("E24", el, { attr: "each", expr: src, problem: String(err.message) });
+      return 0;
+    }
+    if (!Array.isArray(list)) {
+      app.diag.error("E40", el, { attr: "each", expr: src, problem: "each must evaluate to an array; the list keeps its last good rows" });
+      return 0;
+    }
+    const keyEntry = compile(el.getAttribute("key") || "item.$key");
+    const keys = [];
+    const seen = new Set();
+    for (const item of list) {
+      let k;
+      try {
+        k = run(keyEntry, { state: ctx.state, item, el, root: ctx.root });
+      } catch {
+        k = undefined;
+      }
+      const ks = k == null ? "" : String(k);
+      if (ks === "" || seen.has(ks)) {
+        app.diag.error("E41", el, {
+          attr: "key", expr: keyEntry.src,
+          problem: ks === "" ? "an item has no key; the list keeps its last good rows" : `duplicate key "${ks}"; the list keeps its last good rows`,
+        });
+        return 0;
+      }
+      seen.add(ks);
+      keys.push(ks);
+    }
+
+    const prev = el._sapEach || new Map();
+    const next = new Map();
+    let changes = 0;
+    let after = tmpl;
+    keys.forEach((k, i) => {
+      let rowEl = prev.get(k);
+      if (!rowEl || rowEl.parentElement !== el) {
+        rowEl = el.ownerDocument.importNode(blueprint, true);
+        const clay = (rowEl.getAttribute("clay") || "").split(/\s+/).filter(Boolean);
+        if (!clay.includes("editor-ui")) rowEl.setAttribute("clay", [...clay, "editor-ui"].join(" "));
+        rowEl._sapEachRow = true;
+        changes++;
+      }
+      if (rowEl.getAttribute("data-key") !== k) rowEl.setAttribute("data-key", k);
+      if (after.nextElementSibling !== rowEl) {
+        placeAfter(el, rowEl, after);
+        changes++;
+      }
+      rowEl._sapEachItem = list[i];
+      next.set(k, rowEl);
+      after = rowEl;
+    });
+    for (const [k, rowEl] of prev) {
+      if (next.get(k) !== rowEl && rowEl.parentElement === el) {
+        rowEl.remove();
+        changes++;
+      }
+    }
+    el._sapEach = next;
+
+    keys.forEach((k, i) => {
+      const rowEl = next.get(k);
+      const rctx = { root: ctx.root, state: ctx.state, item: list[i], ownerEl: rowEl, projection: false, view: true };
+      collectEl(rowEl, rctx);
+      walkScope(rowEl, {}, rctx);
+    });
+    return changes;
+  }
+
   // --- intake ---
   enterScope(root, rootObj, rootCtx);
 
@@ -287,6 +386,11 @@ function runPassBody(app, opts) {
     }
   }
 
+  // --- each: reconcile keyed lists now that calc: values exist. Index loop: a
+  // nested each inside a row is pushed while the outer one is processed. ---
+  let viewChanges = 0;
+  for (let i = 0; i < eachList.length; i++) viewChanges += reconcileEach(eachList[i].el, eachList[i].ctx);
+
   // --- paint ---
   // Engine-derived output (text/hidden/attr/class/css), effects, and validity
   // complete the file from current state; they are not user edits. The whole-pass
@@ -295,7 +399,12 @@ function runPassBody(app, opts) {
   // the source attribute and we re-derive on undo/redo (platform.js), so a single
   // undo reverts the action and its derived effects together.
   let writes = 0;
-  for (const p of paints) writes += paintOne(p, app);
+  let viewWrites = viewChanges;
+  for (const p of paints) {
+    const n = paintOne(p, app);
+    if (p.ctx.view) viewWrites += n;
+    else writes += n;
+  }
   for (const e of effects) runEffect(e, app);
   for (const iv of invalids) runInvalid(iv);
 
@@ -306,7 +415,9 @@ function runPassBody(app, opts) {
     paints: paints.length,
     lists: groups.size,
     writes,
+    viewWrites,
   };
+  app._viewsChanged = viewWrites > 0;
   app._lastPass = { trigger: opts.trigger || "refresh", writes };
   if (app._debug) {
     console.log(`sap pass · trigger: ${app._lastPass.trigger} · writes ${writes}/${paints.length}`);
@@ -482,4 +593,12 @@ function depth(el) {
     d++;
   }
   return d;
+}
+
+function placeAfter(parent, node, ref) {
+  const before = ref.nextSibling;
+  if (node.isConnected && parent.moveBefore) {
+    try { parent.moveBefore(node, before); return; } catch { /* fall through */ }
+  }
+  parent.insertBefore(node, before);
 }

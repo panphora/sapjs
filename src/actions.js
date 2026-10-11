@@ -6,7 +6,7 @@
 
 import {
   nearestScopeEl, nearestItemEl, isInsideDetail, ownedBind, rowsOf,
-  resolveListEl, walkOwned, parseStateDecl,
+  resolveListEl, walkOwned, parseStateDecl, nearestViewRow,
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
 import { num } from "./helpers.js";
@@ -44,8 +44,10 @@ export function createActions(runtime, accessor) {
 
   function actionCtx(el, appRec) {
     let item = null;
+    const viewRow = nearestViewRow(el);
     const detailEl = isInsideDetail(el);
-    if (detailEl && detailEl._sapDetailRow) item = detailEl._sapDetailRow._sapScope || null;
+    if (viewRow) item = viewRow._sapEachItem ?? null;
+    else if (detailEl && detailEl._sapDetailRow) item = detailEl._sapDetailRow._sapScope || null;
     else {
       const itemEl = nearestItemEl(el);
       if (itemEl && itemEl.hasAttribute("item")) item = itemEl._sapScope || null;

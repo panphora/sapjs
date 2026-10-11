@@ -24,6 +24,10 @@ export const REGISTRY = {
   E32: { slug: "file-bind", behavior: "HALT" },
   E33: { slug: "dialog-state-open", behavior: "HALT" },
   E34: { slug: "transient-persist-collision", behavior: "HALT" },
+  E40: { slug: "each-not-array", behavior: "ERR" },
+  E41: { slug: "each-bad-key", behavior: "ERR" },
+  E42: { slug: "each-template", behavior: "ERR" },
+  E43: { slug: "bind-in-each-row", behavior: "ERR" },
   W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
   W04: { slug: "expression-in-when", behavior: "WARN" },
   W30: { slug: "nonzero-mount-writes", behavior: "WARN" },
@@ -43,7 +47,7 @@ export const HTML_GLOBALS = new Set([
 
 export const RESERVED = new Set([
   "sap", "scope", "items", "item", "template", "bind", "calc", "text", "show",
-  "attr", "set", "trigger", "move", "sort", "detail", "effect", "invalid",
+  "attr", "set", "trigger", "move", "sort", "detail", "each", "effect", "invalid",
   "confirm", "transient", "default", "persist", "sortable",
   // editmode is a hyperclayjs platform prefix (editmode:onclick), reserved so a
   // co-loaded admin attribute never collides with a Sap state field name.

@@ -7,6 +7,7 @@ import {
   nearestScopeEl, nearestItemEl, isInsideDetail, keyOf, mintId,
   ownedBind, ownedItems, rowsOf, templateOf, resolveListEl,
   parseStateDecl, parseTyped, serializeTyped, readTransient, writeTransient,
+  nearestViewRow,
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
 import { walkOwned } from "./dom.js";
@@ -44,6 +45,9 @@ export function createAccessor(runtime) {
   function contextElFor(el) {
     const appRec = runtime.appFor(el);
     if (!appRec) return null;
+    const viewRow = nearestViewRow(el);
+    const source = viewRow && viewRow._sapEachItem && viewRow._sapEachItem.$el;
+    if (source && source.isConnected) return { ctxEl: source, appRec, isRow: true };
     const detailEl = isInsideDetail(el);
     if (detailEl) {
       if (detailEl._sapDetailRow) return { ctxEl: detailEl._sapDetailRow, appRec, isRow: true };
