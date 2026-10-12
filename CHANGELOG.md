@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0] - 2026-10-12
+
+### Added
+- `each=`, a keyed projection list
+- A 1,000-record `each` benchmark and a CPU profile summarizer
+- `data-*` attributes accepted as state fields, and detail panels can write through to them
+
+### Changed
+- Rows are keyed by `data-id`, and ids are no longer stamped onto rows at mount
+- Mounting waits for `clay.ready`, and detail panels resolve after intake
+- Documented `each=`, row keys, `data-*` fields and the `clay.ready` mount
+- README explains where paints live in a malleable file (saved paints, freeze scratchpads)
+- Rebuilt dist and the explainer bundle
+
+### Fixed
+- Move actions in `each` rows
+- `data-*` fields whose names look like booleans or reserved words
+
+
+
 ## [0.3.1] - 2026-09-28
 
 ### Changed
