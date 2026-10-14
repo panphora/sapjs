@@ -16,8 +16,9 @@
   ],
   "scripts": {
     "deploy": "wrangler deploy && git rev-parse HEAD > .deploy",
-    "build": "node build/bundle.mjs && node scripts/build-doc.mjs",
-    "build:docs": "node scripts/build-doc.mjs",
+    "build": "node build/bundle.mjs && node scripts/build-doc.mjs && node scripts/build-guide.mjs",
+    "build:docs": "node scripts/build-doc.mjs && node scripts/build-guide.mjs",
+    "build:guide": "node scripts/build-guide.mjs",
     "propagate": "npm run build && node scripts/propagate.js",
     "copy-to-hyperclayjs": "npm run build && node scripts/propagate.js --only hyperclayjs",
     "copy-to-clayjs": "npm run build && node scripts/propagate.js --only clayjs",
@@ -50,7 +51,8 @@
     "babel-jest": "^29.7.0",
     "esbuild": "^0.21.0",
     "jest": "^29.7.0",
-    "jest-environment-jsdom": "^29.7.0"
+    "jest-environment-jsdom": "^29.7.0",
+    "marked": "^18.1.0"
   },
   "hyper": {
     "kind": "lib",
