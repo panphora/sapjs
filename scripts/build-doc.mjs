@@ -15,17 +15,19 @@ import { dirname, join } from "node:path";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TOKEN = "__SAP_ENGINE_PLACEHOLDER__";
+const SITE = "__SITE_CSS_PLACEHOLDER__";
 
 // Defensive: a stray "</script" in the engine would close the inline tag early.
 // dist has none today, but escape it so a future build can never break the file.
 const engine = readFileSync(join(root, "dist/sap.js"), "utf8").split("</script").join("<\\/script");
 const template = readFileSync(join(root, "docs/sapjs-explained.template.html"), "utf8");
+const siteCss = readFileSync(join(root, "site.css"), "utf8");
 
 if (!template.includes(TOKEN)) {
   console.error(`template is missing ${TOKEN} — nothing to inject`);
   process.exit(1);
 }
 
-const out = template.split(TOKEN).join(engine);
+const out = template.split(TOKEN).join(engine).split(SITE).join(siteCss);
 writeFileSync(join(root, "docs/sapjs-explained.html"), out, "utf8");
 console.log(`build:docs → docs/sapjs-explained.html (${out.length} bytes; engine ${engine.length} bytes)`);

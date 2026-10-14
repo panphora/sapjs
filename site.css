@@ -1,0 +1,66 @@
+/* Shared by every saphtml.com page: colour tokens, base type, the site header and code highlighting.
+   Page-specific layout stays in each page's own <style>. */
+:root {
+  --bg: #f6f1e7;
+  --paper: #fbf8f1;
+  --ink: #1f1c17;
+  --ink-2: #4d473d;
+  --ink-3: #7c7466;
+  --rule: #e2d9c7;
+  --accent: #b4532a;
+  --accent-soft: #f2dfd2;
+  --good: #3f7a4a;
+  --good-soft: #dcebdc;
+  --mid: #a8771c;
+  --mid-soft: #f3e6c6;
+  --bad: #a6402f;
+  --bad-soft: #f2d8d1;
+  --code-bg: #efe8da;
+  --shadow: 0 1px 0 rgba(60, 45, 20, .05), 0 8px 24px -12px rgba(60, 45, 20, .18);
+  --serif: Fraunces, Georgia, serif;
+  --sans-ui: Inter, system-ui, sans-serif;
+  --mono-ui: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17150f;
+    --paper: #1f1c16;
+    --ink: #ece5d6;
+    --ink-2: #c3baa8;
+    --ink-3: #8f8676;
+    --rule: #342f25;
+    --accent: #e08a5c;
+    --accent-soft: #3a2619;
+    --good: #82c08c;
+    --good-soft: #1d2c1f;
+    --mid: #ddb05a;
+    --mid-soft: #33291a;
+    --bad: #e48a78;
+    --bad-soft: #3a201b;
+    --code-bg: #2a261e;
+    --shadow: 0 1px 0 rgba(0,0,0,.2), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+}
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); }
+
+.site-nav { position: sticky; top: 0; z-index: 50; background: var(--bg); border-bottom: 1px solid var(--rule); }
+.site-nav .nav-inner { max-width: 980px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 24px; }
+.site-nav .brand { display: inline-flex; align-items: center; gap: 9px; flex: none; font: 600 19px/1 var(--serif); color: var(--ink); text-decoration: none; }
+.site-nav .brand img { width: 24px; height: 24px; display: block; }
+.site-nav nav { display: flex; gap: 20px; margin-left: auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.site-nav nav::-webkit-scrollbar { display: none; }
+.site-nav nav a { font: 500 14px/1 var(--sans-ui); color: var(--ink-2); text-decoration: none; white-space: nowrap; padding: 6px 0; }
+.site-nav nav a:hover, .site-nav nav a[aria-current="page"] { color: var(--accent); }
+@media (max-width: 760px) {
+  .site-nav .nav-inner { padding: 10px 16px; gap: 16px; }
+  .site-nav nav { gap: 16px; }
+}
+
+.token.comment, .token.prolog, .token.doctype, .token.cdata { color: var(--ink-3); font-style: italic; }
+.token.punctuation { color: var(--ink-3); }
+.token.tag, .token.keyword, .token.selector, .token.important { color: var(--accent); }
+.token.attr-name, .token.property, .token.function, .token.class-name { color: var(--mid); }
+.token.attr-value, .token.string, .token.char, .token.regex { color: var(--good); }
+.token.number, .token.boolean, .token.constant { color: var(--mid); }
+.token.operator, .token.entity, .token.url { color: var(--ink-2); }

@@ -8,12 +8,12 @@ const ROOT = join(__dirname, "..");
 const html = readFileSync(join(ROOT, "index.html"), "utf8");
 const live = /<main sap id="hero-demo"[\s\S]*?<\/main>/.exec(html)?.[0];
 const unescape = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
-const shown = [...html.matchAll(/<pre><code>([\s\S]*?)<\/code><\/pre>/g)].map((m) => unescape(m[1]).trim());
+const shown = [...html.matchAll(/<code class="language-html hero-src"[^>]*>([\s\S]*?)<\/code>/g)].map((m) => unescape(m[1])).join("\n");
 
 describe("home page", () => {
   test("the live hero demo is the code shown", () => {
     expect(live).toBeTruthy();
-    expect(shown).toContain(live.trim());
+    expect(shown).toBe(live.trim());
   });
 
   test("the hero demo mounts clean with zero writes", () => {
@@ -31,7 +31,7 @@ describe("home page", () => {
     }
   });
 
-  test("the hero demo adds, checks and removes tasks", async () => {
+  test("the hero demo adds and checks tasks", async () => {
     const root = mount(live);
     const out = root.querySelector("output");
     const rows = () => [...root.querySelectorAll("li[item]:not([template])")];
@@ -48,12 +48,6 @@ describe("home page", () => {
     await flush();
     Sap.refresh();
     expect(box.hasAttribute("checked")).toBe(true);
-    expect(out.textContent).toBe("1 task left");
-
-    rows()[2].querySelector("[trigger-remove]").click();
-    await flush();
-    Sap.refresh();
-    expect(rows()).toHaveLength(2);
     expect(out.textContent).toBe("1 task left");
   });
 

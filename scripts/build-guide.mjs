@@ -50,45 +50,52 @@ const page = `<!doctype html>
 <link rel="canonical" href="https://saphtml.com/guide.html">
 <link rel="alternate" type="text/markdown" href="./guide.md">
 <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./site.css">
 <style>
-  :root {
-    --bg: #0a0c10; --panel: #11151c; --border: #232b38; --text: #d8dee9; --muted: #8b97a8;
-    --accent: #6ee7a8; --accent-dim: #3aa776; --code-bg: #0c0f15;
-    --mono: "Berkeley Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .wrap { max-width: 820px; margin: 0 auto; padding: 32px 16px 96px; }
-  nav.top { display: flex; gap: 18px; font-family: var(--mono); font-size: 14px; margin-bottom: 32px; flex-wrap: wrap; }
-  nav.top b { color: var(--text); }
-  h1, h2, h3, h4 { line-height: 1.25; letter-spacing: -0.01em; position: relative; }
-  h1 { font-size: 34px; margin: 0 0 16px; }
-  h2 { font-size: 24px; margin: 56px 0 12px; padding-top: 16px; border-top: 1px solid var(--border); }
-  h3 { font-size: 19px; margin: 32px 0 8px; }
-  .anchor { position: absolute; left: -1em; color: var(--accent-dim); opacity: 0; font-weight: 400; }
+  body { font: 16px/1.65 Inter, system-ui, sans-serif; }
+  a { color: var(--accent); }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 40px 24px 96px; }
+  h1, h2, h3, h4 { font-family: Fraunces, Georgia, serif; font-weight: 600; letter-spacing: -.01em; line-height: 1.2; position: relative; }
+  h1 { font-size: clamp(32px, 5vw, 44px); margin: 0 0 16px; }
+  h2 { font-size: 26px; margin: 56px 0 12px; padding-top: 16px; border-top: 1px solid var(--rule); }
+  h3 { font-size: 20px; margin: 32px 0 8px; }
+  .anchor { position: absolute; left: -1em; color: var(--ink-3); opacity: 0; font-weight: 400; text-decoration: none; }
   h2:hover .anchor, h3:hover .anchor, h4:hover .anchor { opacity: 1; }
-  code { font-family: var(--mono); font-size: 0.9em; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
-  pre.block { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.5; }
-  pre.block code { background: none; border: 0; padding: 0; font-size: inherit; }
+  code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .86em; background: var(--code-bg); border-radius: 5px; padding: 1px 6px; overflow-wrap: anywhere; }
+  pre.block { background: var(--code-bg); border-radius: 12px; padding: 16px 18px; overflow-x: auto; font: 13.5px/1.55 "JetBrains Mono", ui-monospace, monospace; }
+  pre.block code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
   table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; font-size: 14.5px; }
-  th, td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
-  th { background: var(--panel); }
-  blockquote { margin: 0; padding-left: 16px; border-left: 3px solid var(--accent-dim); color: var(--muted); }
-  details.toc { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; margin: 24px 0; }
-  details.toc summary { cursor: pointer; font-family: var(--mono); font-size: 14px; color: var(--muted); }
+  th, td { border: 1px solid var(--rule); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--paper); }
+  blockquote { margin: 0; padding-left: 16px; border-left: 3px solid var(--accent); color: var(--ink-2); }
+  details.toc { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 10px 16px; margin: 24px 0; }
+  details.toc summary { cursor: pointer; font: 500 14px Inter, system-ui, sans-serif; color: var(--ink-2); }
   ul li:has(> input[type=checkbox]) { list-style: none; margin-left: -1.4em; }
+  @media (max-width: 760px) { .wrap { padding: 28px 16px 72px; } pre.block { font-size: 12.5px; padding: 14px; } }
 </style>
 </head>
 <body>
+<header class="site-nav">
+  <div class="nav-inner">
+    <a class="brand" href="./"><img src="./favicon.svg" alt="" width="24" height="24">sapjs</a>
+    <nav>
+      <a href="./guide.html" aria-current="page">Guide</a>
+      <a href="./how-it-works.html">How it works</a>
+      <a href="./demos.html">Demos</a>
+      <a href="./llms.txt">llms.txt</a>
+      <a href="https://github.com/panphora/sapjs">GitHub</a>
+    </nav>
+  </div>
+</header>
 <div class="wrap">
-<nav class="top"><a href="./"><b>sapjs</b></a><a href="./guide.md">guide.md</a><a href="./llms.txt">llms.txt</a><a href="./docs/sapjs-explained.html">explainer</a></nav>
 <details class="toc"><summary>Contents</summary><ol>${toc.join("")}</ol></details>
 ${content}
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 </body>
 </html>
 `;

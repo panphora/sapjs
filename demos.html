@@ -249,15 +249,44 @@
   .kbd { font-family: var(--mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 5px; padding: 1px 6px; color: var(--muted); }
   hr.soft { border: none; border-top: 1px solid var(--border); margin: 26px 0; }
 </style>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./site.css">
+<style>
+  :root {
+    --panel: var(--paper); --panel-2: var(--code-bg); --border: var(--rule); --border-2: var(--rule);
+    --text: var(--ink); --muted: var(--ink-2); --faint: var(--ink-3); --accent-dim: var(--accent);
+    --warn: var(--mid); --blue: var(--good);
+    --mono: "JetBrains Mono", ui-monospace, monospace; --sans: Inter, system-ui, sans-serif;
+  }
+  h1, h2, h3 { font-family: Fraunces, Georgia, serif; font-weight: 600; letter-spacing: -.01em; }
+  pre.code, pre.block, pre.html-out, .src-edit { color: var(--ink-2); }
+  .tok-attr { color: var(--good); }
+  .btn.primary, .live .pill.active, .funnel .converge .node { color: var(--paper); }
+  .note { background: var(--mid-soft); border-color: var(--mid); }
+  .note.blue { background: var(--good-soft); border-color: var(--good); }
+  .html-out .keep, .legend .keep { background: var(--accent-soft); }
+  .toc { background: var(--bg); }
+  .site-nav.static { position: static; }
+  dialog::backdrop { background: rgba(20, 15, 8, .45); }
+</style>
 </head>
 <body>
+<header class="site-nav">
+  <div class="nav-inner">
+    <a class="brand" href="./"><img src="./favicon.svg" alt="" width="24" height="24">sapjs</a>
+    <nav>
+      <a href="./guide.html">Guide</a>
+      <a href="./how-it-works.html">How it works</a>
+      <a href="./demos.html" aria-current="page">Demos</a>
+      <a href="./llms.txt">llms.txt</a>
+      <a href="https://github.com/panphora/sapjs">GitHub</a>
+    </nav>
+  </div>
+</header>
 
 <div class="wrap">
   <nav class="top">
-    <span class="brand"><img class="logo" src="./favicon.svg" alt="" width="22" height="22">sap</span>
     <span class="links">
-      <a href="./">Home</a>
-      <a href="./guide.html">Guide</a>
       <a href="#why">Why</a>
       <a href="#quickstart">Quickstart</a>
       <a href="#demos">Demos</a>
@@ -265,7 +294,6 @@
       <a href="#text">Rich text</a>
       <a href="#reference">Reference</a>
       <a href="#agents">For agents</a>
-      <a href="https://github.com/panphora/sapjs">GitHub</a>
     </span>
   </nav>
 </div>

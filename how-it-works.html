@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How sapjs works</title>
+<meta name="description" content="Every change runs one pass: sapjs reads the app's data from the page, computes the formulas, paints what changed, and throws the objects away.">
+<link rel="canonical" href="https://saphtml.com/how-it-works.html">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./site.css">
+<style>
+* { box-sizing: border-box; }
+body { font: 16px/1.6 Inter, system-ui, sans-serif; }
+a { color: var(--accent); }
+.wrap { max-width: 980px; margin: 0 auto; padding: 40px 24px 96px; }
+h1, h2 { font-family: Fraunces, Georgia, serif; font-weight: 600; letter-spacing: -.01em; line-height: 1.15; }
+h1 { font-size: clamp(34px, 6vw, 52px); margin: 10px 0 18px; }
+p { margin: 0 0 12px; max-width: 70ch; }
+code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .86em; background: var(--code-bg); padding: 1px 6px; border-radius: 5px; overflow-wrap: anywhere; }
+.lede { font-size: 19px; color: var(--ink-2); }
+.pass { display: grid; grid-template-columns: repeat(4, 1fr); margin: 24px 0; border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; background: var(--paper); }
+.pass div { padding: 16px; border-right: 1px solid var(--rule); min-width: 0; }
+.pass div:last-child { border-right: 0; }
+.pass .t { font-family: Fraunces, serif; font-size: 18px; display: block; margin-bottom: 4px; }
+.pass span:not(.t) { font-size: 14px; color: var(--ink-2); }
+.pass i { font: normal 500 11px "JetBrains Mono", monospace; color: var(--accent); }
+.foot { margin-top: 72px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--ink-3); }
+@media (max-width: 760px) {
+  .wrap { padding: 28px 16px 72px; }
+  .pass { grid-template-columns: 1fr 1fr; }
+  .pass div:nth-child(2) { border-right: 0; }
+  .pass div:nth-child(-n+2) { border-bottom: 1px solid var(--rule); }
+}
+</style>
+</head>
+<body>
+<header class="site-nav">
+  <div class="nav-inner">
+    <a class="brand" href="./"><img src="./favicon.svg" alt="" width="24" height="24">sapjs</a>
+    <nav>
+      <a href="./guide.html">Guide</a>
+      <a href="./how-it-works.html" aria-current="page">How it works</a>
+      <a href="./demos.html">Demos</a>
+      <a href="./llms.txt">llms.txt</a>
+      <a href="https://github.com/panphora/sapjs">GitHub</a>
+    </nav>
+  </div>
+</header>
+<div class="wrap">
+
+<h1>How sapjs works</h1>
+<p class="lede">When anything on the page changes, sapjs runs one pass over the app.</p>
+
+<div class="pass">
+  <div><i>1</i><span class="t">Intake</span><span>Read every field (<code>state=</code>, <code>bind</code>, <code>items=</code>) into fresh objects. A <code>state=</code> attribute declares a field on an element.</span></div>
+  <div><i>2</i><span class="t">Compute</span><span>Run the <code>calc:</code> fields in dependency order.</span></div>
+  <div><i>3</i><span class="t">Paint</span><span>Update <code>text</code>, <code>show</code>, <code>attr:</code> and <code>class:</code>. Write only what changed.</span></div>
+  <div><i>4</i><span class="t">Discard</span><span>Throw the objects away; the next pass rebuilds them, reading every saved field from the page.</span></div>
+</div>
+
+<p>Each pass rebuilds the app's data from the page, so no copy of the saved data in JavaScript can drift from it.</p>
+<p>A paint writes only when the new value differs from the old one. A saved file already holds its painted values, so loading it changes nothing. The console reports that as <code>mount writes 0</code>.</p>
+<p>React keeps its state in JavaScript and draws the DOM from it. In a file that saves itself, the DOM is what gets saved, and live sync rewrites it from outside. sapjs reads its state from there every time.</p>
+<p><a href="./docs/sapjs-explained.html">Read how sapjs works in depth</a></p>
+
+<div class="foot">
+  <p>sapjs by David Miranda. MIT-0 license.</p>
+</div>
+
+</div>
+</body>
+</html>

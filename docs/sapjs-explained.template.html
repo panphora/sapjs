@@ -235,13 +235,42 @@
   dialog::backdrop { background: rgba(4,8,12,0.6); backdrop-filter: blur(2px); }
   dialog h4 { margin: 0 0 8px; }
 </style>
+<style>__SITE_CSS_PLACEHOLDER__</style>
+<style>
+  :root {
+    --panel: var(--paper); --panel-2: var(--code-bg); --border: var(--rule); --border-2: var(--rule);
+    --text: var(--ink); --muted: var(--ink-2); --faint: var(--ink-3); --accent-dim: var(--accent);
+    --warn: var(--mid); --blue: var(--good);
+    --mono: "JetBrains Mono", ui-monospace, monospace; --sans: Inter, system-ui, sans-serif;
+  }
+  h1, h2, h3 { font-family: Fraunces, Georgia, serif; font-weight: 600; letter-spacing: -.01em; }
+  pre.code, pre.block, pre.html-out, .src-edit { color: var(--ink-2); }
+  .tok-attr { color: var(--good); }
+  .btn.primary, .live .pill.active, .funnel .converge .node { color: var(--paper); }
+  .note { background: var(--mid-soft); border-color: var(--mid); }
+  .note.blue { background: var(--good-soft); border-color: var(--good); }
+  .html-out .keep, .legend .keep { background: var(--accent-soft); }
+  .toc { background: var(--bg); }
+  .site-nav.static { position: static; }
+  dialog::backdrop { background: rgba(20, 15, 8, .45); }
+</style>
 </head>
 <body>
+<header class="site-nav static">
+  <div class="nav-inner">
+    <a class="brand" href="../"><img src="../favicon.svg" alt="" width="24" height="24">sapjs</a>
+    <nav>
+      <a href="../guide.html">Guide</a>
+      <a href="../how-it-works.html">How it works</a>
+      <a href="../demos.html">Demos</a>
+      <a href="../llms.txt">llms.txt</a>
+    </nav>
+  </div>
+</header>
 
 <!-- STICKY TOC -->
 <nav class="toc">
   <div class="toc-inner">
-    <span class="brand">sap<span class="dot">·</span></span>
     <a href="#overview">Overview</a>
     <a href="#transient"><span class="qn">1·</span> Transient</a>
     <a href="#richtext"><span class="qn">2·</span> Rich text</a>

@@ -25,55 +25,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./site.css">
 <style>
-:root {
-  --bg: #f6f1e7;
-  --paper: #fbf8f1;
-  --ink: #1f1c17;
-  --ink-2: #4d473d;
-  --ink-3: #7c7466;
-  --rule: #e2d9c7;
-  --accent: #b4532a;
-  --accent-soft: #f2dfd2;
-  --good: #3f7a4a;
-  --good-soft: #dcebdc;
-  --mid: #a8771c;
-  --mid-soft: #f3e6c6;
-  --bad: #a6402f;
-  --bad-soft: #f2d8d1;
-  --code-bg: #efe8da;
-  --shadow: 0 1px 0 rgba(60, 45, 20, .05), 0 8px 24px -12px rgba(60, 45, 20, .18);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #17150f;
-    --paper: #1f1c16;
-    --ink: #ece5d6;
-    --ink-2: #c3baa8;
-    --ink-3: #8f8676;
-    --rule: #342f25;
-    --accent: #e08a5c;
-    --accent-soft: #3a2619;
-    --good: #82c08c;
-    --good-soft: #1d2c1f;
-    --mid: #ddb05a;
-    --mid-soft: #33291a;
-    --bad: #e48a78;
-    --bad-soft: #3a201b;
-    --code-bg: #2a261e;
-    --shadow: 0 1px 0 rgba(0,0,0,.2), 0 10px 30px -14px rgba(0,0,0,.6);
-  }
-}
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  font: 16px/1.6 Inter, system-ui, sans-serif;
-}
+body { font: 16px/1.6 Inter, system-ui, sans-serif; }
 a { color: var(--accent); }
-.wrap { max-width: 980px; margin: 0 auto; padding: 56px 24px 96px; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 40px 24px 96px; }
 h1, h2, h3 { font-family: Fraunces, Georgia, serif; font-weight: 600; letter-spacing: -.01em; line-height: 1.15; }
 h1 { font-size: clamp(34px, 6vw, 56px); margin: 10px 0 18px; }
 h2 { font-size: clamp(26px, 4vw, 34px); margin: 0 0 6px; }
@@ -81,22 +38,24 @@ h3 { font-size: 20px; margin: 0 0 8px; }
 p { margin: 0 0 12px; }
 code, .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .86em; }
 code { background: var(--code-bg); padding: 1px 6px; border-radius: 5px; overflow-wrap: anywhere; }
-.eyebrow { font: 500 12px/1 "JetBrains Mono", monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
-.lede { font-size: 19px; color: var(--ink-2); max-width: 62ch; }
+.lede { font-size: 19px; color: var(--ink-2); }
 .muted { color: var(--ink-3); }
 section { margin-top: 72px; }
 .sec-head { display: flex; gap: 16px; align-items: baseline; border-bottom: 1px solid var(--rule); padding-bottom: 12px; margin-bottom: 24px; }
 .sec-num { font: 500 13px "JetBrains Mono", monospace; color: var(--accent); }
 .sec-head p { margin: 4px 0 0; color: var(--ink-2); }
 
-nav.toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
-nav.toc a { color: var(--ink-2); text-decoration: none; font-size: 14px; border: 1px solid var(--rule); padding: 6px 12px; border-radius: 999px; background: var(--paper); }
-nav.toc a:hover { border-color: var(--accent); color: var(--accent); }
 
-.verdict { margin-top: 36px; background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; box-shadow: var(--shadow); padding: 28px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 28px; }
-.verdict > * { min-width: 0; }
-.verdict .big { font-family: Fraunces, serif; font-size: 22px; line-height: 1.25; margin-bottom: 12px; }
-.verdict pre { margin: 0; }
+.verdict { margin-top: 36px; background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; box-shadow: var(--shadow); padding: 28px; }
+.verdict .big { font-family: Fraunces, serif; font-size: 22px; line-height: 1.25; margin: 4px 0 18px; text-align: center; }
+.anno { --cw: 8.1px; margin-top: 24px; background: var(--code-bg); border-radius: 12px; padding: 4px 0 16px; }
+.anno h3 { font-size: 17px; margin: 0; padding: 14px 18px 8px; }
+.anno h3 + pre { margin-top: 0; }
+.anno pre { margin: 0; padding: 0 18px; border-radius: 0; background: none; }
+.anno .token.attr-name.hl { color: var(--accent); background: var(--accent-soft); border-radius: 4px; box-shadow: 0 0 0 2px var(--accent-soft); }
+.tip { position: relative; width: fit-content; max-width: min(56ch, calc(100% - 36px)); margin: 8px 18px 10px min(calc(18px + var(--in) * var(--cw) - 10px), 40%); padding: 8px 12px; background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; box-shadow: var(--shadow); font: 13.5px/1.45 Inter, system-ui, sans-serif; color: var(--ink-2); }
+.tip::before { content: ""; position: absolute; top: -6px; left: 14px; width: 10px; height: 10px; background: var(--paper); border-left: 1px solid var(--rule); border-top: 1px solid var(--rule); transform: rotate(45deg); }
+.tip code { color: var(--accent); background: var(--accent-soft); }
 
 .grid { display: grid; gap: 16px; }
 .grid > * { min-width: 0; }
@@ -104,16 +63,9 @@ nav.toc a:hover { border-color: var(--accent); color: var(--accent); }
 .g2 { grid-template-columns: repeat(2, 1fr); }
 .card { background: var(--paper); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; }
 .card p:last-child { margin-bottom: 0; }
-.card .k { font: 500 12px "JetBrains Mono", monospace; color: var(--accent); margin-bottom: 8px; display: block; }
+.card .feat { font: 500 12px/1.5 "JetBrains Mono", monospace; color: var(--ink-3); margin: 14px 0 0; }
 .card h3 a { color: inherit; text-decoration: none; }
 .card h3 a:hover { color: var(--accent); }
-
-.pass { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 8px 0 24px; border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; background: var(--paper); }
-.pass div { padding: 16px; border-right: 1px solid var(--rule); position: relative; min-width: 0; }
-.pass div:last-child { border-right: 0; }
-.pass .t { font-family: Fraunces, serif; font-size: 18px; display: block; margin-bottom: 4px; }
-.pass span:not(.t) { font-size: 14px; color: var(--ink-2); }
-.pass i { font: normal 500 11px "JetBrains Mono", monospace; color: var(--accent); }
 
 .pill { display: inline-block; font: 600 11px/1 Inter, sans-serif; letter-spacing: .04em; padding: 5px 9px; border-radius: 999px; white-space: nowrap; }
 .pill.good { background: var(--good-soft); color: var(--good); }
@@ -124,14 +76,13 @@ nav.toc a:hover { border-color: var(--accent); color: var(--accent); }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .split > * { min-width: 0; }
 .card.good-edge { border-top: 3px solid var(--good); }
-.card.bad-edge { border-top: 3px solid var(--bad); }
 .card.mid-edge { border-top: 3px solid var(--mid); }
 
 .callout { margin-top: 20px; padding: 16px 20px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 12px 12px 0; }
 .callout p:last-child { margin: 0; }
 
-pre { background: var(--code-bg); border-radius: 12px; padding: 16px 18px; overflow-x: auto; font: 13.5px/1.55 "JetBrains Mono", monospace; margin: 12px 0 0; max-width: 100%; }
-pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+pre { background: var(--code-bg); border-radius: 12px; padding: 16px 18px; white-space: pre-wrap; overflow-wrap: anywhere; font: 13.5px/1.55 "JetBrains Mono", monospace; margin: 12px 0 0; max-width: 100%; }
+pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: anywhere; }
 
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 .btn { display: inline-block; font: 600 15px/1 Inter, sans-serif; padding: 12px 18px; border-radius: 999px; text-decoration: none; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); }
@@ -139,104 +90,122 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: norm
 .btn:hover { border-color: var(--accent); }
 
 [item][template], [hidden] { display: none !important; }
-#hero-demo form { margin: 0 0 8px; }
-#hero-demo input:not([type]) { width: 100%; font: inherit; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--bg); color: var(--ink); }
-#hero-demo ul { list-style: none; margin: 0 0 12px; padding: 0; }
-#hero-demo li { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--rule); }
-#hero-demo li input { accent-color: var(--accent); width: 17px; height: 17px; margin: 0; flex: none; }
-#hero-demo li span { flex: 1; min-width: 0; overflow-wrap: anywhere; outline: none; }
-#hero-demo li input:checked + span { text-decoration: line-through; color: var(--ink-3); }
-#hero-demo li button { flex: none; font: 500 13px "JetBrains Mono", monospace; color: var(--ink-3); background: none; border: 1px solid var(--rule); border-radius: 8px; padding: 2px 8px; cursor: pointer; }
-#hero-demo li button:hover { color: var(--bad); border-color: var(--bad); }
-#hero-demo output { font: 500 13px "JetBrains Mono", monospace; color: var(--ink-2); }
+#hero-demo { --frame: color-mix(in oklab, var(--paper), var(--ink) 5%); --frame-rule: color-mix(in oklab, var(--rule), var(--ink) 8%); display: block; max-width: 440px; margin: 0 auto; padding: 8px 22px 16px; background: var(--frame); border: 1px solid var(--frame-rule); border-radius: 16px; box-shadow: var(--shadow), inset 0 1px 0 color-mix(in oklab, var(--frame), white 6%); }
+#hero-demo ul { list-style: none; margin: 0 0 14px; padding: 0; }
+#hero-demo li { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--frame-rule); }
+#hero-demo li input { accent-color: var(--accent); width: 18px; height: 18px; margin: 0; flex: none; cursor: pointer; }
+#hero-demo li span { flex: 1; min-width: 0; overflow-wrap: anywhere; outline: none; transition: color .15s; }
+#hero-demo li input:checked + span { text-decoration: line-through; text-decoration-color: var(--ink-3); color: var(--ink-3); }
+#hero-demo form { margin: 0; }
+#hero-demo input:not([type]) { width: 100%; font: inherit; padding: 10px 14px; border: 1px solid var(--frame-rule); border-radius: 10px; background: var(--paper); color: var(--ink); outline: none; transition: border-color .15s, box-shadow .15s; }
+#hero-demo input:not([type]):focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#hero-demo input:not([type])::placeholder { color: var(--ink-3); }
+#hero-demo output { display: block; margin-top: 14px; text-align: center; font: 500 12.5px "JetBrains Mono", monospace; color: var(--ink-3); }
 
 .foot { margin-top: 72px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--ink-3); }
 
 @media (max-width: 760px) {
   .wrap { padding: 36px 16px 72px; }
-  .verdict, .g3, .g2, .split { grid-template-columns: 1fr; }
+  .g3, .g2, .split { grid-template-columns: 1fr; }
   .verdict { padding: 18px; }
-  .pass { grid-template-columns: 1fr 1fr; }
-  .pass div:nth-child(2) { border-right: 0; }
-  .pass div:nth-child(-n+2) { border-bottom: 1px solid var(--rule); }
+  #hero-demo { padding: 6px 16px 14px; }
   .sec-head { flex-direction: column; gap: 4px; }
   pre { font-size: 12.5px; padding: 14px; }
+  .anno { --cw: 7.5px; }
+  .anno pre { padding: 0 14px; }
+  .anno h3 { padding: 14px 14px 8px; }
 }
+</style>
+<style>
+.vis{margin:24px 0 28px;padding:18px;border:1px solid var(--rule);background:var(--paper);border-radius:8px}
+.vis svg{display:block;width:100%;height:auto}
+.vis figcaption{font:14px/1.5 var(--sans-ui);color:var(--ink-3);margin-top:10px}
+.vis svg text{fill:var(--ink);font-family:var(--serif);font-size:14px}
+.vis svg .t-s{font-size:12.5px}
+.vis svg .t-m{fill:var(--ink-3)}
+.vis svg .t-b{font-weight:600}
+.vis svg .t-c{font-family:var(--mono-ui);font-size:11.5px;font-variant-ligatures:none;font-feature-settings:"calt" 0,"liga" 0}
+.vis svg .t-keep{fill:var(--good)}
+.vis svg .t-acc{fill:var(--accent)}
+.vis svg .box{fill:var(--paper);stroke:var(--ink-3);stroke-width:1.5}
+.vis svg .pane{fill:var(--code-bg);stroke:var(--rule);stroke-width:1}
+.vis svg .keep{fill:var(--good-soft);stroke:var(--good);stroke-width:1.2}
+.vis svg .acc{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.2}
+.vis svg .ghost{fill:none;stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:4 3;opacity:.75}
+.vis svg .x{stroke:var(--bad);stroke-width:1.8}
+.vis svg .arr{fill:none;stroke:var(--ink-3);stroke-width:1.5}
+.vis svg .link{fill:none;stroke:var(--good);stroke-width:1.2;stroke-dasharray:3 3}
+.vis svg .ahead{fill:var(--ink-3)}
+.vis svg .sapbox{fill:var(--code-bg)}
+.vis svg .tag{fill:var(--code-bg);stroke:var(--ink-3);stroke-width:1.5}
+.vis svg .changed{fill:var(--good-soft);stroke:var(--accent);stroke-width:2}
+.vis svg .arr-acc{fill:none;stroke:var(--accent);stroke-width:1.6}
+.vis svg .ahead-acc{fill:var(--accent)}
+@media (max-width:760px){.vis{padding:12px}}
 </style>
 </head>
 <body>
+<header class="site-nav">
+  <div class="nav-inner">
+    <a class="brand" href="./"><img src="./favicon.svg" alt="" width="24" height="24">sapjs</a>
+    <nav>
+      <a href="./guide.html">Guide</a>
+      <a href="./how-it-works.html">How it works</a>
+      <a href="./demos.html">Demos</a>
+      <a href="./llms.txt">llms.txt</a>
+      <a href="https://github.com/panphora/sapjs">GitHub</a>
+    </nav>
+  </div>
+</header>
 <div class="wrap">
 
 <header id="top">
-  <div class="eyebrow">sapjs · reactive HTML in one file</div>
   <h1>A script tag that makes one HTML file a working app</h1>
-  <p class="lede">You have a checklist in an HTML file, and you want it to count what is left. sapjs is a script tag that does that with attributes. Each task is an element, and the count is a formula in a <code>text=</code> attribute. Every change makes sapjs re-read the page and update the count.</p>
-  <nav class="toc">
-    <a href="#when">When to use it</a>
-    <a href="#build">What you can build</a>
-    <a href="#how">How it works</a>
-    <a href="#limits">Where it stops</a>
-    <a href="#start">Start</a>
-  </nav>
+  <p class="lede">For a small app that lives in one HTML file and keeps its data as elements in that file. Stores all its state in the DOM.</p>
 </header>
 
 <div class="verdict" id="demo">
-  <div>
-    <div class="big">A todo app. This box is running it.</div>
+  <div class="big">A sapjs todo app.</div>
 <main sap id="hero-demo">
-  <form trigger-add="todos">
-    <input bind="title" placeholder="Add a task" required>
-  </form>
   <ul items="todos">
     <li item template>
       <input type="checkbox" bind="done" persist>
-      <span bind="title" contenteditable="plaintext-only"></span>
-      <button trigger-remove>x</button>
+      <span bind="title"></span>
     </li>
-    <li item>
-      <input type="checkbox" bind="done" persist checked>
-      <span bind="title" contenteditable="plaintext-only">Buy milk</span>
-      <button trigger-remove>x</button>
-    </li>
-    <li item>
-      <input type="checkbox" bind="done" persist>
-      <span bind="title" contenteditable="plaintext-only">Call the landlord</span>
-      <button trigger-remove>x</button>
-    </li>
+    <li item><input type="checkbox" bind="done" persist checked> <span bind="title">Buy milk</span></li>
+    <li item><input type="checkbox" bind="done" persist> <span bind="title">Call the landlord</span></li>
   </ul>
+  <form trigger-add="todos">
+    <input bind="title" placeholder="Add a task" required>
+  </form>
   <output text="plural(count(state.todos, t => !t.done), 'task', 'tasks') + ' left'">1 task left</output>
 </main>
-    <p class="muted" style="margin-top:16px">Check a box and the count drops. Inspect that checkbox and it now carries a <code>checked</code> attribute, because <code>persist</code> writes the value into the markup. Add a task and a new <code>&lt;li&gt;</code> joins the list. This page runs no JavaScript of its own, only sap.min.js.</p>
-  </div>
-  <div>
-<pre><code>&lt;main sap id="hero-demo"&gt;
-  &lt;form trigger-add="todos"&gt;
-    &lt;input bind="title" placeholder="Add a task" required&gt;
-  &lt;/form&gt;
-  &lt;ul items="todos"&gt;
-    &lt;li item template&gt;
-      &lt;input type="checkbox" bind="done" persist&gt;
-      &lt;span bind="title" contenteditable="plaintext-only"&gt;&lt;/span&gt;
-      &lt;button trigger-remove&gt;x&lt;/button&gt;
+  <div class="anno" id="hero-code">
+    <h3>The tasks are elements</h3>
+<pre><code class="language-html hero-src" data-hl="sap">&lt;main sap id="hero-demo"&gt;</code></pre>
+    <div class="tip" style="--in:6"><code>sap</code> marks the app. sapjs reads everything inside it again after each change.</div>
+<pre><code class="language-html hero-src" data-hl="items">  &lt;ul items="todos"&gt;</code></pre>
+    <div class="tip" style="--in:6"><code>items</code> names a list. Each child marked <code>item</code> is one task.</div>
+<pre><code class="language-html hero-src" data-hl="template">    &lt;li item template&gt;</code></pre>
+    <div class="tip" style="--in:13"><code>template</code> is the blank task that every new one is copied from.</div>
+<pre><code class="language-html hero-src" data-hl="bind persist">      &lt;input type="checkbox" bind="done" persist&gt;</code></pre>
+    <div class="tip" style="--in:29"><code>bind</code> makes the checkbox a field of the task. <code>persist</code> writes its checked state into the markup, so saving the file keeps it.</div>
+<pre><code class="language-html hero-src">      &lt;span bind="title"&gt;&lt;/span&gt;
     &lt;/li&gt;
-    &lt;li item&gt;
-      &lt;input type="checkbox" bind="done" persist checked&gt;
-      &lt;span bind="title" contenteditable="plaintext-only"&gt;Buy milk&lt;/span&gt;
-      &lt;button trigger-remove&gt;x&lt;/button&gt;
-    &lt;/li&gt;
-    &lt;li item&gt;
-      &lt;input type="checkbox" bind="done" persist&gt;
-      &lt;span bind="title" contenteditable="plaintext-only"&gt;Call the landlord&lt;/span&gt;
-      &lt;button trigger-remove&gt;x&lt;/button&gt;
-    &lt;/li&gt;
-  &lt;/ul&gt;
-  &lt;output text="plural(count(state.todos, t =&gt; !t.done), 'task', 'tasks') + ' left'"&gt;1 task left&lt;/output&gt;
-&lt;/main&gt;</code></pre>
-    <p class="muted" style="margin-top:10px">That is the whole app. The tasks are <code>&lt;li&gt;</code> elements. The count is the formula in one <code>text=</code> attribute, and the text inside <code>&lt;output&gt;</code> is its result.</p>
+    &lt;li item&gt;&lt;input type="checkbox" bind="done" persist checked&gt; &lt;span bind="title"&gt;Buy milk&lt;/span&gt;&lt;/li&gt;
+    &lt;li item&gt;&lt;input type="checkbox" bind="done" persist&gt; &lt;span bind="title"&gt;Call the landlord&lt;/span&gt;&lt;/li&gt;
+  &lt;/ul&gt;</code></pre>
+    <h3>Adding a task</h3>
+<pre><code class="language-html hero-src" data-hl="trigger-add">  &lt;form trigger-add="todos"&gt;</code></pre>
+    <div class="tip" style="--in:8"><code>trigger-add</code> copies the template into the list when the form is submitted, fills in the title you typed, and clears the form.</div>
+<pre><code class="language-html hero-src">    &lt;input bind="title" placeholder="Add a task" required&gt;
+  &lt;/form&gt;</code></pre>
+    <h3>The count</h3>
+<pre><code class="language-html hero-src" data-hl="text">  &lt;output text="plural(count(state.todos, t =&gt; !t.done), 'task', 'tasks') + ' left'"&gt;1 task left&lt;/output&gt;</code></pre>
+    <div class="tip" style="--in:10"><code>text</code> holds a formula. sapjs reruns it after every change and writes the result inside the element, where it saves with the file.</div>
+<pre><code class="language-html hero-src">&lt;/main&gt;</code></pre>
   </div>
 </div>
-
-<p style="margin-top:20px">sapjs runs in any current browser from one script tag. Saving needs ClayJS on a host that accepts saves: HTML Clay, Hyperclay Local or hyperclay.com.</p>
 
 <div class="actions">
   <a class="btn primary" href="./guide.html">Build an app with the guide</a>
@@ -244,32 +213,107 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: norm
 </div>
 
 <section id="when">
-  <div class="sec-head"><span class="sec-num">01</span><div><h2>When you would use it</h2><p>You want a small tool that is one file you own.</p></div></div>
+  <div class="sec-head"><span class="sec-num">01</span><div><h2>When to use it</h2><p>A reading log, kept as one file.</p></div></div>
 
-  <p>I think sapjs works best when the interface and the data can both live in one file. You can open it in a text editor, change a line, and it still works.</p>
+  <p>Say you keep a reading log as one HTML file. Each book is a <code>&lt;tr&gt;</code> in a table. The day you started and the day you finished are attributes on that row. An <code>&lt;output&gt;</code> under the table shows how many books you finished. Open the file in a text editor and every book is there as markup.</p>
 
-  <div class="grid g3">
-    <div class="card"><span class="k">the file is the app</span><h3>Records are markup</h3><p>Each record is an element, and each field is an attribute or its text. Put <code>persist</code> on each control you type into or check. On a host that accepts saves, saving the page then saves every record. A saved file already holds its computed numbers in the markup, so it shows them before any script runs.</p></div>
-    <div class="card"><span class="k">any change is input</span><h3>Every change takes the same path</h3><p>Live sync is ClayJS keeping open tabs and devices in step. A keystroke, an edit to the markup in devtools and a live-sync merge from another tab are all changes to the page. sapjs re-reads the page after each of these changes. One exception: after an undo or redo, a control you typed into or checked keeps your value, and sapjs counts that value, until the short re-sync script in <a href="./guide.html#8-work-with-clayjs">section 8 of the guide</a> runs.</p></div>
-    <div class="card"><span class="k">no build</span><h3>One script tag</h3><p>About 59 KB minified and about 20 KB gzipped. No bundler, no JSX, no compile step. The file opens straight from disk.</p></div>
-    <div class="card"><span class="k">loud errors</span><h3>Errors name the element</h3><p>Every error sapjs logs has a code and the element's CSS path. Write to a name of four or more letters that is a letter or two off a declared field and it prints <code>E12</code> with <code>did you mean</code>; any other new name becomes a new field. A misspelled read in a plain <code>text=</code> paints a blank and logs nothing.</p></div>
-    <div class="card"><span class="k">views stay out</span><h3>Searching changes no saved bytes</h3><p>A <code>transient</code> field is one that is never saved. An <code>each=</code> attribute draws a view of a list. A transient field can hold the search text, and an <code>each=</code> view can draw the matching records. A ClayJS save leaves both out, so searching leaves the saved file as it was.</p></div>
-    <div class="card"><span class="k">ClayJS or alone</span><h3>Saves and syncs with ClayJS</h3><p>On a ClayJS host, the file saves itself in edit mode, and the <code>sync</code> plugin syncs it between tabs. When ClayJS syncs, sorts or undoes, sapjs recomputes. Without ClayJS it runs the same and saves nothing.</p></div>
-  </div>
+  <figure class="vis" id="vis-1">
+<svg viewBox="0 0 680 304" role="img" aria-label="Three book rows in the file, two with a finished date and one without, shown as the same three books in the browser with a count of 2 finished. Below, the formula in the output tag that produces that count.">
+<rect x="10" y="10" width="330" height="200" rx="8" class="box"/>
+<text x="26" y="38" class="t-b">reading-log.html</text>
+<text x="26" y="56" class="t-s t-m">the file, as markup</text>
+<rect x="26" y="68" width="298" height="28" rx="4" class="keep"/>
+<text x="38" y="87" class="t-c">&lt;tr data-finished="Sep 14"&gt;</text>
+<rect x="26" y="104" width="298" height="28" rx="4" class="keep"/>
+<text x="38" y="123" class="t-c">&lt;tr data-finished="Oct 2"&gt;</text>
+<rect x="26" y="140" width="298" height="28" rx="4" class="pane"/>
+<text x="38" y="159" class="t-c t-m">&lt;tr data-finished=""&gt;</text>
+
+<rect x="380" y="10" width="290" height="200" rx="8" class="box"/>
+<text x="396" y="38" class="t-b">in the browser</text>
+<text x="396" y="56" class="t-s t-m">the same rows, drawn</text>
+<rect x="396" y="68" width="258" height="28" rx="4" class="pane"/>
+<text x="408" y="87">Piranesi</text>
+<text x="642" y="87" text-anchor="end" class="t-s t-keep">finished Sep 14</text>
+<rect x="396" y="104" width="258" height="28" rx="4" class="pane"/>
+<text x="408" y="123">The Overstory</text>
+<text x="642" y="123" text-anchor="end" class="t-s t-keep">finished Oct 2</text>
+<rect x="396" y="140" width="258" height="28" rx="4" class="pane"/>
+<text x="408" y="159">Middlemarch</text>
+<text x="642" y="159" text-anchor="end" class="t-s t-m">reading</text>
+<rect x="396" y="174" width="258" height="28" rx="4" class="acc"/>
+<text x="408" y="193" class="t-b t-acc">2 finished</text>
+
+<line x1="324" y1="82" x2="396" y2="82" class="link"/>
+<line x1="324" y1="118" x2="396" y2="118" class="link"/>
+<line x1="324" y1="154" x2="396" y2="154" class="link"/>
+
+<text x="26" y="250" class="t-b">The count is a formula in the same file</text>
+<rect x="26" y="262" width="470" height="30" rx="4" class="acc"/>
+<text x="38" y="282" class="t-c">&lt;output text="count(state.books, b =&gt; b.finished) + ' finished'"&gt;</text>
+</svg>
+</figure>
+
+  <p>The count is a formula in an attribute on that <code>&lt;output&gt;</code>. Add a book or change a date, and sapjs re-reads the page and updates the count. Change a date by hand in devtools and the count updates, the same as after a click. Each change reads the books fresh from the rows, so there is no JavaScript copy to drift from the page. <a href="./how-it-works.html">How it works</a> shows each step of that re-read.</p>
+
+  <figure class="vis" id="vis-2">
+<svg viewBox="0 0 680 222" role="img" aria-label="Before: two of three books finished and the page shows 2 finished. Step 1, Middlemarch is finished. Then sapjs reads every row, counts 3 finished and paints the count. After: the page shows 3 finished.">
+<defs>
+<marker id="vis2-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" class="ahead"/></marker>
+</defs>
+<rect x="10" y="30" width="186" height="180" rx="8" class="box"/>
+<text x="24" y="54" class="t-b">before</text>
+<rect x="24" y="68" width="158" height="26" rx="4" class="keep"/>
+<text x="34" y="86" class="t-s">Piranesi</text><text x="172" y="86" text-anchor="end" class="t-s t-m">Sep 14</text>
+<rect x="24" y="100" width="158" height="26" rx="4" class="keep"/>
+<text x="34" y="118" class="t-s">The Overstory</text><text x="172" y="118" text-anchor="end" class="t-s t-m">Oct 2</text>
+<rect x="24" y="132" width="158" height="26" rx="4" class="pane"/>
+<text x="34" y="150" class="t-s">Middlemarch</text><text x="172" y="150" text-anchor="end" class="t-s t-m">no date</text>
+<rect x="24" y="168" width="158" height="28" rx="4" class="acc"/>
+<text x="34" y="187" class="t-b t-acc">2 finished</text>
+<line x1="198" y1="120" x2="224" y2="120" class="arr" marker-end="url(#vis2-ah)"/>
+<rect x="228" y="30" width="216" height="180" rx="10" class="box"/>
+<text x="256" y="54" class="t-s"><tspan class="t-acc">1</tspan><tspan dx="8">Middlemarch is finished</tspan></text>
+<rect x="240" y="83" width="192" height="110" rx="9" class="box sapbox"/>
+<text x="256" y="119" class="t-s"><tspan class="t-acc">2</tspan><tspan dx="8">reads every row</tspan></text>
+<text x="256" y="143" class="t-s"><tspan class="t-acc">3</tspan><tspan dx="8">counts: 3 finished</tspan></text>
+<text x="256" y="167" class="t-s"><tspan class="t-acc">4</tspan><tspan dx="8">paints the count</tspan></text>
+<rect x="302" y="72" width="68" height="22" rx="11" class="tag"/>
+<text x="336" y="87" text-anchor="middle" class="t-s t-b">sapjs</text>
+<line x1="446" y1="120" x2="480" y2="120" class="arr" marker-end="url(#vis2-ah)"/>
+<rect x="484" y="30" width="186" height="180" rx="8" class="box"/>
+<text x="498" y="54" class="t-b">after</text>
+<rect x="498" y="68" width="158" height="26" rx="4" class="keep"/>
+<text x="508" y="86" class="t-s">Piranesi</text><text x="646" y="86" text-anchor="end" class="t-s t-m">Sep 14</text>
+<rect x="498" y="100" width="158" height="26" rx="4" class="keep"/>
+<text x="508" y="118" class="t-s">The Overstory</text><text x="646" y="118" text-anchor="end" class="t-s t-m">Oct 2</text>
+<rect x="498" y="132" width="158" height="26" rx="4" class="changed"/>
+<text x="508" y="150" class="t-s">Middlemarch</text><text x="646" y="150" text-anchor="end" class="t-s t-acc">Oct 14</text>
+<rect x="498" y="168" width="158" height="28" rx="4" class="acc"/>
+<text x="508" y="187" class="t-b t-acc">3 finished</text>
+</svg>
+<figcaption>Add a finished date by a click, in devtools or in a text editor, and sapjs reads the rows again and paints the new count.</figcaption>
+</figure>
+
+  <p>The last count is written inside the <code>&lt;output&gt;</code> in the file, so it shows before any script runs.</p>
+
+  <p>I think sapjs works best when the interface and the data both fit in that one file. You edit the file and share it like any document. Add a finished date to a row in a text editor, open the file, and the count goes up by one. Send the file to a friend and they get the app with every book in it.</p>
+
+  <p>ClayJS is the library that saves an HTML file back to its host and syncs it between tabs. Saving takes ClayJS, or another client like it, on a host that accepts saves. Put <code>persist</code> on each input, textarea and select in a record, so what you type reaches the saved markup.</p>
 </section>
 
 <section id="build">
-  <div class="sec-head"><span class="sec-num">02</span><div><h2>What you can build</h2><p>Small tools you would keep in one file.</p></div></div>
+  <div class="sec-head"><span class="sec-num">02</span><div><h2>What you can build</h2><p>Small tools that live in one file.</p></div></div>
 
-  <p>The small line above each name lists the sapjs features that do the work.</p>
+  <p>The apps that fit are lists of records. An expense tracker is rows of expenses and a total. A board is columns of cards. With sapjs, each record is an element in the file, and each number is a formula in an attribute.</p>
 
   <div class="grid g3">
-    <div class="card"><span class="k">trigger-add · calc: · text:usd2</span><h3>Expense tracker</h3><p>A form adds an expense as a new row. A <code>calc:</code> attribute sums the amounts, and <code>text:usd2</code> paints the total as <code>$54.50</code>.</p></div>
-    <div class="card"><span class="k">nested items= · detail=</span><h3>Kanban board</h3><p>Columns hold cards as nested lists. Drag a card to another column with ClayJS <code>sortable</code> and each column's count updates. Click a card and a <code>&lt;dialog&gt;</code> opens to edit it.</p></div>
-    <div class="card"><span class="k">each= · transient · detail=</span><h3>Notes</h3><p>The notes are saved records. The list you see is an <code>each=</code> view, sorted by title and filtered by a search box. A <code>detail=</code> panel edits the open note.</p></div>
-    <div class="card"><span class="k">calc: · days() · count()</span><h3>Reading log</h3><p>Each book stores the day you started and the day you finished. <code>days()</code> shows how long each one took, and <code>count()</code> shows how many you finished.</p></div>
-    <div class="card"><span class="k">detail= · sort: · confirm=</span><h3>Contacts</h3><p>Click a name and a <code>detail=</code> form edits that contact. A <code>sort:</code> button sorts the list by any field, and <code>confirm=</code> asks before a delete.</p></div>
-    <div class="card"><span class="k">row calc: · sum() · move:</span><h3>Invoice</h3><p>Each line computes its own total. The invoice sums the lines and paints <code>$1,234.50</code>. <code>move:up</code> and <code>move:down</code> reorder the lines.</p></div>
+    <div class="card"><h3>Expense tracker</h3><p>A form adds an expense as a new row. A <code>calc:</code> attribute sums the amounts, and <code>text:usd2</code> paints the total as <code>$54.50</code>.</p><p class="feat">trigger-add · calc: · text:usd2</p></div>
+    <div class="card"><h3>Kanban board</h3><p>Columns hold cards as nested lists. Drag a card to another column with ClayJS <code>sortable</code>, and the move saves as the new order of the markup. Click a card and a <code>&lt;dialog&gt;</code> opens to edit it.</p><p class="feat">items= · detail=</p></div>
+    <div class="card"><h3>Notes</h3><p>The notes are saved records. The list you see is an <code>each=</code> view, sorted by title and filtered by a search box. The search box carries <code>transient</code>, an attribute that keeps the search text out of the saved file. A <code>detail=</code> panel edits the open note.</p><p class="feat">each= · transient · detail=</p></div>
+    <div class="card"><h3>Reading log</h3><p>Each book stores the day you started and the day you finished. <code>days()</code> shows how long each one took, and <code>count()</code> shows how many you finished.</p><p class="feat">calc: · days() · count()</p></div>
+    <div class="card"><h3>Contacts</h3><p>Click a name and a <code>detail=</code> form edits that contact. A <code>sort:</code> button sorts the list by any field, and <code>confirm=</code> asks before a delete.</p><p class="feat">detail= · sort: · confirm=</p></div>
+    <div class="card"><h3>Invoice</h3><p>Each line computes its own total. The invoice sums the lines and paints <code>$1,234.50</code>. <code>move:up</code> and <code>move:down</code> reorder the lines.</p><p class="feat">calc: · sum() · move:</p></div>
   </div>
 
   <div class="callout">
@@ -277,47 +321,31 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: norm
   </div>
 </section>
 
-<section id="how">
-  <div class="sec-head"><span class="sec-num">03</span><div><h2>How it works</h2><p>One change, one pass.</p></div></div>
-
-  <p>Check a box in the demo and sapjs runs one pass over the app.</p>
-  <div class="pass">
-    <div><i>1</i><span class="t">Intake</span><span>Read every field (<code>state=</code>, <code>bind</code>, <code>items=</code>) into fresh objects. A <code>state=</code> attribute declares a field on an element.</span></div>
-    <div><i>2</i><span class="t">Compute</span><span>Run the <code>calc:</code> fields in dependency order.</span></div>
-    <div><i>3</i><span class="t">Paint</span><span>Update <code>text</code>, <code>show</code>, <code>attr:</code> and <code>class:</code>. Write only what changed.</span></div>
-    <div><i>4</i><span class="t">Discard</span><span>Throw the objects away; the next pass rebuilds them, reading every saved field from the page.</span></div>
-  </div>
-
-  <p>Each pass rebuilds the app's data from the page, so no copy of the saved data in JavaScript can drift from it.</p>
-  <p>A paint writes only when the new value differs from the old one. The demo's file already said <code>1 task left</code>, so loading it changed nothing. The console reports it as <code>mount writes 0</code>.</p>
-  <p>React keeps its state in JavaScript and draws the DOM from it. In a file that saves itself, the DOM is what gets saved, and live sync rewrites it from outside. sapjs reads its state from there every time.</p>
-  <p><a href="./docs/sapjs-explained.html">Read how sapjs works in depth</a></p>
-</section>
-
 <section id="limits">
-  <div class="sec-head"><span class="sec-num">04</span><div><h2>Where it stops</h2><p>If your app looks like one of these, pick something else.</p></div></div>
+  <div class="sec-head"><span class="sec-num">03</span><div><h2>Where it struggles</h2><p>If your app looks like one of these, pick something else.</p></div></div>
   <div class="grid g2">
-    <div class="card bad-edge"><span class="k">size</span><h3>Thousands of records</h3><p>Each change re-reads the whole app, and every row is saved markup. I have tested apps with 500 records, and sapjs has a 1,000-record benchmark. Past that, measure before you build on it.</p></div>
-    <div class="card bad-edge"><span class="k">privacy</span><h3>Data some viewers must not see</h3><p>The data is in the markup. Anyone with the file has all of it.</p></div>
-    <div class="card bad-edge"><span class="k">shape</span><h3>Mostly a window onto a server</h3><p>If the records live behind an API, keeping them in the DOM gives you nothing back.</p></div>
-    <div class="card bad-edge"><span class="k">rich text</span><h3>An editor built on a rich-text library</h3><p>sapjs state is plain text. A rich-text editor goes inside a <code>sap-ignore</code> region, which sapjs does not read. An app built around such an editor ends up mostly editor code.</p></div>
+    <div class="card"><h3>Thousands of records</h3><p>Each change re-reads the whole app, and every row is saved markup. I have tested apps with 500 records, and sapjs has a 1,000-record benchmark. Past that, measure before you build on it.</p></div>
+    <div class="card"><h3>Data some viewers must not see</h3><p>The data is in the markup. Anyone with the file has all of it.</p></div>
+    <div class="card"><h3>Mostly a window onto a server</h3><p>If the records live behind an API, keeping them in the DOM gives you nothing back.</p></div>
+    <div class="card"><h3>An editor built on a rich-text library</h3><p>sapjs state is plain text. A rich-text editor goes inside an element with <code>sap-ignore</code>, an attribute that marks a region sapjs does not read. An app built around such an editor ends up mostly editor code.</p></div>
   </div>
   <div class="callout">
-    <p>Expressions compile with <code>new Function</code>, so a Content Security Policy has to allow <code>'unsafe-eval'</code>.</p>
+    <p>A page with a strict Content Security Policy must allow <code>'unsafe-eval'</code>, because sapjs compiles its formulas at runtime with <code>new Function</code>.</p>
   </div>
 </section>
 
 <section id="start">
-  <div class="sec-head"><span class="sec-num">05</span><div><h2>Start</h2><p>One script tag.</p></div></div>
+  <div class="sec-head"><span class="sec-num">04</span><div><h2>Start</h2><p>One script tag to run, two to save.</p></div></div>
 
   <div class="split">
     <div>
       <p>On its own, the app runs and recomputes. Nothing saves.</p>
-<pre><code>&lt;script src="https://cdn.jsdelivr.net/npm/@panphora/sapjs/dist/sap.min.js"&gt;&lt;/script&gt;</code></pre>
+<pre><code class="language-html">&lt;script src="https://cdn.jsdelivr.net/npm/@panphora/sapjs/dist/sap.min.js"&gt;&lt;/script&gt;</code></pre>
     </div>
     <div>
-      <p>With ClayJS, the file saves itself in edit mode on a host that accepts saves: HTML Clay, Hyperclay Local or hyperclay.com. A file opened from disk does not save. The <code>sync</code> plugin syncs it between tabs. Load sap.js after clay.js. If your app has inputs, also add the re-sync script from <a href="./guide.html#8-work-with-clayjs">section 8 of the guide</a>.</p>
-<pre><code>&lt;script src="https://clayjs.com/v1/clay.js?plugins=sync,sortable,undo"&gt;&lt;/script&gt;
+      <p>With ClayJS, the file saves itself on a host that accepts saves. Load <code>sap.js</code> after <code>clay.js</code>, and see <a href="./guide.html#8-work-with-clayjs">the guide</a> for the rest.</p>
+<pre><code class="language-html">&lt;html autosave&gt;
+&lt;script src="https://clayjs.com/v1/clay.js?plugins=sync,sortable,undo"&gt;&lt;/script&gt;
 &lt;script src="https://clayjs.com/v1/sap.js"&gt;&lt;/script&gt;</code></pre>
     </div>
   </div>
@@ -326,14 +354,6 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: norm
     <a class="btn primary" href="./guide.html">Build an app with the guide</a>
   </div>
 
-  <div class="grid g2" style="margin-top:24px">
-    <div class="card"><span class="k">demos.html</span><h3><a href="./demos.html">See the demos</a></h3><p>Interactive examples you can type into: a sortable table, a live filter, cross-field validation, tabs, and rows that move between lists.</p></div>
-    <div class="card"><span class="k">llms.txt</span><h3><a href="./llms.txt">The reference for agents</a></h3><p>Every attribute, helper and error code on one plain-text page. Point your agent here before it writes a file.</p></div>
-    <div class="card"><span class="k">sapjs-explained.html</span><h3><a href="./docs/sapjs-explained.html">How it works in depth</a></h3><p>The pass, what a save keeps, rich text and the fixed set of attributes, each with the mechanism behind it.</p></div>
-    <div class="card"><span class="k">github.com/panphora/sapjs</span><h3><a href="https://github.com/panphora/sapjs">The source</a></h3><p>sapjs is open source under MIT-0. You can copy it into your project with no attribution.</p></div>
-  </div>
-
-  <p style="margin-top:28px">If you build something with it, tell me what it is. Open an issue at <a href="https://github.com/panphora/sapjs/issues">github.com/panphora/sapjs</a>.</p>
 </section>
 
 <div class="foot">
@@ -342,5 +362,14 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: norm
 
 </div>
 <script src="./dist/sap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script>
+Prism.hooks.add("complete", function (env) {
+  var names = (env.element.dataset.hl || "").split(" ");
+  env.element.querySelectorAll(".token.attr-name").forEach(function (t) {
+    if (names.indexOf(t.textContent) > -1) t.classList.add("hl");
+  });
+});
+</script>
 </body>
 </html>
