@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building malleable document apps with sapjs</title>
+<meta name="description" content="How to build malleable document apps (trackers, boards, notes) in one HTML file with sapjs and ClayJS.">
+<link rel="canonical" href="https://saphtml.com/guide.html">
+<link rel="alternate" type="text/markdown" href="./guide.md">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #0a0c10; --panel: #11151c; --border: #232b38; --text: #d8dee9; --muted: #8b97a8;
+    --accent: #6ee7a8; --accent-dim: #3aa776; --code-bg: #0c0f15;
+    --mono: "Berkeley Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 32px 16px 96px; }
+  nav.top { display: flex; gap: 18px; font-family: var(--mono); font-size: 14px; margin-bottom: 32px; flex-wrap: wrap; }
+  nav.top b { color: var(--text); }
+  h1, h2, h3, h4 { line-height: 1.25; letter-spacing: -0.01em; position: relative; }
+  h1 { font-size: 34px; margin: 0 0 16px; }
+  h2 { font-size: 24px; margin: 56px 0 12px; padding-top: 16px; border-top: 1px solid var(--border); }
+  h3 { font-size: 19px; margin: 32px 0 8px; }
+  .anchor { position: absolute; left: -1em; color: var(--accent-dim); opacity: 0; font-weight: 400; }
+  h2:hover .anchor, h3:hover .anchor, h4:hover .anchor { opacity: 1; }
+  code { font-family: var(--mono); font-size: 0.9em; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+  pre.block { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.5; }
+  pre.block code { background: none; border: 0; padding: 0; font-size: inherit; }
+  table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; font-size: 14.5px; }
+  th, td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); }
+  blockquote { margin: 0; padding-left: 16px; border-left: 3px solid var(--accent-dim); color: var(--muted); }
+  details.toc { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; margin: 24px 0; }
+  details.toc summary { cursor: pointer; font-family: var(--mono); font-size: 14px; color: var(--muted); }
+  ul li:has(> input[type=checkbox]) { list-style: none; margin-left: -1.4em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="top"><a href="./"><b>sapjs</b></a><a href="./guide.md">guide.md</a><a href="./llms.txt">llms.txt</a><a href="./docs/sapjs-explained.html">explainer</a></nav>
+<details class="toc"><summary>Contents</summary><ol><li><a href="#1-the-one-rule">1. The one rule</a></li><li><a href="#2-when-to-use-sapjs">2. When to use sapjs</a></li><li><a href="#3-the-skeleton">3. The skeleton</a></li><li><a href="#4-designing-records">4. Designing records</a></li><li><a href="#5-views-are-projections">5. Views are projections</a></li><li><a href="#6-three-kinds-of-state">6. Three kinds of state</a></li><li><a href="#7-detail-views">7. Detail views</a></li><li><a href="#8-working-with-clayjs">8. Working with ClayJS</a></li><li><a href="#9-worked-apps">9. Worked apps</a></li><li><a href="#10-checklist-and-traps">10. Checklist and traps</a></li></ol></details>
+<h1>Building malleable document apps with sapjs</h1>
+<p>This guide is for a developer or an LLM building an app that lives in one HTML file: a tracker, a Kanban board, a notes list, a CRM. It says how to build such an app with sapjs well: where each piece of data goes, which sapjs features to reach for, and the traps. The attribute reference is <a href="https://saphtml.com/llms.txt"><code>llms.txt</code></a>. ClayJS, which saves the file, syncs it between tabs and gives it an edit mode, has its own <a href="https://clayjs.com/guide.md">complete guide</a>. Read this one first for the app, and the ClayJS guide for saving, sync and editing.</p>
+<p>Every worked app in section 9 runs in the sapjs test suite against the engine, so the code here is code that works.</p>
+<h2 id="1-the-one-rule"><a class="anchor" href="#1-the-one-rule">#</a>1. The one rule</h2>
+<p><strong>The saved DOM is the data.</strong> A malleable document app has no database and no JSON blob. Its records are elements in the file, its fields are attributes and text on those elements, and saving the page saves the app. sapjs adds the reactive part: it reads the page, computes what you declare, and paints the results back into the page.</p>
+<p>Three consequences shape every decision below:</p>
+<ul>
+<li><strong>Store a record once.</strong> One element per record, in one place. A second copy (a JSON mirror, a rendered duplicate) drifts the first time a merge or a hand edit touches one of them.</li>
+<li><strong>Everything else is derived.</strong> Counts, totals, filtered lists, the open card&#39;s editor: compute them from the records on every pass, never store them as data.</li>
+<li><strong>Per-tab state is not data.</strong> The search box, which card is open, which tab is selected: none of it belongs in the saved file.</li>
+</ul>
+<p>sapjs is built for this. It keeps no state of its own between passes: every change rebuilds the whole state tree by reading the live page, so a live-sync merge, an undo, a devtools edit and a keystroke are all the same thing, input to the next pass.</p>
+<h2 id="2-when-to-use-sapjs"><a class="anchor" href="#2-when-to-use-sapjs">#</a>2. When to use sapjs</h2>
+<p>Use sapjs for:</p>
+<ul>
+<li>totals, counts, averages and anything else computed from records;</li>
+<li>lists that are sorted, filtered or grouped views of records;</li>
+<li>forms that add records, and editors that change the selected record;</li>
+<li>show and hide rules, classes and attributes that depend on data.</li>
+</ul>
+<p>Write plain JavaScript (a <code>Sap(el)</code> call in a handler, or a small script) for:</p>
+<ul>
+<li>talking to the network, files or the clipboard;</li>
+<li>drawing on a canvas, or anything that needs a library;</li>
+<li>one-off commands such as an import.</li>
+</ul>
+<p>A good sapjs app has one <code>&lt;main sap&gt;</code> with no app code in it, plus a short script for those few commands. When an app grows a large render function, that is a sign a record field or an <code>each=</code> view was missed.</p>
+<h2 id="3-the-skeleton"><a class="anchor" href="#3-the-skeleton">#</a>3. The skeleton</h2>
+<p>With ClayJS (saving, sync, edit mode):</p>
+<pre class="block"><code class="language-html">&lt;!doctype html&gt;
+&lt;html lang="en"&gt;
+&lt;head&gt;
+  &lt;meta charset="utf-8"&gt;
+  &lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;
+  &lt;title&gt;Expenses&lt;/title&gt;
+  &lt;style&gt;
+    [item][template] { display: none }
+  &lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+  &lt;main id="app" sap&gt;
+    …
+  &lt;/main&gt;
+  &lt;script src="https://clayjs.com/v1/clay.js?plugins=sync,sortable,undo,indicator&amp;exclude=richclay"&gt;&lt;/script&gt;
+  &lt;script src="https://clayjs.com/v1/sap.js"&gt;&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+<p>Standalone, without saving: replace both script tags with <code>&lt;script src=&quot;https://cdn.jsdelivr.net/npm/@panphora/sapjs@0.5/dist/sap.min.js&quot;&gt;&lt;/script&gt;</code>.</p>
+<ul>
+<li>Hide template rows in your own CSS. sapjs adds the same rule at runtime, but the file renders before scripts run.</li>
+<li>Every <code>[sap]</code> root mounts by itself. There is no init call.</li>
+<li>Check it worked: the console prints one <code>sap ✓</code> line per app, <code>Sap.status().ok</code> is <code>true</code>, and no element carries <code>sap-error</code>. A <code>sap ✗</code> line names the element and the fix.</li>
+</ul>
+<h2 id="4-designing-records"><a class="anchor" href="#4-designing-records">#</a>4. Designing records</h2>
+<p>A record is one element with <code>item</code>, inside a container with <code>items=&quot;name&quot;</code>. Its fields are:</p>
+<table>
+<thead>
+<tr>
+<th>Field kind</th>
+<th>Declare it</th>
+<th>Read it as</th>
+<th>Saved as</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Text the user edits in place</td>
+<td><code>bind</code> on an input, textarea or text leaf inside the record</td>
+<td><code>item.title</code></td>
+<td>the control&#39;s value or text</td>
+</tr>
+<tr>
+<td>A value with no visible control</td>
+<td><code>state=&quot;data-due&quot;</code> on the record</td>
+<td><code>item.due</code></td>
+<td><code>data-due=&quot;2026-10-20&quot;</code></td>
+</tr>
+<tr>
+<td>A number</td>
+<td><code>state=&quot;data-points:num&quot;</code></td>
+<td><code>item.points</code></td>
+<td><code>data-points=&quot;3&quot;</code></td>
+</tr>
+<tr>
+<td>A yes/no flag CSS selects on</td>
+<td><code>state=&quot;data-done:presence&quot;</code></td>
+<td><code>item.done</code></td>
+<td><code>data-done</code> present or absent</td>
+</tr>
+<tr>
+<td>A yes/no value CSS compares</td>
+<td><code>state=&quot;data-flag:bool&quot;</code></td>
+<td><code>item.flag</code></td>
+<td><code>data-flag=&quot;true&quot;</code> or <code>&quot;false&quot;</code></td>
+</tr>
+<tr>
+<td>A nested list</td>
+<td><code>items=&quot;checks&quot;</code> on a child container</td>
+<td><code>item.checks</code></td>
+<td>child <code>[item]</code> elements</td>
+</tr>
+</tbody></table>
+<pre class="block"><code class="language-html">&lt;ol items="cards"&gt;
+  &lt;li item data-id="c-brief" state="data-due data-done:presence" data-due="2026-10-20"&gt;
+    &lt;span bind="title"&gt;Write the brief&lt;/span&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;</code></pre>
+<p>Rules that keep records healthy:</p>
+<ul>
+<li><strong>Give every record a <code>data-id</code>.</strong> It is the record&#39;s <code>$key</code>, and live sync pairs elements across tabs by it. Write <code>data-id=&quot;&quot;</code> on the template row; <code>$add</code> mints a fresh one for each new record, and fresh ids for every <code>id</code> and <code>data-id</code> inside it.</li>
+<li><strong>Prefer <code>data-*</code> attributes for fields without a control.</strong> They never collide with HTML&#39;s own attribute names, and <code>item.due</code> reads <code>data-due</code> the way <code>el.dataset</code> does.</li>
+<li><strong>Use <code>:presence</code> for flags.</strong> <code>[data-done]</code> selectors and <code>hasAttribute</code> then mean what they say. <code>:bool</code> writes the word <code>&quot;false&quot;</code>, which a presence selector still matches.</li>
+<li><strong>Field names are lowercase identifiers.</strong> HTML lowercases attribute names, and a hyphen in a name parses as subtraction, so <code>due-date</code> is a mount error. <code>data-due-date</code> is fine: it reads as <code>item.dueDate</code>.</li>
+<li><strong>Put <code>persist</code> on bound inputs in records</strong> when the app runs on ClayJS, so a typed value is written into the attribute the save captures.</li>
+</ul>
+<h3 id="nested-lists-and-shared-blueprints"><a class="anchor" href="#nested-lists-and-shared-blueprints">#</a>Nested lists and shared blueprints</h3>
+<p>A list can hold lists: lists hold cards, cards hold checklist items. Each nested list needs a blueprint to add from. Rather than repeating an <code>[item template]</code> row in every copy, write one shared blueprint anywhere in the app:</p>
+<pre class="block"><code class="language-html">&lt;template items="checks"&gt;
+  &lt;li item data-id="" state="data-done:presence"&gt;&lt;span bind="label"&gt;New item&lt;/span&gt;&lt;/li&gt;
+&lt;/template&gt;</code></pre>
+<p>Every <code>items=&quot;checks&quot;</code> list without its own template row clones from it, including lists that sit inside other blueprints.</p>
+<h2 id="5-views-are-projections"><a class="anchor" href="#5-views-are-projections">#</a>5. Views are projections</h2>
+<p>The records are the data. What the user looks at is often a view of them: the cards due this week, the notes matching a search, a card&#39;s checklist inside its editor. Build views with <code>each=</code>:</p>
+<pre class="block"><code class="language-html">&lt;ul each="state.cards.filter(c =&gt; !c.done).sort((a, b) =&gt; a.due.localeCompare(b.due))"&gt;
+  &lt;template&gt;
+    &lt;li&gt;&lt;input type="checkbox" bind="done"&gt; &lt;span text="item.title"&gt;&lt;/span&gt;&lt;/li&gt;
+  &lt;/template&gt;
+&lt;/ul&gt;</code></pre>
+<ul>
+<li>One row per array element, matched by <code>key=</code> (default <code>item.$key</code>), so rows are reused and moved, never rebuilt. Focus and scroll survive.</li>
+<li>View rows carry <code>clay=&quot;editor-ui&quot;</code>: they are never saved and never synced. Each tab draws its own.</li>
+<li><strong>A row that stands for a record edits that record.</strong> In the example, <code>bind=&quot;done&quot;</code> reads the card&#39;s <code>data-done</code> and writes it back. The rule is the same for <code>bind</code> and <code>set:</code>: a field the record owns goes to the record; anything else goes to the scope the list is drawn in. A <code>bind</code> that matches neither is error <code>E43</code> and writes nothing.</li>
+<li><code>trigger-remove</code> in a row removes the record, and <code>Sap(el)</code> in a row returns the record&#39;s proxy.</li>
+<li><code>calc:</code> does not run inside view rows. Compute on the record, or in the <code>each=</code> expression.</li>
+</ul>
+<p><strong>Filter with views, not by hiding records.</strong> <code>show=</code> on a saved record writes <code>hidden</code> into it, and under ClayJS that saves and syncs. Filter in the <code>each=</code> expression instead. If the records themselves are the visible list (a board you drag cards on), hide non-matching ones with a stylesheet painted inside a <code>clay=&quot;freeze&quot;</code> element (ClayJS guide 8.11), so the hiding rule is per tab.</p>
+<p><strong>Keep the records the main surface when the user edits structure.</strong> Dragging cards between lists, rich text and in-place editing all act on the elements they touch. View rows are not saved, so a drag inside a view moves nothing. Make the records themselves the board or the table, and use views for everything secondary.</p>
+<h2 id="6-three-kinds-of-state"><a class="anchor" href="#6-three-kinds-of-state">#</a>6. Three kinds of state</h2>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Example</th>
+<th>Where it lives</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Data</td>
+<td>a card&#39;s title, an expense amount</td>
+<td>record fields (section 4)</td>
+</tr>
+<tr>
+<td>Per-tab</td>
+<td>the search text, the open card, the active tab</td>
+<td><code>transient</code> fields, or the URL hash</td>
+</tr>
+<tr>
+<td>Derived</td>
+<td>totals, counts, the filtered list</td>
+<td><code>calc:</code>, paints and <code>each=</code></td>
+</tr>
+</tbody></table>
+<p><strong>Per-tab state</strong> is declared <code>transient</code>: it drives the app and is never written into the file.</p>
+<pre class="block"><code class="language-html">&lt;main sap state="q:transient open:transient tab:transient=board"&gt;
+  &lt;input type="search" bind="q" transient&gt;</code></pre>
+<p><code>transient</code> on a bound control keeps its value out of the file too. A field that should survive a reload or be shareable as a link belongs in the URL hash instead (<code>clay-router</code>, section 8).</p>
+<p><strong>Derived values</strong> are paints:</p>
+<pre class="block"><code class="language-html">&lt;output calc:total="sum(state.expenses, 'amount')" text:usd2="state.total"&gt;$54.50&lt;/output&gt;
+&lt;span text="count(item.checks, c =&gt; c.done) + '/' + item.checks.length"&gt;1/2&lt;/span&gt;</code></pre>
+<p><strong>Paint the computed values into the file.</strong> When the saved file already shows <code>$54.50</code>, the first pass changes nothing, and sapjs reports <code>mount writes 0</code>. A mismatch is not an error, but under ClayJS a write at load is an edit. A paint that is the same in every tab (a total, a count) is ordinary saved content. A paint that differs per tab (anything from today&#39;s date, the locale, the search box) goes in a <code>clay=&quot;freeze&quot;</code> element, so each tab fills its own copy and nothing saves or syncs.</p>
+<h2 id="7-detail-views"><a class="anchor" href="#7-detail-views">#</a>7. Detail views</h2>
+<p>An app usually needs a place to edit one record in full. There are two good shapes.</p>
+<p><strong>The record is the modal (ClayJS apps with rich detail).</strong> Keep the detail fields inside the record element, hidden on the face by CSS, and show the record itself as an overlay when it is open. Open state is the URL hash: <code>route=&quot;card&quot;</code> on the list, <code>clay.route.set({ card: id })</code> to open, and CSS on <code>[route-active]</code>. Nothing is copied, a peer&#39;s edit to the open card appears in place, rich-text toolbars work, and Back closes it. This is how the starter Kanban template works, and ClayJS guide 9.5 covers it.</p>
+<p><strong>A <code>detail=</code> editor (plain fields, any number of panels).</strong> <code>detail=&quot;LIST by KEY&quot;</code> projects one record into a panel or a dialog. Controls inside are painted from the record and write through to it:</p>
+<pre class="block"><code class="language-html">&lt;main sap state="open:transient"&gt;
+  …
+  &lt;div clay="freeze"&gt;
+    &lt;dialog detail="lists.cards by state.open"&gt;
+      &lt;input bind="title"&gt;
+      &lt;form method="dialog"&gt;&lt;button&gt;Close&lt;/button&gt;&lt;/form&gt;
+    &lt;/dialog&gt;
+  &lt;/div&gt;
+&lt;/main&gt;</code></pre>
+<ul>
+<li>The path walks through nested lists: <code>lists.cards</code> finds a card in any list.</li>
+<li>On a <code>&lt;dialog&gt;</code>, sapjs calls <code>showModal()</code> when a record matches and <code>close()</code> when none does. A user close clears a plain <code>state.NAME</code> key, so the next click on the same record opens it again.</li>
+<li><strong>Wrap the dialog in <code>clay=&quot;freeze&quot;</code></strong> so the <code>open</code> attribute that <code>showModal()</code> writes is never saved (<code>W31</code> warns otherwise). Not <code>clay=&quot;editor-ui&quot;</code>: that removes the dialog from the file.</li>
+<li><strong>Make the key <code>transient</code></strong>, or a saved selection reopens the dialog for every visitor and opens it in every peer&#39;s tab.</li>
+<li>An <code>each=</code> inside the editor shows the record&#39;s nested list, and its rows edit those nested records. A <code>&lt;form trigger-add&gt;</code> inside the editor adds to the open record&#39;s list.</li>
+<li>A <code>&lt;div&gt;</code> or <code>&lt;aside&gt;</code> with <code>detail=</code> toggles <code>hidden</code> instead: use it for a side panel.</li>
+</ul>
+<p>Pick the record-as-modal shape when the detail holds rich text, needs a shareable link, or is the main editing surface. Pick <code>detail=</code> when the fields are plain controls, or the same record is edited in two places at once.</p>
+<h2 id="8-working-with-clayjs"><a class="anchor" href="#8-working-with-clayjs">#</a>8. Working with ClayJS</h2>
+<p>sapjs and ClayJS were built for each other. What happens without any code:</p>
+<ul>
+<li>sapjs rides the ClayJS mutation hub, so its paints never trigger an autosave or a dirty mark by themselves.</li>
+<li>A live-sync merge, an undo and a redo each re-derive the whole app.</li>
+<li>A route change (<code>clay:route</code>) re-derives too, so expressions may read the hash.</li>
+</ul>
+<p>What you do:</p>
+<ul>
+<li><strong><code>persist</code> on bound inputs in records</strong>, so typed values reach the saved attributes.</li>
+<li><strong>Re-sync inputs after undo.</strong> sapjs reads a control&#39;s live value, and undo restores the attribute, not the live value. ClayJS guide 5.3 has the <code>syncControls</code> snippet to call on <code>undo</code> and <code>redo</code>.</li>
+<li><strong>Freeze per-tab paints and editors</strong> (sections 6 and 7).</li>
+<li><strong>Regions stack.</strong> View rows are <code>editor-ui</code> already. An editor dialog goes in <code>freeze</code>. Chrome you create at runtime goes in <code>editor-ui</code>, cloned from an unmarked <code>&lt;template&gt;</code>.</li>
+<li><strong>Edit-mode-only controls</strong>: <code>show-when:editmode=&quot;true&quot;</code> shows an element only to the owner.</li>
+<li><strong>Reading the route:</strong> <code>detail=&quot;lists.cards by (clay.route ? clay.route.get().card : &#39;&#39;)&quot;</code> keys an editor on the hash. A user close does not clear a key like that, so close it yourself: <code>onclose=&quot;clay.route.set({ card: null })&quot;</code> on the dialog.</li>
+</ul>
+<h2 id="9-worked-apps"><a class="anchor" href="#9-worked-apps">#</a>9. Worked apps</h2>
+<p>Each app below is a complete <code>&lt;main sap&gt;</code>, written with its computed values already painted, so it mounts with zero writes. Wrap it in the skeleton from section 3.</p>
+<h3 id="9-1-expense-tracker"><a class="anchor" href="#9-1-expense-tracker">#</a>9.1 Expense tracker</h3>
+<p>Records in a table, a form that adds them, and totals.</p>
+<pre class="block"><code class="language-html">&lt;main id="app" sap&gt;
+  &lt;form trigger-add="expenses"&gt;
+    &lt;input bind="what" placeholder="What" required&gt;
+    &lt;input type="number" step="0.01" bind="amount" placeholder="0.00" required&gt;
+    &lt;select bind="category"&gt;&lt;option&gt;food&lt;/option&gt;&lt;option&gt;travel&lt;/option&gt;&lt;option&gt;other&lt;/option&gt;&lt;/select&gt;
+    &lt;button&gt;Add&lt;/button&gt;
+  &lt;/form&gt;
+  &lt;table&gt;
+    &lt;tbody items="expenses"&gt;
+      &lt;tr item template data-id="" state="data-category"&gt;
+        &lt;td&gt;&lt;input bind="what" persist&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;input type="number" step="0.01" bind="amount" persist&gt;&lt;/td&gt;
+        &lt;td text="item.category"&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;button trigger-remove confirm="Delete this expense?"&gt;×&lt;/button&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr item data-id="e-groc" state="data-category" data-category="food"&gt;
+        &lt;td&gt;&lt;input bind="what" persist value="Groceries"&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;input type="number" step="0.01" bind="amount" persist value="42.5"&gt;&lt;/td&gt;
+        &lt;td text="item.category"&gt;food&lt;/td&gt;
+        &lt;td&gt;&lt;button trigger-remove confirm="Delete this expense?"&gt;×&lt;/button&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr item data-id="e-train" state="data-category" data-category="travel"&gt;
+        &lt;td&gt;&lt;input bind="what" persist value="Train"&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;input type="number" step="0.01" bind="amount" persist value="12"&gt;&lt;/td&gt;
+        &lt;td text="item.category"&gt;travel&lt;/td&gt;
+        &lt;td&gt;&lt;button trigger-remove confirm="Delete this expense?"&gt;×&lt;/button&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+    &lt;/tbody&gt;
+  &lt;/table&gt;
+  &lt;p&gt;
+    Total &lt;output id="total" calc:total="sum(state.expenses, 'amount')" text:usd2="state.total"&gt;$54.50&lt;/output&gt;,
+    food &lt;output id="food" text:usd2="sum(state.expenses.filter(e =&gt; e.category === 'food'), 'amount')"&gt;$42.50&lt;/output&gt;
+  &lt;/p&gt;
+&lt;/main&gt;</code></pre>
+<ul>
+<li>The form is a composer: on submit it clones the template and copies each of its controls into the new record&#39;s field of the same name, including the <code>data-category</code> field the record declares. Then it clears itself and refocuses the first field.</li>
+<li><code>amount</code> is a number because its input is <code>type=&quot;number&quot;</code>.</li>
+<li><code>confirm=</code> asks before deleting (<code>clay.confirm</code> under ClayJS, <code>window.confirm</code> alone).</li>
+</ul>
+<h3 id="9-2-kanban-board"><a class="anchor" href="#9-2-kanban-board">#</a>9.2 Kanban board</h3>
+<p>Lists of cards, a checklist per card, shared blueprints, and a card editor in a dialog.</p>
+<pre class="block"><code class="language-html">&lt;main id="board" sap state="open:transient"&gt;
+  &lt;section items="lists"&gt;
+    &lt;div class="list" item data-id="l-todo"&gt;
+      &lt;h2 bind="name"&gt;To do&lt;/h2&gt;
+      &lt;ol class="cards" items="cards" sortable="cards"&gt;
+        &lt;li class="card" item data-id="c-brief" state="data-title" data-title="Write the brief" set:open="item.$key"&gt;
+          &lt;span text="item.title"&gt;Write the brief&lt;/span&gt;
+          &lt;small text="count(item.checks, c =&gt; c.done) + '/' + item.checks.length"&gt;1/2&lt;/small&gt;
+          &lt;ul class="checks" hidden items="checks"&gt;
+            &lt;li item data-id="k-outline" state="data-label data-done:presence" data-label="Outline" data-done&gt;&lt;/li&gt;
+            &lt;li item data-id="k-draft" state="data-label data-done:presence" data-label="Draft"&gt;&lt;/li&gt;
+          &lt;/ul&gt;
+        &lt;/li&gt;
+      &lt;/ol&gt;
+      &lt;button class="add-card" trigger-add="cards"&gt;+ Add a card&lt;/button&gt;
+    &lt;/div&gt;
+    &lt;div class="list" item data-id="l-done"&gt;
+      &lt;h2 bind="name"&gt;Done&lt;/h2&gt;
+      &lt;ol class="cards" items="cards" sortable="cards"&gt;&lt;/ol&gt;
+      &lt;button class="add-card" trigger-add="cards"&gt;+ Add a card&lt;/button&gt;
+    &lt;/div&gt;
+  &lt;/section&gt;
+
+  &lt;template items="cards"&gt;
+    &lt;li class="card" item data-id="" state="data-title" data-title="New card" set:open="item.$key"&gt;
+      &lt;span text="item.title"&gt;New card&lt;/span&gt;
+      &lt;small text="count(item.checks, c =&gt; c.done) + '/' + item.checks.length"&gt;0/0&lt;/small&gt;
+      &lt;ul class="checks" hidden items="checks"&gt;&lt;/ul&gt;
+    &lt;/li&gt;
+  &lt;/template&gt;
+  &lt;template items="checks"&gt;
+    &lt;li item data-id="" state="data-label data-done:presence"&gt;&lt;/li&gt;
+  &lt;/template&gt;
+
+  &lt;div clay="freeze"&gt;
+    &lt;dialog detail="lists.cards by state.open"&gt;
+      &lt;input class="title" bind="title"&gt;
+      &lt;ul each="item.checks"&gt;
+        &lt;template&gt;&lt;li&gt;&lt;input type="checkbox" bind="done"&gt; &lt;input class="label" bind="label"&gt;&lt;/li&gt;&lt;/template&gt;
+      &lt;/ul&gt;
+      &lt;form trigger-add="checks"&gt;&lt;input class="new-check" bind="label" placeholder="Add an item"&gt;&lt;/form&gt;
+      &lt;form method="dialog"&gt;&lt;button&gt;Close&lt;/button&gt;&lt;/form&gt;
+    &lt;/dialog&gt;
+  &lt;/div&gt;
+&lt;/main&gt;</code></pre>
+<ul>
+<li>The lists and cards are the records and the visible board, so a <code>sortable</code> drag moves the real elements.</li>
+<li>Each card keeps its checklist inside itself (<code>hidden</code>, saved), so a card carries all its data when dragged or synced.</li>
+<li>Clicking a card sets the transient <code>open</code> key; the dialog opens on the card in whichever list holds it.</li>
+<li>Inside the dialog, <code>bind=&quot;title&quot;</code> writes the card&#39;s <code>data-title</code>. The checklist is an <code>each=</code> view of the card&#39;s <code>checks</code>, and its rows edit those records: ticking a box adds or removes that item&#39;s <code>data-done</code>. The composer form adds a checklist item to the open card from the shared blueprint.</li>
+</ul>
+<h3 id="9-3-notes"><a class="anchor" href="#9-3-notes">#</a>9.3 Notes</h3>
+<p>A searchable, sorted list of notes, and an editor for the selected one.</p>
+<pre class="block"><code class="language-html">&lt;main id="notes" sap state="q:transient open:transient"&gt;
+  &lt;input id="q" type="search" bind="q" transient placeholder="Search"&gt;
+  &lt;button id="new" onclick="const s = Sap(this); s.open = s.$add('notes').$key"&gt;New note&lt;/button&gt;
+
+  &lt;section items="notes" hidden&gt;
+    &lt;article item template data-id=""&gt;&lt;h3 bind="title"&gt;Untitled&lt;/h3&gt;&lt;div bind="body"&gt;&lt;/div&gt;&lt;/article&gt;
+    &lt;article item data-id="n-ideas"&gt;&lt;h3 bind="title"&gt;Ideas&lt;/h3&gt;&lt;div bind="body"&gt;A board for recipes&lt;/div&gt;&lt;/article&gt;
+    &lt;article item data-id="n-books"&gt;&lt;h3 bind="title"&gt;Books&lt;/h3&gt;&lt;div bind="body"&gt;Read the ClayJS guide&lt;/div&gt;&lt;/article&gt;
+  &lt;/section&gt;
+
+  &lt;nav id="list" each="state.notes.filter(n =&gt; (n.title + ' ' + n.body).toLowerCase().includes(state.q.toLowerCase())).sort((a, b) =&gt; a.title.localeCompare(b.title))"&gt;
+    &lt;template&gt;&lt;a set:open="item.$key" class:on="state.open === item.$key" text="item.title"&gt;&lt;/a&gt;&lt;/template&gt;
+  &lt;/nav&gt;
+
+  &lt;article id="editor" detail="notes by state.open" hidden&gt;
+    &lt;input bind="title"&gt;
+    &lt;textarea bind="body"&gt;&lt;/textarea&gt;
+    &lt;button trigger-remove confirm="Delete this note?"&gt;Delete&lt;/button&gt;
+  &lt;/article&gt;
+&lt;/main&gt;</code></pre>
+<ul>
+<li>The notes are saved, hidden records. The visible list is an <code>each=</code> view, filtered and sorted in its expression, so searching never writes to a record.</li>
+<li>The editor is a <code>detail=</code> panel. Typing writes through to the selected note, and its <code>trigger-remove</code> deletes that note.</li>
+<li>&quot;New note&quot; uses <code>Sap(el)</code> from a handler: <code>$add</code> returns the new record&#39;s proxy, and its <code>$key</code> opens it.</li>
+</ul>
+<h2 id="10-checklist-and-traps"><a class="anchor" href="#10-checklist-and-traps">#</a>10. Checklist and traps</h2>
+<p>Before calling an app done:</p>
+<ul>
+<li><input disabled="" type="checkbox"> The console shows <code>sap ✓</code> for every app, and <code>Sap.status().ok</code> is <code>true</code>.</li>
+<li><input disabled="" type="checkbox"> <code>Sap.status().apps[0].mountWrites</code> is <code>0</code> on a saved file (computed values are painted into the file).</li>
+<li><input disabled="" type="checkbox"> Every record has a <code>data-id</code>, and every template row has <code>data-id=&quot;&quot;</code>.</li>
+<li><input disabled="" type="checkbox"> Search text, open record and active tab are <code>transient</code> or in the hash.</li>
+<li><input disabled="" type="checkbox"> No <code>show=</code> on saved records; views filter in <code>each=</code>.</li>
+<li><input disabled="" type="checkbox"> A <code>&lt;dialog detail&gt;</code> sits inside <code>clay=&quot;freeze&quot;</code> with a transient key.</li>
+<li><input disabled="" type="checkbox"> Bound inputs in records carry <code>persist</code> (ClayJS apps).</li>
+<li><input disabled="" type="checkbox"> Every app code path still works after an undo and after a peer&#39;s edit.</li>
+</ul>
+<p>Traps, with the fix:</p>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>state=</code> has no effect</td>
+<td>it sits on an element that is not a scope (<code>sap</code>, <code>scope=</code>, <code>[item]</code>, <code>[detail]</code>)</td>
+<td>move it to the record or add <code>scope=</code></td>
+</tr>
+<tr>
+<td>a field named <code>due-date</code> halts with <code>E08</code></td>
+<td>the hyphen parses as subtraction</td>
+<td><code>data-due-date</code>, read as <code>item.dueDate</code></td>
+</tr>
+<tr>
+<td>a flag reads true after unticking</td>
+<td><code>:bool</code> wrote <code>&quot;false&quot;</code> and CSS selects by presence</td>
+<td>declare it <code>:presence</code></td>
+</tr>
+<tr>
+<td><code>E43</code> on a bind in a view row</td>
+<td>the field is neither the record&#39;s nor the drawn scope&#39;s</td>
+<td>declare it on the record, or <code>state=</code> where the list is drawn</td>
+</tr>
+<tr>
+<td>typing in a view row changes nothing in the file</td>
+<td>the row&#39;s field is per-tab</td>
+<td>expected; declare the field on the record to save it</td>
+</tr>
+<tr>
+<td>a filter makes the file dirty</td>
+<td><code>show=</code> on saved records</td>
+<td>filter in an <code>each=</code> view</td>
+</tr>
+<tr>
+<td>the editor dialog opens for every visitor</td>
+<td>the key is saved</td>
+<td>make it <code>transient</code></td>
+</tr>
+<tr>
+<td>the dialog is missing after a save</td>
+<td>it was inside <code>clay=&quot;editor-ui&quot;</code></td>
+<td>use <code>clay=&quot;freeze&quot;</code></td>
+</tr>
+<tr>
+<td>a value painted after a write is stale</td>
+<td>passes are batched</td>
+<td><code>Sap.refresh()</code> before reading</td>
+</tr>
+<tr>
+<td>a total keeps an undone number</td>
+<td>undo restored the attribute, not the input&#39;s live value</td>
+<td><code>syncControls</code> on undo (ClayJS guide 5.3)</td>
+</tr>
+<tr>
+<td>expressions fail under a strict CSP</td>
+<td>expressions compile with <code>new Function</code></td>
+<td>allow <code>unsafe-eval</code>, or skip sapjs</td>
+</tr>
+</tbody></table>
+
+</div>
+</body>
+</html>
