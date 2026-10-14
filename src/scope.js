@@ -6,12 +6,18 @@
 import {
   nearestScopeEl, nearestItemEl, isInsideDetail, keyOf, mintId,
   ownedBind, ownedItems, rowsOf, templateOf, resolveListEl,
-  parseStateDecl, parseTyped, serializeTyped, readTransient, writeTransient,
-  nearestViewRow,
+  parseStateDecl, readTransient, writeTransient, readDeclared, writeDeclared,
+  declaredDefault, nearestViewRow, ownsField,
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
 import { walkOwned } from "./dom.js";
 import { RESERVED, HTML_GLOBALS, didYouMean } from "./errors.js";
+
+const ID_REF_ATTRS = [
+  "for", "form", "list", "headers", "popovertarget", "commandfor", "anchor",
+  "aria-activedescendant", "aria-controls", "aria-describedby", "aria-details",
+  "aria-errormessage", "aria-flowto", "aria-labelledby", "aria-owns",
+];
 
 function ownedScope(scopeEl, name) {
   let found = null;
@@ -68,6 +74,23 @@ export function createAccessor(runtime) {
     return makeProxy(res.ctxEl, res.appRec, res.isRow);
   }
 
+  // The proxy a bind or set: inside an each= row writes through. A field the row's
+  // record owns goes to the record (nothing, if the record was just removed);
+  // anything else goes to the scope the list is drawn in, the same place the pass
+  // paints it from.
+  function writeTargetFor(el, field) {
+    const viewRow = nearestViewRow(el);
+    if (!viewRow) return Sap(el);
+    const appRec = runtime.appFor(el);
+    const source = viewRow._sapEachItem && viewRow._sapEachItem.$el;
+    if (source && source.nodeType === 1 && source.hasAttribute("item") && ownsField(source, field)) {
+      return source.isConnected ? makeProxy(source, appRec, true) : null;
+    }
+    const drawn = viewRow.parentElement && viewRow.parentElement._sapDrawnEl;
+    if (!drawn || !drawn.isConnected) return null;
+    return makeProxy(drawn, appRec, drawn.hasAttribute("item"));
+  }
+
   function readField(ctxEl, appRec, field) {
     const control = ownedBind(ctxEl, field);
     if (control) return carrierFor(control).read();
@@ -78,7 +101,7 @@ export function createAccessor(runtime) {
     const decl = declarerOf(ctxEl, appRec.root, field);
     if (decl) {
       if (decl.decl.transient) return readTransient(decl.el, decl.decl);
-      return parseTyped(decl.el.getAttribute(decl.decl.attr || field), decl.decl.type);
+      return readDeclared(decl.el, decl.decl);
     }
     const snap = ctxEl._sapScope;
     return snap ? snap[field] : undefined;
@@ -86,7 +109,7 @@ export function createAccessor(runtime) {
 
   function setStateAttr(el, field, value, decl, appRec) {
     if (decl.transient) writeTransient(el, decl, value);
-    else el.setAttribute(decl.attr || field, serializeTyped(value, decl.type));
+    else writeDeclared(el, decl, value);
     runtime.schedule(appRec, "set:" + field);
   }
 
@@ -155,21 +178,38 @@ export function createAccessor(runtime) {
     const decls = root.getAttribute("state") || "";
     const token = type === "string" ? field : `${field}:${type}`;
     root.setAttribute("state", decls ? `${decls} ${token}` : token);
-    setStateAttr(root, field, value, { name: field, type, transient: false }, appRec);
+    setStateAttr(root, field, value, { name: field, attr: field, type, transient: false }, appRec);
   }
 
+  // Clone hygiene for $add: every id and data-id in the clone is re-minted so two
+  // rows never share an identity (live sync pairs elements by data-id), and
+  // attributes that point at an id inside the clone follow it to the new id.
   function freshIds(rootClone) {
     const doc = rootClone.ownerDocument;
-    rootClone.querySelectorAll("[id]").forEach((el) => {
-      el.id = mintId(doc);
-    });
+    const renamed = new Map();
+    const remint = (el, attr) => {
+      const id = mintId(doc);
+      const old = el.getAttribute(attr);
+      if (old && attr === "id") renamed.set(old, id);
+      el.setAttribute(attr, id);
+    };
+    rootClone.querySelectorAll("[id]").forEach((el) => remint(el, "id"));
+    rootClone.querySelectorAll("[data-id]").forEach((el) => remint(el, "data-id"));
     rootClone.querySelectorAll("[sap-error]").forEach((el) => el.removeAttribute("sap-error"));
     rootClone.removeAttribute("sap-error");
     if (rootClone.hasAttribute("data-id")) {
       rootClone.removeAttribute("id");
-      rootClone.setAttribute("data-id", mintId(doc));
+      remint(rootClone, "data-id");
     } else {
-      rootClone.id = mintId(doc);
+      remint(rootClone, "id");
+    }
+    for (const el of [rootClone, ...rootClone.querySelectorAll("*")]) {
+      for (const attr of ID_REF_ATTRS) {
+        const v = el.getAttribute(attr);
+        if (v == null) continue;
+        const next = v.split(/\s+/).map((t) => renamed.get(t) || t).join(" ");
+        if (next !== v) el.setAttribute(attr, next);
+      }
     }
   }
 
@@ -184,7 +224,7 @@ export function createAccessor(runtime) {
       appRec.diag.error("E17", listEl, { problem: `items="${name}" has no [item template] to clone` });
       return null;
     }
-    const clone = tmpl.cloneNode(true);
+    const clone = listEl.ownerDocument.importNode(tmpl, true);
     clone.removeAttribute("template");
     freshIds(clone);
     listEl.appendChild(clone);
@@ -205,9 +245,9 @@ export function createAccessor(runtime) {
       }
     });
     for (const d of parseStateDecl(ctxEl.getAttribute("state") || "")) {
-      const dflt = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
-      if (d.transient) writeTransient(ctxEl, d, parseTyped(dflt, d.type));
-      else ctxEl.setAttribute(d.attr, dflt);
+      const value = declaredDefault(ctxEl, d);
+      if (d.transient) writeTransient(ctxEl, d, value);
+      else writeDeclared(ctxEl, d, value);
     }
     runtime.schedule(appRec, "trigger-reset");
   }
@@ -267,5 +307,5 @@ export function createAccessor(runtime) {
     return proxy;
   }
 
-  return { Sap, contextElFor, readField, writeField, makeProxy };
+  return { Sap, contextElFor, readField, writeField, makeProxy, writeTargetFor };
 }

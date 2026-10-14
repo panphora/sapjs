@@ -6,7 +6,8 @@
 
 import {
   nearestScopeEl, nearestItemEl, isInsideDetail, ownedBind, rowsOf,
-  resolveListEl, walkOwned, parseStateDecl, nearestViewRow,
+  resolveListEl, walkOwned, parseStateDecl, nearestViewRow, isComposer, ownsField,
+  writeDeclared, writeTransient,
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
 import { num } from "./helpers.js";
@@ -99,7 +100,7 @@ export function createActions(runtime, accessor) {
         appRec.diag.error("E24", el, { attr: a.name, expr: a.value, problem: String(err.message) });
         continue;
       }
-      const proxy = Sap(el);
+      const proxy = accessor.writeTargetFor(el, field);
       if (proxy) proxy[field] = value;
     }
   }
@@ -214,8 +215,11 @@ export function createActions(runtime, accessor) {
     const composers = [];
     walkOwned(formEl, (el) => { if (el.hasAttribute("bind")) composers.push(el); });
     for (const c of composers) {
-      const target = ownedBind(newRow.$el, c.getAttribute("bind"));
+      if (c.type === "radio" && !c.checked) continue;
+      const field = c.getAttribute("bind");
+      const target = ownedBind(newRow.$el, field);
       if (target) carrierFor(target).write(carrierFor(c).read());
+      else if (ownsField(newRow.$el, field)) newRow[field] = carrierFor(c).read();
     }
     composers.forEach(clearControl);
     if (composers.length) {
@@ -253,6 +257,31 @@ export function createActions(runtime, accessor) {
     if (appRec) runtime.schedule(appRec, "toggle");
   }
 
+  // A detail dialog the user closes (Esc, method="dialog") clears a plain
+  // state.NAME key, on the element that declares it. Closes the engine made
+  // itself, and stale events for a dialog that is open again, are ignored.
+  function onDialogClose(e) {
+    const dlg = e.target;
+    if (!dlg || dlg.tagName !== "DIALOG" || !dlg.hasAttribute("detail")) return;
+    if (dlg._sapEngineClose) {
+      dlg._sapEngineClose = false;
+      return;
+    }
+    if (dlg.open) return;
+    const m = /^[\w.]+\s+by\s+state\.(\w+)\s*$/.exec(dlg.getAttribute("detail") || "");
+    const appRec = runtime.appFor(dlg);
+    if (!m || !appRec) return;
+    const own = parseStateDecl(dlg.getAttribute("state") || "").find((d) => d.name === m[1]);
+    if (own) {
+      if (own.transient) writeTransient(dlg, own, "");
+      else writeDeclared(dlg, own, "");
+      runtime.schedule(appRec, "close");
+      return;
+    }
+    const proxy = Sap(dlg.parentElement);
+    if (proxy && proxy[m[1]] !== "") proxy[m[1]] = "";
+  }
+
   function onInput(e) {
     const t = e.target;
     if (!t || t.nodeType !== 1) return;
@@ -263,8 +292,15 @@ export function createActions(runtime, accessor) {
     // even without the host platform. bind is reactivity; persist is durability.
     // Skip in a no-save / frozen region: the platform strips those bytes anyway.
     if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
+    const composer = t.hasAttribute("bind") && isComposer(t);
+    if (!composer && t.hasAttribute("bind") && nearestViewRow(t)) {
+      const field = t.getAttribute("bind");
+      const target = t._sapViewBind ? accessor.writeTargetFor(t, field) : null;
+      if (target) target[field] = carrierFor(t).read();
+      return;
+    }
     const detailEl = isInsideDetail(t);
-    if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind")) {
+    if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind") && !composer) {
       const row = detailEl._sapDetailRow;
       const field = t.getAttribute("bind");
       const src = ownedBind(row, field);
@@ -316,6 +352,7 @@ export function createActions(runtime, accessor) {
     doc.addEventListener("submit", onSubmit);
     doc.addEventListener("reset", onReset);
     doc.addEventListener("toggle", onToggle, true);
+    doc.addEventListener("close", onDialogClose, true);
     doc.addEventListener("input", onInput);
     doc.addEventListener("change", onInput);
     doc.addEventListener("clay:sorted", onSorted);

@@ -523,7 +523,7 @@
   <div class="demo" data-demo="modal-dialog">
     <div class="demo-head">
       <h3>One selection, two containers, no modal library</h3>
-      <p><code>detail="LIST by KEY"</code> projects the selected row into <em>any</em> container. Click a row to fill the inline panel; click <b>Edit ▸</b> to open the same lens in a native <code>&lt;dialog&gt;</code>. Edits in either write back to the source row.</p>
+      <p><code>detail="LIST by KEY"</code> projects a row into <em>any</em> container. Click a row to fill the inline panel. Click <b>Edit ▸</b> to set the dialog's own key, and sap opens the native <code>&lt;dialog&gt;</code> with <code>showModal()</code>; <b>Done</b> closes it and clears the key. Edits in either write back to the source row.</p>
     </div>
     <div class="demo-grid">
       <div class="live"></div>
@@ -531,21 +531,21 @@
     </div>
     <code class="greenline"></code>
     <script type="text/html">
-      <main sap state="selected">
+      <main sap state="selected editing:transient">
         <ul items="people">
           <li item template set:selected="item.$key" class:active="state.selected === item.$key">
             <span bind="name" style="flex:1"></span>
-            <button type="button" onclick="Sap(this).selected = Sap(this).$key; Sap.refresh(); document.getElementById('peopleDlg').showModal()">Edit ▸</button>
+            <button type="button" set:selected="item.$key" set:editing="item.$key">Edit ▸</button>
           </li>
           <li item id="person-grace" set:selected="item.$key" class:active="state.selected === item.$key">
             <span bind="name" style="flex:1">Grace Hopper</span>
             <input type="hidden" bind="email" value="grace@navy.mil">
-            <button type="button" onclick="Sap(this).selected = Sap(this).$key; Sap.refresh(); document.getElementById('peopleDlg').showModal()">Edit ▸</button>
+            <button type="button" set:selected="item.$key" set:editing="item.$key">Edit ▸</button>
           </li>
           <li item id="person-alan" set:selected="item.$key" class:active="state.selected === item.$key">
             <span bind="name" style="flex:1">Alan Turing</span>
             <input type="hidden" bind="email" value="alan@bletchley.uk">
-            <button type="button" onclick="Sap(this).selected = Sap(this).$key; Sap.refresh(); document.getElementById('peopleDlg').showModal()">Edit ▸</button>
+            <button type="button" set:selected="item.$key" set:editing="item.$key">Edit ▸</button>
           </li>
         </ul>
 
@@ -557,7 +557,7 @@
         <p class="muted small" show="!state.selected">No contact selected.</p>
         <button type="button" set:selected="''" style="margin-top:8px">Clear selection</button>
 
-        <dialog id="peopleDlg" detail="people by state.selected">
+        <div clay="freeze"><dialog id="peopleDlg" detail="people by state.editing">
           <form method="dialog">
             <h4>Edit contact</h4>
             <div class="muted small" style="margin-bottom:4px">native &lt;dialog&gt; lens — same source row</div>
@@ -567,7 +567,7 @@
               <button value="done">Done</button>
             </div>
           </form>
-        </dialog>
+        </dialog></div>
       </main>
     </script>
   </div>

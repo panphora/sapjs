@@ -47,7 +47,7 @@ function setChecked(el, v) {
 describe("the inlined engine is the real, shipped Sap", () => {
   test("evaluating the inlined <script> yields a working Sap", () => {
     expect(typeof Sap).toBe("function");
-    expect(Sap.version).toBe("0.2.0");
+    expect(Sap.version).toBe(require("../package.json").version);
     expect(typeof Sap.mount).toBe("function");
     expect(typeof Sap.refresh).toBe("function");
   });
@@ -320,23 +320,33 @@ describe("Q4 — setting state: the deliberate write surfaces all funnel through
 });
 
 describe("Q5 — modals: the detail lens projects into ANY container, including a native <dialog>", () => {
+  beforeAll(() => {
+    const P = window.HTMLDialogElement.prototype;
+    P.showModal = function () { this.setAttribute("open", ""); };
+    P.close = function () {
+      if (!this.hasAttribute("open")) return;
+      this.removeAttribute("open");
+      this.dispatchEvent(new Event("close"));
+    };
+  });
   test("one selection fills both an inline <div> and a native <dialog>; edits route back", async () => {
     const { root } = mountDemo("modal-dialog");
     const dlg = root.querySelector("dialog#peopleDlg");
     const inlineDiv = root.querySelector("div[detail]");
     expect(dlg).toBeTruthy();
-    expect(dlg.tagName).toBe("DIALOG"); // a plain native dialog — sap has no modal API
+    expect(dlg.tagName).toBe("DIALOG"); // detail on a native dialog drives showModal() and close()
     expect(inlineDiv.getAttribute("detail")).toBe("people by state.selected");
 
     // nothing selected at mount -> both lenses hidden
-    expect(dlg.hidden).toBe(true);
+    expect(dlg.open).toBe(false);
     expect(inlineDiv.hidden).toBe(true);
 
     // selecting a row is just writing its $key (the row id) — what the row click does
     Sap(root).selected = "person-grace";
+    Sap(root).editing = "person-grace";
     Sap.refresh();
 
-    expect(dlg.hidden).toBe(false);
+    expect(dlg.open).toBe(true);
     expect(dlg.querySelector('input[bind="name"]').value).toBe("Grace Hopper");
     expect(dlg.querySelector('input[bind="email"]').value).toBe("grace@navy.mil");
     expect(inlineDiv.querySelector('input[bind="name"]').value).toBe("Grace Hopper");
@@ -352,6 +362,7 @@ describe("Q5 — modals: the detail lens projects into ANY container, including 
 
     // switching selection re-projects the other row
     Sap(root).selected = "person-alan";
+    Sap(root).editing = "person-alan";
     Sap.refresh();
     expect(dlg.querySelector('input[bind="name"]').value).toBe("Alan Turing");
   });

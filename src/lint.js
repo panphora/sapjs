@@ -2,7 +2,7 @@
 // contradiction halts the whole app (no listeners arm, file bytes stay frozen);
 // warnings never halt. This is the agent-authorability gate.
 
-import { parseStateDecl, rowsOf, templateOf } from "./dom.js";
+import { parseStateDecl, rowsOf, templateOf, sharedTemplate, isNativeBoolean } from "./dom.js";
 import {
   teachForAttr, RESERVED, HTML_GLOBALS, NATIVE_BOOLEANS, didYouMean, setBeacon,
 } from "./errors.js";
@@ -37,14 +37,16 @@ function isBound(el) {
 }
 
 // Walk every element under the app, skipping inert subtrees, calling visit(el).
+// A shared <template items> blueprint is checked through its content.
 function walkAll(root, visit) {
   visit(root);
   for (const child of root.children) descend(child);
   function descend(el) {
     if (el.nodeType !== 1) return;
-    if (el.hasAttribute("sap-ignore") || el.hasAttribute("template")) {
-      // still scan template descendants for structural errors, but not sap-ignore
-      if (el.hasAttribute("sap-ignore")) return;
+    if (el.hasAttribute("sap-ignore")) return;
+    if (el.tagName === "TEMPLATE") {
+      if (el.hasAttribute("items")) for (const c of el.content.children) descend(c);
+      return;
     }
     visit(el);
     for (const c of el.children) descend(c);
@@ -129,7 +131,8 @@ export function lintApp(root, diag) {
       }
 
       // attr:value / attr:checked / attr:selected on a bound control
-      if ((name === "attr:value" || name === "attr:checked" || name === "attr:selected") && isBound(el)) {
+      const ownedByBind = isBound(el) || (name === "attr:selected" && el.tagName === "OPTION" && !!el.closest("select[bind]"));
+      if ((name === "attr:value" || name === "attr:checked" || name === "attr:selected") && ownedByBind) {
         halt("E30", el, { attr: name, problem: "attr: on a bound control collides with persist ownership", fix: "remove it; bind owns this attribute" });
       }
 
@@ -163,6 +166,16 @@ export function lintApp(root, diag) {
         // dialog state=open
         if (d.name === "open" && el.tagName === "DIALOG") {
           halt("E33", el, { attr: "state", problem: "dialog open is transient", fix: "use showModal() — declare state= only on <details> or popovers" });
+        }
+        const native = isNativeBoolean(el, d.attr);
+        if (native && (d.attr === "checked" || d.attr === "selected")) {
+          halt("E35", el, { attr: "state", problem: `"${d.attr}" on a form control is the control's own state, not a declared field`, fix: "bind the control instead, e.g. <input type=\"checkbox\" bind=\"done\">" });
+        }
+        if (native && d.type === "num") {
+          halt("E35", el, { attr: "state", problem: `"${d.attr}" is an HTML boolean attribute; it cannot hold a number`, fix: `declare it bare: state="${d.attr}"` });
+        }
+        if (d.transient && (native || d.type === "presence")) {
+          halt("E35", el, { attr: "state", problem: `"${d.name}" is carried by attribute presence, which transient would strip`, fix: "declare a separate name:bool:transient field and paint the attribute from it" });
         }
       }
     }
@@ -198,8 +211,20 @@ export function lintApp(root, diag) {
       });
     }
 
+    // showModal() writes open; only a freeze ancestor keeps the dialog in the file
+    // while saving it as it first appeared (no open). editor-ui and no-save would
+    // delete the dialog from the file, and freeze on the dialog itself saves open.
+    if (el.tagName === "DIALOG" && el.hasAttribute("detail") &&
+        !(el.parentElement && el.parentElement.closest('[clay~="freeze"], [freeze], [save-freeze]'))) {
+      diag.warn("W31", el, {
+        attr: "detail",
+        problem: "a detail dialog writes open when it opens, and that attribute would be saved into the file",
+        fix: 'wrap the dialog in an element with clay="freeze" (not editor-ui, which removes it from the file), and make its key field transient',
+      });
+    }
+
     // orphan item
-    if (el.hasAttribute("item") && !el.hasAttribute("template")) {
+    if (el.hasAttribute("item") && !el.hasAttribute("template") && el.parentNode && el.parentNode.nodeType === 1) {
       const list = el.parentElement;
       if (!list || !list.hasAttribute("items")) {
         halt("E10", el, { problem: "an [item] must be a direct child of an [items] list", fix: "wrap it in a container with items=\"name\"" });
@@ -214,7 +239,7 @@ export function lintApp(root, diag) {
     // list with trigger-add but no template
     if (el.hasAttribute("items")) {
       const targeted = root.querySelector(`[trigger-add="${el.getAttribute("items")}"]`);
-      if (!templateOf(el) && rowsOf(el).length === 0 && targeted) {
+      if (!templateOf(el) && !sharedTemplate(root, el.getAttribute("items")) && rowsOf(el).length === 0 && targeted) {
         halt("E17", el, { attr: "items", problem: `trigger-add targets items="${el.getAttribute("items")}" but it has no [item template] to clone` });
       }
     }

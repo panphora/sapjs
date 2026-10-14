@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "deploy": "wrangler deploy && git rev-parse HEAD > .deploy",
-    "build": "node build/bundle.mjs",
+    "build": "node build/bundle.mjs && node scripts/build-doc.mjs",
     "build:docs": "node scripts/build-doc.mjs",
     "propagate": "npm run build && node scripts/propagate.js",
     "copy-to-hyperclayjs": "npm run build && node scripts/propagate.js --only hyperclayjs",

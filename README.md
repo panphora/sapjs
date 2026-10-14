@@ -285,7 +285,7 @@ Click a row to select it; the detail panel projects that row. Edits in the panel
 </main>
 ```
 
-The one nesting limit is an `items=` list placed inside a `detail=` panel, which is a mount error (`E17`).
+An `items=` list placed inside a `detail=` panel is a mount error (`E17`). A nested list repeated in every row can share one blueprint: put `<template items="cards"><li item data-id="">…</li></template>` anywhere in the app, and every `items="cards"` list without a template row of its own clones from it.
 
 **Projection lists (`each`).** `items=` reads records that live in the file. `each=` renders a view of any array, such as a sorted, filtered or grouped copy of those records, without touching them:
 
@@ -302,7 +302,7 @@ The one nesting limit is an `items=` list placed inside a `detail=` panel, which
 
 - One row per array element, cloned from the container's `<template>` (exactly one element root) and placed after it in array order.
 - Rows are matched by key, `key="expr"`, default `item.$key`. A reorder moves the existing rows, so focus and scroll inside them survive. Nothing is rebuilt with `innerHTML`.
-- Inside a row, `item` is the element and `state` is the container's scope. Paints, `show`, `effect` and actions work. Rows are read-only views: `bind` inside one is `E43`, and `calc:` inside rows is not evaluated.
+- Inside a row, `item` is the element and `state` is the container's scope. Paints, `show`, `effect` and actions work. When the row stands for a record, a `bind` or `set:` for a field the record owns reads from it and writes through to it; any other field resolves where the list is drawn, and a `bind` that matches neither is `E43`. Controls inside a `<form trigger-add>` are composers and are never painted over. `calc:` inside rows is not evaluated.
 - A `detail=` panel inside a row is not supported: it never resolves. Put the panel outside the list and key it on the row instead.
 - When the element is a row from an `items=` list, actions reach that record: `trigger-remove` removes it, `Sap(el)` returns its proxy.
 - Rows carry `clay="editor-ui"` and `data-key`, so ClayJS keeps them out of saves and live sync. They never count as mount writes.
@@ -313,6 +313,10 @@ The one nesting limit is an `items=` list placed inside a `detail=` panel, which
 **Keys.** `$key` is the row's `data-id`, else its `id`, else a key that lives only in this tab. Mounting never writes an id. `$add` mints a fresh `data-id` when the template carries `data-id`, otherwise a fresh `id`.
 
 **`data-*` fields.** `state="data-date"` reads and writes the `data-date` attribute and appears in expressions as `item.date`, the same camelCase rule as `el.dataset`. A `detail` panel's bound control writes through to a field the selected row declares, so `<input type="date" bind="date">` in a panel edits that row's `data-date`.
+
+**Yes/no fields.** `:bool` stores a word (`x="true"`/`x="false"`) for values CSS or `show-when:` compares. `:presence` stores existence: true writes `x=""`, false removes the attribute, so `[data-done]` selectors work; its default is only a reset target. HTML's own boolean attributes (`open`, `disabled`, `novalidate`) always use presence.
+
+**Detail across nested lists and in dialogs.** `detail="lists.cards by state.open"` finds a card in any list. On a `<dialog>`, `detail=` calls `showModal()` and `close()`, and a user close clears a plain `state.NAME` key. Wrap such a dialog in `clay="freeze"` so its `open` attribute is never saved (`W31`; `editor-ui` would remove the dialog from the file), and declare its key `:transient` so a selection is never saved or synced.
 
 ---
 

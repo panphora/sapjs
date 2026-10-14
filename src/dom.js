@@ -1,5 +1,10 @@
 // DOM walking that respects scope boundaries, plus declaration parsing and row keys.
 
+import { NATIVE_BOOLEANS } from "./errors.js";
+
+const NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
+const NATIVE_PROPS = { readonly: "readOnly", novalidate: "noValidate" };
+
 let idSeq = 0;
 const runtimeKeys = new WeakMap();
 
@@ -30,7 +35,7 @@ export function isScopeBoundary(el) {
 }
 
 export function isInert(el) {
-  return el.hasAttribute("sap-ignore") || el.hasAttribute("template");
+  return el.tagName === "TEMPLATE" || el.hasAttribute("sap-ignore") || el.hasAttribute("template");
 }
 
 // Walk descendants that belong to scopeEl's own scope. Stops descent at nested
@@ -97,6 +102,7 @@ export function isInsideDetail(el) {
 }
 
 export function ownedBind(scopeEl, field) {
+  if (scopeEl.hasAttribute("item") && scopeEl.getAttribute("bind") === field) return scopeEl;
   let found = null;
   walkOwned(scopeEl, (el) => {
     if (!found && el.getAttribute("bind") === field) found = el;
@@ -112,12 +118,43 @@ export function ownedItems(scopeEl, name) {
   return found;
 }
 
+// A field an [item] record owns: a bound control, a nested items= list, or a
+// state= declaration on the record element itself.
+export function ownsField(rowEl, field) {
+  if (!rowEl || rowEl.nodeType !== 1 || !rowEl.hasAttribute("item")) return false;
+  if (ownedBind(rowEl, field) || ownedItems(rowEl, field)) return true;
+  return parseStateDecl(rowEl.getAttribute("state") || "").some((d) => d.name === field);
+}
+
+// The [item] element an each= row's data came from, when the row stands for a record.
+export function recordElOf(item) {
+  const el = item && item.$el;
+  return el && el.nodeType === 1 && el.isConnected && el.hasAttribute("item") ? el : null;
+}
+
+// A control that composes a new row; never a projection of an existing one.
+export function isComposer(el) {
+  return !!el.closest("form[trigger-add]");
+}
+
 export function rowsOf(listEl) {
   return [...listEl.children].filter((c) => c.hasAttribute("item") && !c.hasAttribute("template"));
 }
 
+// The shared <template items="NAME"> of one app, ignoring templates that belong to
+// a nested app.
+export function sharedTemplate(appRoot, name) {
+  if (!appRoot || !name) return null;
+  const t = [...appRoot.querySelectorAll(`template[items="${name}"]`)].find((x) => x.closest("[sap]") === appRoot);
+  const blueprint = t && t.content.firstElementChild;
+  return blueprint && blueprint.hasAttribute("item") ? blueprint : null;
+}
+
+// A list's own [item template] row, else the app's shared <template items="NAME">.
 export function templateOf(listEl) {
-  return [...listEl.children].find((c) => c.hasAttribute("item") && c.hasAttribute("template")) || null;
+  const own = [...listEl.children].find((c) => c.hasAttribute("item") && c.hasAttribute("template"));
+  if (own) return own;
+  return sharedTemplate(listEl.closest("[sap]"), listEl.getAttribute("items"));
 }
 
 export function parseStateDecl(str) {
@@ -139,6 +176,7 @@ export function parseStateDecl(str) {
     for (const p of parts.slice(1)) {
       if (p === "num") type = "num";
       else if (p === "bool") type = "bool";
+      else if (p === "presence") type = "presence";
       else if (p === "transient") transient = true;
     }
     const attr = name;
@@ -165,6 +203,51 @@ export function serializeTyped(value, type) {
   return value == null ? "" : String(value);
 }
 
+// An HTML boolean attribute this element really implements (details open, input
+// disabled, form novalidate). The browser reads it by presence.
+export function isNativeBoolean(el, attr) {
+  return NATIVE_BOOLEAN_SET.has(attr) && typeof el[NATIVE_PROPS[attr] || attr] === "boolean";
+}
+
+// A declared field carried by attribute presence: present is true, absent is false.
+export function isPresenceDecl(el, d) {
+  return d.type === "presence" || (d.type !== "num" && isNativeBoolean(el, d.attr || d.name));
+}
+
+// The raw text a value-encoded field reads when its attribute is absent.
+export function defaultRaw(d) {
+  return d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
+}
+
+// A declared, non-transient field's current value.
+export function readDeclared(el, d) {
+  const attr = d.attr || d.name;
+  if (isPresenceDecl(el, d)) return el.hasAttribute(attr);
+  const raw = el.getAttribute(attr);
+  return parseTyped(raw != null ? raw : defaultRaw(d), d.type);
+}
+
+// The value a reset restores. A presence field's default is a reset target only.
+export function declaredDefault(el, d) {
+  if (isPresenceDecl(el, d)) return d.default != null ? parseTyped(d.default, "bool") : false;
+  return parseTyped(defaultRaw(d), d.type);
+}
+
+// Write a declared, non-transient field. Presence fields add or remove the
+// attribute; every other type writes its serialized text.
+export function writeDeclared(el, d, value) {
+  const attr = d.attr || d.name;
+  if (isPresenceDecl(el, d)) {
+    if (value) {
+      if (!el.hasAttribute(attr)) el.setAttribute(attr, "");
+    } else if (el.hasAttribute(attr)) {
+      el.removeAttribute(attr);
+    }
+    return;
+  }
+  el.setAttribute(attr, serializeTyped(value, d.type));
+}
+
 // Transient state fields (state="x:transient") live on a runtime-only property,
 // never an attribute, so they drive the app but are stripped from the saved DOM.
 // The value attribute is removed on read; the state= declaration itself stays.
@@ -173,7 +256,7 @@ export function readTransient(el, decl) {
   const store = el._sapTransient || (el._sapTransient = {});
   if (!(decl.name in store)) {
     let raw = el.getAttribute(attr);
-    if (raw == null) raw = decl.default != null ? decl.default : decl.type === "num" ? "0" : decl.type === "bool" ? "false" : "";
+    if (raw == null) raw = defaultRaw(decl);
     store[decl.name] = parseTyped(raw, decl.type);
   }
   if (el.hasAttribute(attr)) el.removeAttribute(attr);
@@ -195,7 +278,7 @@ export function resolveListEl(appRoot, fromEl, path) {
     const up = findItemsUp(fromEl, listName);
     if (up) return up;
     if (appRoot.getAttribute("items") === listName) return appRoot;
-    return appRoot.querySelector(`[items="${listName}"]`);
+    return appRoot.querySelector(`[items="${listName}"]:not(template)`);
   }
   const scopeName = segs[segs.length - 2];
   const scopeEl = [...appRoot.querySelectorAll(`[scope="${scopeName}"]`)].find((s) =>

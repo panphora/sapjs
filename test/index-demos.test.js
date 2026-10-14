@@ -245,21 +245,31 @@ describe("Demos gallery — the core actions behave as the prose claims", () => 
 });
 
 describe("Detail lens — projects a row into any container, including a native <dialog>", () => {
+  beforeAll(() => {
+    const P = window.HTMLDialogElement.prototype;
+    P.showModal = function () { this.setAttribute("open", ""); };
+    P.close = function () {
+      if (!this.hasAttribute("open")) return;
+      this.removeAttribute("open");
+      this.dispatchEvent(new Event("close"));
+    };
+  });
   test("one selection fills both an inline <div> and a native <dialog>; edits route back", async () => {
     const { root } = mountDemo("modal-dialog");
     const dlg = root.querySelector("dialog#peopleDlg");
     const inlineDiv = root.querySelector("div[detail]");
     expect(dlg).toBeTruthy();
-    expect(dlg.tagName).toBe("DIALOG"); // a plain native dialog — sap has no modal API
+    expect(dlg.tagName).toBe("DIALOG"); // detail on a native dialog drives showModal() and close()
     expect(inlineDiv.getAttribute("detail")).toBe("people by state.selected");
 
-    expect(dlg.hidden).toBe(true);
+    expect(dlg.open).toBe(false);
     expect(inlineDiv.hidden).toBe(true);
 
     Sap(root).selected = "person-grace"; // what a row click writes
+    Sap(root).editing = "person-grace";
     Sap.refresh();
 
-    expect(dlg.hidden).toBe(false);
+    expect(dlg.open).toBe(true);
     expect(dlg.querySelector('input[bind="name"]').value).toBe("Grace Hopper");
     expect(dlg.querySelector('input[bind="email"]').value).toBe("grace@navy.mil");
     expect(inlineDiv.querySelector('input[bind="name"]').value).toBe("Grace Hopper");
@@ -272,6 +282,7 @@ describe("Detail lens — projects a row into any container, including a native 
     expect(inlineDiv.querySelector('input[bind="name"]').value).toBe("Grace M. Hopper");
 
     Sap(root).selected = "person-alan";
+    Sap(root).editing = "person-alan";
     Sap.refresh();
     expect(dlg.querySelector('input[bind="name"]').value).toBe("Alan Turing");
   });

@@ -22,9 +22,8 @@ import { createDebug } from "./debug.js";
 import { batch, installBridges, whenPlatformReady } from "./platform.js";
 import { installMutationBridge, resetMutationBridge } from "./mutation-bridge.js";
 import { formats } from "./helpers.js";
+import { VERSION } from "./version.js";
 import { serializeControlToAttributes, finalizeControlForSave, rehydrateControlFromAttributes } from "./control-serialize.js";
-
-const VERSION = "0.2.0";
 
 const registry = new Map(); // root element -> appRec
 const order = []; // appRecs in mount order

@@ -81,7 +81,229 @@ var Sap = (() => {
     return { schedule, runNow, rearm, ring };
   }
 
+  // src/errors.js
+  var REGISTRY = {
+    E01: { slug: "foreign-dialect", behavior: "HALT" },
+    E02: { slug: "moustaches-in-text", behavior: "HALT" },
+    E04: { slug: "duplicate-declaration", behavior: "HALT" },
+    E05: { slug: "reserved-name", behavior: "HALT" },
+    E06: { slug: "global-html-name", behavior: "HALT" },
+    E07: { slug: "calc-cycle", behavior: "ERR" },
+    E08: { slug: "expression-syntax", behavior: "HALT" },
+    E10: { slug: "orphan-item", behavior: "HALT" },
+    E12: { slug: "unknown-state-key", behavior: "ERR" },
+    E15: { slug: "write-to-undeclared-key", behavior: "ERR" },
+    E16: { slug: "write-to-computed-field", behavior: "ERR" },
+    E17: { slug: "unresolvable-action-target", behavior: "HALT" },
+    E18: { slug: "paint-on-form-control", behavior: "HALT" },
+    E20: { slug: "bind-on-non-control", behavior: "HALT" },
+    E22: { slug: "format-type", behavior: "ERR" },
+    E24: { slug: "runtime-expression-throw", behavior: "ERR" },
+    E26: { slug: "circuit-breaker", behavior: "HALT" },
+    E30: { slug: "attr-on-bound-control", behavior: "HALT" },
+    E31: { slug: "password-without-transient", behavior: "HALT" },
+    E32: { slug: "file-bind", behavior: "HALT" },
+    E33: { slug: "dialog-state-open", behavior: "HALT" },
+    E34: { slug: "transient-persist-collision", behavior: "HALT" },
+    E35: { slug: "presence-state-misuse", behavior: "HALT" },
+    E40: { slug: "each-not-array", behavior: "ERR" },
+    E41: { slug: "each-bad-key", behavior: "ERR" },
+    E42: { slug: "each-template", behavior: "ERR" },
+    E43: { slug: "bind-in-each-row", behavior: "ERR" },
+    W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
+    W04: { slug: "expression-in-when", behavior: "WARN" },
+    W30: { slug: "nonzero-mount-writes", behavior: "WARN" },
+    W31: { slug: "detail-dialog-saved-open", behavior: "WARN" }
+  };
+  var NATIVE_BOOLEANS = [
+    "disabled",
+    "readonly",
+    "required",
+    "checked",
+    "selected",
+    "multiple",
+    "open",
+    "inert",
+    "autofocus",
+    "novalidate",
+    "hidden"
+  ];
+  var HTML_GLOBALS = /* @__PURE__ */ new Set([
+    "title",
+    "style",
+    "hidden",
+    "lang",
+    "dir",
+    "translate",
+    "class",
+    "id",
+    "nonce",
+    "autofocus",
+    "tabindex",
+    "contenteditable",
+    "spellcheck",
+    "draggable",
+    "role",
+    "slot",
+    "part",
+    "name",
+    "value",
+    "type",
+    "itemscope",
+    "itemtype",
+    "itemid",
+    "itemprop",
+    "itemref"
+  ]);
+  var RESERVED = /* @__PURE__ */ new Set([
+    "sap",
+    "scope",
+    "items",
+    "item",
+    "template",
+    "bind",
+    "calc",
+    "text",
+    "show",
+    "attr",
+    "set",
+    "trigger",
+    "move",
+    "sort",
+    "detail",
+    "each",
+    "effect",
+    "invalid",
+    "confirm",
+    "transient",
+    "default",
+    "persist",
+    "sortable",
+    // editmode is a hyperclayjs platform prefix (editmode:onclick), reserved so a
+    // co-loaded admin attribute never collides with a Sap state field name.
+    "editmode"
+  ]);
+  function cssPath(el) {
+    if (!el || el.nodeType !== 1) return "?";
+    if (el.id) return `${el.tagName.toLowerCase()}#${el.id}`;
+    const parts = [];
+    let cur = el;
+    let depth2 = 0;
+    while (cur && cur.nodeType === 1 && depth2 < 4) {
+      let seg = cur.tagName.toLowerCase();
+      if (cur.hasAttribute("sap")) seg += "[sap]";
+      else if (cur.parentElement) {
+        const sibs = [...cur.parentElement.children].filter((c) => c.tagName === cur.tagName);
+        if (sibs.length > 1) seg += `:nth-of-type(${sibs.indexOf(cur) + 1})`;
+      }
+      parts.unshift(seg);
+      if (cur.hasAttribute("sap")) break;
+      cur = cur.parentElement;
+      depth2++;
+    }
+    return parts.join(" > ");
+  }
+  function teachForAttr(name) {
+    const n2 = name.toLowerCase();
+    if (/^x-text$|^x-html$/.test(n2)) return `use text="state.x" (Sap paints text only)`;
+    if (/^x-show$|^v-show$|^v-if$/.test(n2)) return `use show="expr" (toggles native hidden)`;
+    if (/^x-model$|^v-model$/.test(n2)) return `use bind="field"`;
+    if (/^@|^x-on:|^v-on:|^on:/.test(n2)) return `use native onclick + Sap(this) (no event directive)`;
+    if (/^:|^x-bind:class$|^v-bind:class$/.test(n2)) return `use class:NAME="expr" or attr:NAME="expr"`;
+    if (/^x-for$|^v-for$/.test(n2)) return `use items="name" on the container and item template on the row`;
+    if (/^x-data$/.test(n2)) return `declare state with state= / bind / items (no JS state object)`;
+    if (/^x-init$/.test(n2)) return `use a <script> or onclick + Sap(this)`;
+    if (/^bind:/.test(n2)) return `use bind="field"; one-way paint is attr:NAME="expr"`;
+    if (/^x-/.test(n2) || /^v-/.test(n2)) return `this is a foreign-dialect attribute; Sap has no x-/v- attributes`;
+    return null;
+  }
+  var Diagnostics = class {
+    constructor(appName) {
+      this.appName = appName;
+      this.errors = [];
+      this.warnings = [];
+      this.halted = false;
+      this.haltReason = null;
+    }
+    block(code, el, info = {}) {
+      const slug = (REGISTRY[code] || {}).slug || "error";
+      const rec = {
+        code,
+        slug,
+        el: cssPath(el),
+        attr: info.attr || null,
+        expr: info.expr || null,
+        key: info.key || null,
+        problem: info.problem || "",
+        didYouMean: info.didYouMean || null,
+        fix: info.fix || null,
+        phase: info.phase || "runtime"
+      };
+      const out = ["\n" + (code[0] === "W" ? "sap \u26A0 " : "sap \u2717 ") + code + " " + slug];
+      out.push(`  at ${rec.el}${rec.attr ? ` \u2014 ${rec.attr}="${rec.expr ?? ""}"` : ""}`);
+      if (rec.problem) out.push(`  problem: ${rec.problem}`);
+      if (rec.didYouMean) out.push(`  did you mean: ${rec.didYouMean}`);
+      if (rec.fix) out.push(`  fix: ${rec.fix}`);
+      console.error(out.join("\n"));
+      return rec;
+    }
+    error(code, el, info = {}) {
+      const rec = this.block(code, el, info);
+      this.errors.push(rec);
+      return rec;
+    }
+    warn(code, el, info = {}) {
+      const rec = this.block(code, el, info);
+      this.warnings.push(rec);
+      return rec;
+    }
+    report() {
+      return {
+        ok: this.errors.length === 0 && !this.halted,
+        app: this.appName,
+        halted: this.halted,
+        haltReason: this.haltReason,
+        errors: this.errors.slice(),
+        warnings: this.warnings.slice()
+      };
+    }
+  };
+  function setBeacon(el, code) {
+    if (el && el.getAttribute("sap-error") !== code) el.setAttribute("sap-error", code);
+  }
+  function clearBeacon(el) {
+    if (el && el.hasAttribute("sap-error")) el.removeAttribute("sap-error");
+  }
+  function didYouMean(name, candidates) {
+    let best = null;
+    let bestD = 3;
+    for (const c of candidates) {
+      const d = lev(name, c);
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    return best;
+  }
+  function lev(a, b) {
+    const m = a.length;
+    const n2 = b.length;
+    const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...new Array(n2).fill(0)]);
+    for (let j = 0; j <= n2; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++)
+      for (let j = 1; j <= n2; j++)
+        dp[i][j] = Math.min(
+          dp[i - 1][j] + 1,
+          dp[i][j - 1] + 1,
+          dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+        );
+    return dp[m][n2];
+  }
+
   // src/dom.js
+  var NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
+  var NATIVE_PROPS = { readonly: "readOnly", novalidate: "noValidate" };
   var idSeq = 0;
   var runtimeKeys = /* @__PURE__ */ new WeakMap();
   function keyOf(el, prefix = "sap") {
@@ -105,7 +327,7 @@ var Sap = (() => {
     return el.hasAttribute("scope") || el.hasAttribute("items") || el.hasAttribute("detail") || el.hasAttribute("each");
   }
   function isInert(el) {
-    return el.hasAttribute("sap-ignore") || el.hasAttribute("template");
+    return el.tagName === "TEMPLATE" || el.hasAttribute("sap-ignore") || el.hasAttribute("template");
   }
   function walkOwned(scopeEl, visit) {
     for (const child of scopeEl.children) descend(child);
@@ -152,6 +374,7 @@ var Sap = (() => {
     return null;
   }
   function ownedBind(scopeEl, field) {
+    if (scopeEl.hasAttribute("item") && scopeEl.getAttribute("bind") === field) return scopeEl;
     let found = null;
     walkOwned(scopeEl, (el) => {
       if (!found && el.getAttribute("bind") === field) found = el;
@@ -165,11 +388,31 @@ var Sap = (() => {
     });
     return found;
   }
+  function ownsField(rowEl, field) {
+    if (!rowEl || rowEl.nodeType !== 1 || !rowEl.hasAttribute("item")) return false;
+    if (ownedBind(rowEl, field) || ownedItems(rowEl, field)) return true;
+    return parseStateDecl(rowEl.getAttribute("state") || "").some((d) => d.name === field);
+  }
+  function recordElOf(item) {
+    const el = item && item.$el;
+    return el && el.nodeType === 1 && el.isConnected && el.hasAttribute("item") ? el : null;
+  }
+  function isComposer(el) {
+    return !!el.closest("form[trigger-add]");
+  }
   function rowsOf(listEl) {
     return [...listEl.children].filter((c) => c.hasAttribute("item") && !c.hasAttribute("template"));
   }
+  function sharedTemplate(appRoot, name) {
+    if (!appRoot || !name) return null;
+    const t = [...appRoot.querySelectorAll(`template[items="${name}"]`)].find((x) => x.closest("[sap]") === appRoot);
+    const blueprint = t && t.content.firstElementChild;
+    return blueprint && blueprint.hasAttribute("item") ? blueprint : null;
+  }
   function templateOf(listEl) {
-    return [...listEl.children].find((c) => c.hasAttribute("item") && c.hasAttribute("template")) || null;
+    const own = [...listEl.children].find((c) => c.hasAttribute("item") && c.hasAttribute("template"));
+    if (own) return own;
+    return sharedTemplate(listEl.closest("[sap]"), listEl.getAttribute("items"));
   }
   function parseStateDecl(str) {
     const out = [];
@@ -190,6 +433,7 @@ var Sap = (() => {
       for (const p of parts.slice(1)) {
         if (p === "num") type = "num";
         else if (p === "bool") type = "bool";
+        else if (p === "presence") type = "presence";
         else if (p === "transient") transient = true;
       }
       const attr = name;
@@ -211,12 +455,43 @@ var Sap = (() => {
     if (type === "bool") return value ? "true" : "false";
     return value == null ? "" : String(value);
   }
+  function isNativeBoolean(el, attr) {
+    return NATIVE_BOOLEAN_SET.has(attr) && typeof el[NATIVE_PROPS[attr] || attr] === "boolean";
+  }
+  function isPresenceDecl(el, d) {
+    return d.type === "presence" || d.type !== "num" && isNativeBoolean(el, d.attr || d.name);
+  }
+  function defaultRaw(d) {
+    return d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
+  }
+  function readDeclared(el, d) {
+    const attr = d.attr || d.name;
+    if (isPresenceDecl(el, d)) return el.hasAttribute(attr);
+    const raw = el.getAttribute(attr);
+    return parseTyped(raw != null ? raw : defaultRaw(d), d.type);
+  }
+  function declaredDefault(el, d) {
+    if (isPresenceDecl(el, d)) return d.default != null ? parseTyped(d.default, "bool") : false;
+    return parseTyped(defaultRaw(d), d.type);
+  }
+  function writeDeclared(el, d, value) {
+    const attr = d.attr || d.name;
+    if (isPresenceDecl(el, d)) {
+      if (value) {
+        if (!el.hasAttribute(attr)) el.setAttribute(attr, "");
+      } else if (el.hasAttribute(attr)) {
+        el.removeAttribute(attr);
+      }
+      return;
+    }
+    el.setAttribute(attr, serializeTyped(value, d.type));
+  }
   function readTransient(el, decl) {
     const attr = decl.attr || decl.name;
     const store = el._sapTransient || (el._sapTransient = {});
     if (!(decl.name in store)) {
       let raw = el.getAttribute(attr);
-      if (raw == null) raw = decl.default != null ? decl.default : decl.type === "num" ? "0" : decl.type === "bool" ? "false" : "";
+      if (raw == null) raw = defaultRaw(decl);
       store[decl.name] = parseTyped(raw, decl.type);
     }
     if (el.hasAttribute(attr)) el.removeAttribute(attr);
@@ -234,7 +509,7 @@ var Sap = (() => {
       const up = findItemsUp(fromEl, listName);
       if (up) return up;
       if (appRoot.getAttribute("items") === listName) return appRoot;
-      return appRoot.querySelector(`[items="${listName}"]`);
+      return appRoot.querySelector(`[items="${listName}"]:not(template)`);
     }
     const scopeName = segs[segs.length - 2];
     const scopeEl = [...appRoot.querySelectorAll(`[scope="${scopeName}"]`)].find(
@@ -493,6 +768,7 @@ ${src}` : `"use strict"; return (${src});`;
   var MUTATION_READY = ["clay:mutation-ready", "hyperclay:mutation-ready"];
   var LIVESYNC_APPLIED = ["clay:sync-applied", "hyperclay:livesync-applied"];
   var PLATFORM_READY = ["clay:ready", "hyperclay:ready"];
+  var ROUTE_CHANGED = ["clay:route"];
   function onPlatformEvent(target, names, handler) {
     let claimedBy = null;
     const wrapped = (event) => {
@@ -547,6 +823,7 @@ ${src}` : `"use strict"; return (${src});`;
       }
     };
     onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
+    onPlatformEvent(document, ROUTE_CHANGED, refreshConnected);
     let undoBound = false;
     let stopWaiting = () => {
     };
@@ -684,224 +961,6 @@ ${src}` : `"use strict"; return (${src});`;
         mirror(el);
       }
     };
-  }
-
-  // src/errors.js
-  var REGISTRY = {
-    E01: { slug: "foreign-dialect", behavior: "HALT" },
-    E02: { slug: "moustaches-in-text", behavior: "HALT" },
-    E04: { slug: "duplicate-declaration", behavior: "HALT" },
-    E05: { slug: "reserved-name", behavior: "HALT" },
-    E06: { slug: "global-html-name", behavior: "HALT" },
-    E07: { slug: "calc-cycle", behavior: "ERR" },
-    E08: { slug: "expression-syntax", behavior: "HALT" },
-    E10: { slug: "orphan-item", behavior: "HALT" },
-    E12: { slug: "unknown-state-key", behavior: "ERR" },
-    E15: { slug: "write-to-undeclared-key", behavior: "ERR" },
-    E16: { slug: "write-to-computed-field", behavior: "ERR" },
-    E17: { slug: "unresolvable-action-target", behavior: "HALT" },
-    E18: { slug: "paint-on-form-control", behavior: "HALT" },
-    E20: { slug: "bind-on-non-control", behavior: "HALT" },
-    E22: { slug: "format-type", behavior: "ERR" },
-    E24: { slug: "runtime-expression-throw", behavior: "ERR" },
-    E26: { slug: "circuit-breaker", behavior: "HALT" },
-    E30: { slug: "attr-on-bound-control", behavior: "HALT" },
-    E31: { slug: "password-without-transient", behavior: "HALT" },
-    E32: { slug: "file-bind", behavior: "HALT" },
-    E33: { slug: "dialog-state-open", behavior: "HALT" },
-    E34: { slug: "transient-persist-collision", behavior: "HALT" },
-    E40: { slug: "each-not-array", behavior: "ERR" },
-    E41: { slug: "each-bad-key", behavior: "ERR" },
-    E42: { slug: "each-template", behavior: "ERR" },
-    E43: { slug: "bind-in-each-row", behavior: "ERR" },
-    W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
-    W04: { slug: "expression-in-when", behavior: "WARN" },
-    W30: { slug: "nonzero-mount-writes", behavior: "WARN" }
-  };
-  var NATIVE_BOOLEANS = [
-    "disabled",
-    "readonly",
-    "required",
-    "checked",
-    "selected",
-    "multiple",
-    "open",
-    "inert",
-    "autofocus",
-    "novalidate",
-    "hidden"
-  ];
-  var HTML_GLOBALS = /* @__PURE__ */ new Set([
-    "title",
-    "style",
-    "hidden",
-    "lang",
-    "dir",
-    "translate",
-    "class",
-    "id",
-    "nonce",
-    "autofocus",
-    "tabindex",
-    "contenteditable",
-    "spellcheck",
-    "draggable",
-    "role",
-    "slot",
-    "part",
-    "name",
-    "value",
-    "type",
-    "itemscope",
-    "itemtype",
-    "itemid",
-    "itemprop",
-    "itemref"
-  ]);
-  var RESERVED = /* @__PURE__ */ new Set([
-    "sap",
-    "scope",
-    "items",
-    "item",
-    "template",
-    "bind",
-    "calc",
-    "text",
-    "show",
-    "attr",
-    "set",
-    "trigger",
-    "move",
-    "sort",
-    "detail",
-    "each",
-    "effect",
-    "invalid",
-    "confirm",
-    "transient",
-    "default",
-    "persist",
-    "sortable",
-    // editmode is a hyperclayjs platform prefix (editmode:onclick), reserved so a
-    // co-loaded admin attribute never collides with a Sap state field name.
-    "editmode"
-  ]);
-  function cssPath(el) {
-    if (!el || el.nodeType !== 1) return "?";
-    if (el.id) return `${el.tagName.toLowerCase()}#${el.id}`;
-    const parts = [];
-    let cur = el;
-    let depth2 = 0;
-    while (cur && cur.nodeType === 1 && depth2 < 4) {
-      let seg = cur.tagName.toLowerCase();
-      if (cur.hasAttribute("sap")) seg += "[sap]";
-      else if (cur.parentElement) {
-        const sibs = [...cur.parentElement.children].filter((c) => c.tagName === cur.tagName);
-        if (sibs.length > 1) seg += `:nth-of-type(${sibs.indexOf(cur) + 1})`;
-      }
-      parts.unshift(seg);
-      if (cur.hasAttribute("sap")) break;
-      cur = cur.parentElement;
-      depth2++;
-    }
-    return parts.join(" > ");
-  }
-  function teachForAttr(name) {
-    const n2 = name.toLowerCase();
-    if (/^x-text$|^x-html$/.test(n2)) return `use text="state.x" (Sap paints text only)`;
-    if (/^x-show$|^v-show$|^v-if$/.test(n2)) return `use show="expr" (toggles native hidden)`;
-    if (/^x-model$|^v-model$/.test(n2)) return `use bind="field"`;
-    if (/^@|^x-on:|^v-on:|^on:/.test(n2)) return `use native onclick + Sap(this) (no event directive)`;
-    if (/^:|^x-bind:class$|^v-bind:class$/.test(n2)) return `use class:NAME="expr" or attr:NAME="expr"`;
-    if (/^x-for$|^v-for$/.test(n2)) return `use items="name" on the container and item template on the row`;
-    if (/^x-data$/.test(n2)) return `declare state with state= / bind / items (no JS state object)`;
-    if (/^x-init$/.test(n2)) return `use a <script> or onclick + Sap(this)`;
-    if (/^bind:/.test(n2)) return `use bind="field"; one-way paint is attr:NAME="expr"`;
-    if (/^x-/.test(n2) || /^v-/.test(n2)) return `this is a foreign-dialect attribute; Sap has no x-/v- attributes`;
-    return null;
-  }
-  var Diagnostics = class {
-    constructor(appName) {
-      this.appName = appName;
-      this.errors = [];
-      this.warnings = [];
-      this.halted = false;
-      this.haltReason = null;
-    }
-    block(code, el, info = {}) {
-      const slug = (REGISTRY[code] || {}).slug || "error";
-      const rec = {
-        code,
-        slug,
-        el: cssPath(el),
-        attr: info.attr || null,
-        expr: info.expr || null,
-        key: info.key || null,
-        problem: info.problem || "",
-        didYouMean: info.didYouMean || null,
-        fix: info.fix || null,
-        phase: info.phase || "runtime"
-      };
-      const out = ["\n" + (code[0] === "W" ? "sap \u26A0 " : "sap \u2717 ") + code + " " + slug];
-      out.push(`  at ${rec.el}${rec.attr ? ` \u2014 ${rec.attr}="${rec.expr ?? ""}"` : ""}`);
-      if (rec.problem) out.push(`  problem: ${rec.problem}`);
-      if (rec.didYouMean) out.push(`  did you mean: ${rec.didYouMean}`);
-      if (rec.fix) out.push(`  fix: ${rec.fix}`);
-      console.error(out.join("\n"));
-      return rec;
-    }
-    error(code, el, info = {}) {
-      const rec = this.block(code, el, info);
-      this.errors.push(rec);
-      return rec;
-    }
-    warn(code, el, info = {}) {
-      const rec = this.block(code, el, info);
-      this.warnings.push(rec);
-      return rec;
-    }
-    report() {
-      return {
-        ok: this.errors.length === 0 && !this.halted,
-        app: this.appName,
-        halted: this.halted,
-        haltReason: this.haltReason,
-        errors: this.errors.slice(),
-        warnings: this.warnings.slice()
-      };
-    }
-  };
-  function setBeacon(el, code) {
-    if (el && el.getAttribute("sap-error") !== code) el.setAttribute("sap-error", code);
-  }
-  function clearBeacon(el) {
-    if (el && el.hasAttribute("sap-error")) el.removeAttribute("sap-error");
-  }
-  function didYouMean(name, candidates) {
-    let best = null;
-    let bestD = 3;
-    for (const c of candidates) {
-      const d = lev(name, c);
-      if (d < bestD) {
-        bestD = d;
-        best = c;
-      }
-    }
-    return best;
-  }
-  function lev(a, b) {
-    const m = a.length;
-    const n2 = b.length;
-    const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...new Array(n2).fill(0)]);
-    for (let j = 0; j <= n2; j++) dp[0][j] = j;
-    for (let i = 1; i <= m; i++)
-      for (let j = 1; j <= n2; j++)
-        dp[i][j] = Math.min(
-          dp[i - 1][j] + 1,
-          dp[i][j - 1] + 1,
-          dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
-        );
-    return dp[m][n2];
   }
 
   // src/mutation-bridge.js
@@ -1064,7 +1123,7 @@ ${src}` : `"use strict"; return (${src});`;
   }
 
   // src/pass.js
-  var NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
+  var NATIVE_BOOLEAN_SET2 = new Set(NATIVE_BOOLEANS);
   function runPass(app, opts = {}) {
     if (opts.breaker) {
       app.diag.error("E26", app.root, {
@@ -1096,7 +1155,7 @@ ${src}` : `"use strict"; return (${src});`;
       const attr = d.attr || d.name;
       let raw = el.getAttribute(attr);
       if (raw == null) {
-        raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
+        raw = defaultRaw(d);
         pending.push({ el, name: d.name, attr, value: serializeTyped(parseTyped(raw, d.type), d.type) });
       }
       return parseTyped(raw, d.type);
@@ -1105,12 +1164,12 @@ ${src}` : `"use strict"; return (${src});`;
       const decls = parseStateDecl(el.getAttribute("state") || "");
       el._sapStateDecls = decls;
       for (const d of decls) {
-        if (d.type === "string" && NATIVE_BOOLEAN_SET.has(d.attr) && typeof el[d.attr] === "boolean") {
-          obj[d.name] = el.hasAttribute(d.attr);
-          continue;
-        }
         if (d.transient) {
           obj[d.name] = readTransient(el, d);
+          continue;
+        }
+        if (isPresenceDecl(el, d)) {
+          obj[d.name] = el.hasAttribute(d.attr);
           continue;
         }
         obj[d.name] = resolveDefault(el, d);
@@ -1166,16 +1225,25 @@ ${src}` : `"use strict"; return (${src});`;
           paints.push({ el, kind: "when", match: "show-not", field, values: val.split("|"), ctx });
         }
       }
-      if (ctx.view && el.hasAttribute("bind")) {
-        app.diag.error("E43", el, {
-          attr: "bind",
-          expr: el.getAttribute("bind"),
-          problem: "bind inside an each row; rows are read-only views of the data",
-          fix: "change the record with set:, Sap(el), or a detail panel"
-        });
-      }
-      if (ctx.projection && el.hasAttribute("bind")) {
-        paints.push({ el, kind: "projection", field: el.getAttribute("bind"), ctx });
+      if (el.hasAttribute("bind") && (ctx.view || ctx.projection) && !isComposer(el)) {
+        const field = el.getAttribute("bind");
+        if (!ctx.view) {
+          paints.push({ el, kind: "projection", field, ctx });
+        } else if (ownsField(recordElOf(ctx.item), field)) {
+          el._sapViewBind = "item";
+          paints.push({ el, kind: "projection", field, ctx, from: "item" });
+        } else if (field in ctx.state || field in ctx.root) {
+          el._sapViewBind = "drawn";
+          paints.push({ el, kind: "projection", field, ctx, from: "drawn" });
+        } else {
+          el._sapViewBind = null;
+          app.diag.error("E43", el, {
+            attr: "bind",
+            expr: field,
+            problem: `bind="${field}" inside an each row matches no field of the row's record or of the scope the row is drawn in`,
+            fix: "bind a field the record owns (bind, state= or items= on the [item]), or declare it with state= where the list is drawn"
+          });
+        }
       }
     }
     function defineRowMeta(rowObj, rowEl, i) {
@@ -1231,17 +1299,19 @@ ${src}` : `"use strict"; return (${src});`;
     }
     function resolvePathValue(path, ctx) {
       const segs = String(path).split(".");
-      let o = ctx.state;
-      for (const s of segs) o = o == null ? void 0 : o[s];
-      if (o === void 0) {
-        o = ctx.root;
-        for (const s of segs) o = o == null ? void 0 : o[s];
-      }
-      return o;
+      const walk = (o2) => {
+        for (const s of segs) {
+          if (o2 == null) return void 0;
+          o2 = Array.isArray(o2) ? o2.flatMap((r) => r && r[s] != null ? r[s] : []) : o2[s];
+        }
+        return o2;
+      };
+      const o = walk(ctx.state);
+      return o === void 0 ? walk(ctx.root) : o;
     }
     function handleDetail(el, parentObj, ctx) {
       for (const d of parseStateDecl(el.getAttribute("state") || "")) {
-        if (!(d.name in parentObj)) parentObj[d.name] = resolveDefault(el, d);
+        if (!(d.name in parentObj)) parentObj[d.name] = isPresenceDecl(el, d) ? el.hasAttribute(d.attr) : resolveDefault(el, d);
       }
       deferredDetails.push({ el, parentObj, ctx });
     }
@@ -1263,18 +1333,53 @@ ${src}` : `"use strict"; return (${src});`;
       } catch {
         keyVal = void 0;
       }
-      const row = Array.isArray(arr) ? arr.find((r) => r && String(r.$key) === String(keyVal)) : null;
+      const row = Array.isArray(arr) && keyVal != null ? arr.find((r) => r && typeof r === "object" && r.$el && String(r.$key) === String(keyVal)) : null;
       el._sapDetailRow = row ? row.$el : null;
-      if (!row) {
-        if (!el.hidden) el.hidden = true;
-        return;
+      if (el.tagName === "DIALOG") {
+        const k = row ? String(row.$key) : null;
+        if (k !== el._sapDetailKey) {
+          el._sapDetailKey = k;
+          el._sapDismissed = false;
+        }
+        if (!row) {
+          el._sapOpenedFor = null;
+          if (el.open && typeof el.close === "function") {
+            el._sapEngineClose = true;
+            el.close();
+          }
+          return;
+        }
+        if (el.open) {
+          el._sapOpenedFor = k;
+        } else {
+          if (el._sapOpenedFor === k) el._sapDismissed = true;
+          el._sapOpenedFor = null;
+          if (!el._sapDismissed && el.isConnected && typeof el.showModal === "function") {
+            if (el.hidden) el.hidden = false;
+            el.showModal();
+            el._sapOpenedFor = k;
+          }
+        }
+      } else {
+        if (!row) {
+          if (!el.hidden) el.hidden = true;
+          return;
+        }
+        if (el.hidden) el.hidden = false;
       }
-      if (el.hidden) el.hidden = false;
       const dctx = { root: ctx.root, state: parentObj, item: row, ownerEl: row.$el, projection: true };
       collectEl(el, dctx);
       walkScope(el, row, dctx);
     }
+    function drawnElFor(el, stateObj) {
+      for (let cur = el.parentElement; cur; cur = cur.parentElement) {
+        if (cur._sapScope === stateObj && !cur.hasAttribute("detail")) return cur;
+        if (cur.hasAttribute("sap")) return cur;
+      }
+      return root;
+    }
     function reconcileEach(el, ctx) {
+      el._sapDrawnEl = drawnElFor(el, ctx.state);
       const tmpl = [...el.children].find((c) => c.tagName === "TEMPLATE");
       const blueprint = tmpl && tmpl.content.children.length === 1 ? tmpl.content.firstElementChild : null;
       if (!blueprint) {
@@ -1440,6 +1545,12 @@ ${src}` : `"use strict"; return (${src});`;
   }
   function applyProjection(el, v) {
     if (el === el.ownerDocument.activeElement) return 0;
+    if (el.type === "radio") {
+      const want = v != null && String(el.value) === String(v);
+      if (el.checked === want) return 0;
+      el.checked = want;
+      return 1;
+    }
     const c = carrierFor(el);
     const cur = c.read();
     const nv = v == null ? "" : v;
@@ -1451,6 +1562,10 @@ ${src}` : `"use strict"; return (${src});`;
   }
   function paintOne(p, app) {
     if (p.kind === "projection") {
+      if (p.from === "drawn") {
+        const s = p.field in p.ctx.state ? p.ctx.state : p.ctx.root;
+        return applyProjection(p.el, s[p.field]);
+      }
       return applyProjection(p.el, p.ctx.item ? p.ctx.item[p.field] : "");
     }
     if (p.kind === "when") {
@@ -1515,7 +1630,20 @@ ${src}` : `"use strict"; return (${src});`;
       }
       case "attr": {
         const a = p.arg;
-        if (NATIVE_BOOLEAN_SET.has(a)) {
+        if ((a === "checked" || a === "selected") && typeof el[a] === "boolean" && !el.hasAttribute("bind") && !el.closest("select[bind]")) {
+          let n2 = 0;
+          if (el[a] !== !!value) {
+            el[a] = !!value;
+            n2 = 1;
+          }
+          if (!!value !== el.hasAttribute(a)) {
+            if (value) el.setAttribute(a, "");
+            else el.removeAttribute(a);
+            n2 = 1;
+          }
+          return n2;
+        }
+        if (NATIVE_BOOLEAN_SET2.has(a)) {
           const has = el.hasAttribute(a);
           if (value && !has) {
             el.setAttribute(a, "");
@@ -1596,7 +1724,7 @@ ${src}` : `"use strict"; return (${src});`;
   }
 
   // src/lint.js
-  var NATIVE_BOOLEAN_SET2 = new Set(NATIVE_BOOLEANS);
+  var NATIVE_BOOLEAN_SET3 = new Set(NATIVE_BOOLEANS);
   var COLON_PREFIXES = /* @__PURE__ */ new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode"]);
   var WHEN_PREFIXES = /* @__PURE__ */ new Set(["show-when", "hide-when", "option", "option-not"]);
   var EXPR_SHAPED = /\b(?:state|item|root)\.|===|!==|&&|\|\||[()]|^\s*!/;
@@ -1645,8 +1773,10 @@ ${src}` : `"use strict"; return (${src});`;
     for (const child of root.children) descend(child);
     function descend(el) {
       if (el.nodeType !== 1) return;
-      if (el.hasAttribute("sap-ignore") || el.hasAttribute("template")) {
-        if (el.hasAttribute("sap-ignore")) return;
+      if (el.hasAttribute("sap-ignore")) return;
+      if (el.tagName === "TEMPLATE") {
+        if (el.hasAttribute("items")) for (const c of el.content.children) descend(c);
+        return;
       }
       visit(el);
       for (const c of el.children) descend(c);
@@ -1705,7 +1835,7 @@ ${src}` : `"use strict"; return (${src});`;
               fix: `use show="${a.value}" for an expression, or a literal like ${prefix}:${field}="overview"`
             });
           }
-        } else if (!KNOWN_BARE.has(name) && !HTML_GLOBALS.has(name) && !NATIVE_BOOLEAN_SET2.has(name) && !/^(data-|aria-|on)/.test(name) && !(name in el)) {
+        } else if (!KNOWN_BARE.has(name) && !HTML_GLOBALS.has(name) && !NATIVE_BOOLEAN_SET3.has(name) && !/^(data-|aria-|on)/.test(name) && !(name in el)) {
           const dym = didYouMean(name, [...KNOWN_BARE]);
           if (dym) {
             diag.warn("W03", el, { attr: name, problem: `unknown "${name}" attribute`, didYouMean: dym });
@@ -1714,7 +1844,8 @@ ${src}` : `"use strict"; return (${src});`;
         if (name === "attr:hidden") {
           diag.warn("W03", el, { attr: name, problem: "attr:hidden paints the wrong attribute", fix: 'use show="expr"' });
         }
-        if ((name === "attr:value" || name === "attr:checked" || name === "attr:selected") && isBound(el)) {
+        const ownedByBind = isBound(el) || name === "attr:selected" && el.tagName === "OPTION" && !!el.closest("select[bind]");
+        if ((name === "attr:value" || name === "attr:checked" || name === "attr:selected") && ownedByBind) {
           halt("E30", el, { attr: name, problem: "attr: on a bound control collides with persist ownership", fix: "remove it; bind owns this attribute" });
         }
         if (name === "effect" && isBound(el) && /\b(value|checked)\s*=[^=]/.test(a.value)) {
@@ -1741,6 +1872,16 @@ ${src}` : `"use strict"; return (${src});`;
           if (d.name === "open" && el.tagName === "DIALOG") {
             halt("E33", el, { attr: "state", problem: "dialog open is transient", fix: "use showModal() \u2014 declare state= only on <details> or popovers" });
           }
+          const native = isNativeBoolean(el, d.attr);
+          if (native && (d.attr === "checked" || d.attr === "selected")) {
+            halt("E35", el, { attr: "state", problem: `"${d.attr}" on a form control is the control's own state, not a declared field`, fix: 'bind the control instead, e.g. <input type="checkbox" bind="done">' });
+          }
+          if (native && d.type === "num") {
+            halt("E35", el, { attr: "state", problem: `"${d.attr}" is an HTML boolean attribute; it cannot hold a number`, fix: `declare it bare: state="${d.attr}"` });
+          }
+          if (d.transient && (native || d.type === "presence")) {
+            halt("E35", el, { attr: "state", problem: `"${d.name}" is carried by attribute presence, which transient would strip`, fix: "declare a separate name:bool:transient field and paint the attribute from it" });
+          }
         }
       }
       if (isBound(el)) {
@@ -1766,7 +1907,14 @@ ${src}` : `"use strict"; return (${src});`;
           fix: "remove one \u2014 transient to keep it out of the file, or persist to save it"
         });
       }
-      if (el.hasAttribute("item") && !el.hasAttribute("template")) {
+      if (el.tagName === "DIALOG" && el.hasAttribute("detail") && !(el.parentElement && el.parentElement.closest('[clay~="freeze"], [freeze], [save-freeze]'))) {
+        diag.warn("W31", el, {
+          attr: "detail",
+          problem: "a detail dialog writes open when it opens, and that attribute would be saved into the file",
+          fix: 'wrap the dialog in an element with clay="freeze" (not editor-ui, which removes it from the file), and make its key field transient'
+        });
+      }
+      if (el.hasAttribute("item") && !el.hasAttribute("template") && el.parentNode && el.parentNode.nodeType === 1) {
         const list = el.parentElement;
         if (!list || !list.hasAttribute("items")) {
           halt("E10", el, { problem: "an [item] must be a direct child of an [items] list", fix: 'wrap it in a container with items="name"' });
@@ -1777,7 +1925,7 @@ ${src}` : `"use strict"; return (${src});`;
       }
       if (el.hasAttribute("items")) {
         const targeted = root.querySelector(`[trigger-add="${el.getAttribute("items")}"]`);
-        if (!templateOf(el) && rowsOf(el).length === 0 && targeted) {
+        if (!templateOf(el) && !sharedTemplate(root, el.getAttribute("items")) && rowsOf(el).length === 0 && targeted) {
           halt("E17", el, { attr: "items", problem: `trigger-add targets items="${el.getAttribute("items")}" but it has no [item template] to clone` });
         }
       }
@@ -1856,6 +2004,23 @@ ${src}` : `"use strict"; return (${src});`;
   }
 
   // src/scope.js
+  var ID_REF_ATTRS = [
+    "for",
+    "form",
+    "list",
+    "headers",
+    "popovertarget",
+    "commandfor",
+    "anchor",
+    "aria-activedescendant",
+    "aria-controls",
+    "aria-describedby",
+    "aria-details",
+    "aria-errormessage",
+    "aria-flowto",
+    "aria-labelledby",
+    "aria-owns"
+  ];
   function ownedScope(scopeEl, name) {
     let found = null;
     walkOwned(scopeEl, (el) => {
@@ -1904,6 +2069,18 @@ ${src}` : `"use strict"; return (${src});`;
       if (!res) return null;
       return makeProxy(res.ctxEl, res.appRec, res.isRow);
     }
+    function writeTargetFor(el, field) {
+      const viewRow = nearestViewRow(el);
+      if (!viewRow) return Sap2(el);
+      const appRec = runtime2.appFor(el);
+      const source = viewRow._sapEachItem && viewRow._sapEachItem.$el;
+      if (source && source.nodeType === 1 && source.hasAttribute("item") && ownsField(source, field)) {
+        return source.isConnected ? makeProxy(source, appRec, true) : null;
+      }
+      const drawn = viewRow.parentElement && viewRow.parentElement._sapDrawnEl;
+      if (!drawn || !drawn.isConnected) return null;
+      return makeProxy(drawn, appRec, drawn.hasAttribute("item"));
+    }
     function readField(ctxEl, appRec, field) {
       const control = ownedBind(ctxEl, field);
       if (control) return carrierFor(control).read();
@@ -1914,14 +2091,14 @@ ${src}` : `"use strict"; return (${src});`;
       const decl = declarerOf(ctxEl, appRec.root, field);
       if (decl) {
         if (decl.decl.transient) return readTransient(decl.el, decl.decl);
-        return parseTyped(decl.el.getAttribute(decl.decl.attr || field), decl.decl.type);
+        return readDeclared(decl.el, decl.decl);
       }
       const snap = ctxEl._sapScope;
       return snap ? snap[field] : void 0;
     }
     function setStateAttr(el, field, value, decl, appRec) {
       if (decl.transient) writeTransient(el, decl, value);
-      else el.setAttribute(decl.attr || field, serializeTyped(value, decl.type));
+      else writeDeclared(el, decl, value);
       runtime2.schedule(appRec, "set:" + field);
     }
     function knownFieldsFor(ctxEl, appRoot) {
@@ -1980,20 +2157,34 @@ ${src}` : `"use strict"; return (${src});`;
       const decls = root.getAttribute("state") || "";
       const token = type === "string" ? field : `${field}:${type}`;
       root.setAttribute("state", decls ? `${decls} ${token}` : token);
-      setStateAttr(root, field, value, { name: field, type, transient: false }, appRec);
+      setStateAttr(root, field, value, { name: field, attr: field, type, transient: false }, appRec);
     }
     function freshIds(rootClone) {
       const doc = rootClone.ownerDocument;
-      rootClone.querySelectorAll("[id]").forEach((el) => {
-        el.id = mintId(doc);
-      });
+      const renamed = /* @__PURE__ */ new Map();
+      const remint = (el, attr) => {
+        const id = mintId(doc);
+        const old = el.getAttribute(attr);
+        if (old && attr === "id") renamed.set(old, id);
+        el.setAttribute(attr, id);
+      };
+      rootClone.querySelectorAll("[id]").forEach((el) => remint(el, "id"));
+      rootClone.querySelectorAll("[data-id]").forEach((el) => remint(el, "data-id"));
       rootClone.querySelectorAll("[sap-error]").forEach((el) => el.removeAttribute("sap-error"));
       rootClone.removeAttribute("sap-error");
       if (rootClone.hasAttribute("data-id")) {
         rootClone.removeAttribute("id");
-        rootClone.setAttribute("data-id", mintId(doc));
+        remint(rootClone, "data-id");
       } else {
-        rootClone.id = mintId(doc);
+        remint(rootClone, "id");
+      }
+      for (const el of [rootClone, ...rootClone.querySelectorAll("*")]) {
+        for (const attr of ID_REF_ATTRS) {
+          const v = el.getAttribute(attr);
+          if (v == null) continue;
+          const next = v.split(/\s+/).map((t) => renamed.get(t) || t).join(" ");
+          if (next !== v) el.setAttribute(attr, next);
+        }
       }
     }
     function doAdd(ctxEl, appRec, name) {
@@ -2007,7 +2198,7 @@ ${src}` : `"use strict"; return (${src});`;
         appRec.diag.error("E17", listEl, { problem: `items="${name}" has no [item template] to clone` });
         return null;
       }
-      const clone = tmpl.cloneNode(true);
+      const clone = listEl.ownerDocument.importNode(tmpl, true);
       clone.removeAttribute("template");
       freshIds(clone);
       listEl.appendChild(clone);
@@ -2027,9 +2218,9 @@ ${src}` : `"use strict"; return (${src});`;
         }
       });
       for (const d of parseStateDecl(ctxEl.getAttribute("state") || "")) {
-        const dflt = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
-        if (d.transient) writeTransient(ctxEl, d, parseTyped(dflt, d.type));
-        else ctxEl.setAttribute(d.attr, dflt);
+        const value = declaredDefault(ctxEl, d);
+        if (d.transient) writeTransient(ctxEl, d, value);
+        else writeDeclared(ctxEl, d, value);
       }
       runtime2.schedule(appRec, "trigger-reset");
     }
@@ -2104,7 +2295,7 @@ ${src}` : `"use strict"; return (${src});`;
       });
       return proxy;
     }
-    return { Sap: Sap2, contextElFor, readField, writeField, makeProxy };
+    return { Sap: Sap2, contextElFor, readField, writeField, makeProxy, writeTargetFor };
   }
 
   // src/actions.js
@@ -2191,7 +2382,7 @@ ${src}` : `"use strict"; return (${src});`;
           appRec.diag.error("E24", el, { attr: a.name, expr: a.value, problem: String(err.message) });
           continue;
         }
-        const proxy = Sap2(el);
+        const proxy = accessor2.writeTargetFor(el, field);
         if (proxy) proxy[field] = value;
       }
     }
@@ -2299,8 +2490,11 @@ ${src}` : `"use strict"; return (${src});`;
         if (el.hasAttribute("bind")) composers.push(el);
       });
       for (const c of composers) {
-        const target = ownedBind(newRow.$el, c.getAttribute("bind"));
+        if (c.type === "radio" && !c.checked) continue;
+        const field = c.getAttribute("bind");
+        const target = ownedBind(newRow.$el, field);
         if (target) carrierFor(target).write(carrierFor(c).read());
+        else if (ownsField(newRow.$el, field)) newRow[field] = carrierFor(c).read();
       }
       composers.forEach(clearControl);
       if (composers.length) {
@@ -2333,14 +2527,42 @@ ${src}` : `"use strict"; return (${src});`;
       const appRec = runtime2.appFor(e.target);
       if (appRec) runtime2.schedule(appRec, "toggle");
     }
+    function onDialogClose(e) {
+      const dlg = e.target;
+      if (!dlg || dlg.tagName !== "DIALOG" || !dlg.hasAttribute("detail")) return;
+      if (dlg._sapEngineClose) {
+        dlg._sapEngineClose = false;
+        return;
+      }
+      if (dlg.open) return;
+      const m = /^[\w.]+\s+by\s+state\.(\w+)\s*$/.exec(dlg.getAttribute("detail") || "");
+      const appRec = runtime2.appFor(dlg);
+      if (!m || !appRec) return;
+      const own = parseStateDecl(dlg.getAttribute("state") || "").find((d) => d.name === m[1]);
+      if (own) {
+        if (own.transient) writeTransient(dlg, own, "");
+        else writeDeclared(dlg, own, "");
+        runtime2.schedule(appRec, "close");
+        return;
+      }
+      const proxy = Sap2(dlg.parentElement);
+      if (proxy && proxy[m[1]] !== "") proxy[m[1]] = "";
+    }
     function onInput(e) {
       const t = e.target;
       if (!t || t.nodeType !== 1) return;
       const appRec = runtime2.appFor(t);
       if (!appRec) return;
       if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
+      const composer = t.hasAttribute("bind") && isComposer(t);
+      if (!composer && t.hasAttribute("bind") && nearestViewRow(t)) {
+        const field = t.getAttribute("bind");
+        const target = t._sapViewBind ? accessor2.writeTargetFor(t, field) : null;
+        if (target) target[field] = carrierFor(t).read();
+        return;
+      }
       const detailEl = isInsideDetail(t);
-      if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind")) {
+      if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind") && !composer) {
         const row = detailEl._sapDetailRow;
         const field = t.getAttribute("bind");
         const src = ownedBind(row, field);
@@ -2386,6 +2608,7 @@ ${src}` : `"use strict"; return (${src});`;
       doc.addEventListener("submit", onSubmit);
       doc.addEventListener("reset", onReset);
       doc.addEventListener("toggle", onToggle, true);
+      doc.addEventListener("close", onDialogClose, true);
       doc.addEventListener("input", onInput);
       doc.addEventListener("change", onInput);
       doc.addEventListener("clay:sorted", onSorted);
@@ -2562,8 +2785,10 @@ ${src}` : `"use strict"; return (${src});`;
     return { status, report, why, debug, doctor, greenLine, printGreenLines, REGISTRY };
   }
 
+  // src/version.js
+  var VERSION = "0.4.0";
+
   // src/sap.js
-  var VERSION = "0.2.0";
   var registry = /* @__PURE__ */ new Map();
   var order = [];
   var scheduler = createScheduler(runPass);

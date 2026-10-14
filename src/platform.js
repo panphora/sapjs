@@ -21,6 +21,7 @@ export function capability(name) {
 export const MUTATION_READY = ["clay:mutation-ready", "hyperclay:mutation-ready"];
 export const LIVESYNC_APPLIED = ["clay:sync-applied", "hyperclay:livesync-applied"];
 export const PLATFORM_READY = ["clay:ready", "hyperclay:ready"];
+export const ROUTE_CHANGED = ["clay:route"];
 
 // The first name to arrive claims the tick, and only a DIFFERENT name is suppressed
 // while it holds the claim. Guarding on "have I run at all this tick" would collapse
@@ -102,6 +103,10 @@ export function installBridges(runtime) {
 
   // M2: livesync-applied must refresh synchronously inside the pause window.
   onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
+
+  // A clay-router route change is not a DOM edit, but expressions read the route
+  // (the open record, the active tab), so re-derive on it the same way.
+  onPlatformEvent(document, ROUTE_CHANGED, refreshConnected);
 
   // Undo/redo replay attributes with no events; re-derive after. Mutation readiness
   // is only an early compatibility retry: it truthfully announces the Mutation hub

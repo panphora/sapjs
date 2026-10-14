@@ -24,6 +24,7 @@ export const REGISTRY = {
   E32: { slug: "file-bind", behavior: "HALT" },
   E33: { slug: "dialog-state-open", behavior: "HALT" },
   E34: { slug: "transient-persist-collision", behavior: "HALT" },
+  E35: { slug: "presence-state-misuse", behavior: "HALT" },
   E40: { slug: "each-not-array", behavior: "ERR" },
   E41: { slug: "each-bad-key", behavior: "ERR" },
   E42: { slug: "each-template", behavior: "ERR" },
@@ -31,6 +32,7 @@ export const REGISTRY = {
   W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
   W04: { slug: "expression-in-when", behavior: "WARN" },
   W30: { slug: "nonzero-mount-writes", behavior: "WARN" },
+  W31: { slug: "detail-dialog-saved-open", behavior: "WARN" },
 };
 
 export const NATIVE_BOOLEANS = [

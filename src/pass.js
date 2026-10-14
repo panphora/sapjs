@@ -4,6 +4,7 @@
 
 import {
   walkOwned, rowsOf, parseStateDecl, parseTyped, serializeTyped, keyOf, readTransient,
+  isPresenceDecl, defaultRaw, ownsField, recordElOf, isComposer,
 } from "./dom.js";
 import { compile, run, topoSort } from "./compile.js";
 import { carrierFor } from "./carrier.js";
@@ -58,7 +59,7 @@ function runPassBody(app, opts) {
     const attr = d.attr || d.name;
     let raw = el.getAttribute(attr);
     if (raw == null) {
-      raw = d.default != null ? d.default : d.type === "num" ? "0" : d.type === "bool" ? "false" : "";
+      raw = defaultRaw(d);
       pending.push({ el, name: d.name, attr, value: serializeTyped(parseTyped(raw, d.type), d.type) });
     }
     return parseTyped(raw, d.type);
@@ -68,12 +69,12 @@ function runPassBody(app, opts) {
     const decls = parseStateDecl(el.getAttribute("state") || "");
     el._sapStateDecls = decls;
     for (const d of decls) {
-      if (d.type === "string" && NATIVE_BOOLEAN_SET.has(d.attr) && typeof el[d.attr] === "boolean") {
-        obj[d.name] = el.hasAttribute(d.attr); // presence semantics (e.g. <details open>)
-        continue;
-      }
       if (d.transient) {
         obj[d.name] = readTransient(el, d); // runtime-only; never serialized
+        continue;
+      }
+      if (isPresenceDecl(el, d)) {
+        obj[d.name] = el.hasAttribute(d.attr); // presence: <details open>, data-done
         continue;
       }
       obj[d.name] = resolveDefault(el, d);
@@ -131,15 +132,24 @@ function runPassBody(app, opts) {
         paints.push({ el, kind: "when", match: "show-not", field, values: val.split("|"), ctx });
       }
     }
-    if (ctx.view && el.hasAttribute("bind")) {
-      app.diag.error("E43", el, {
-        attr: "bind", expr: el.getAttribute("bind"),
-        problem: "bind inside an each row; rows are read-only views of the data",
-        fix: "change the record with set:, Sap(el), or a detail panel",
-      });
-    }
-    if (ctx.projection && el.hasAttribute("bind")) {
-      paints.push({ el, kind: "projection", field: el.getAttribute("bind"), ctx });
+    if (el.hasAttribute("bind") && (ctx.view || ctx.projection) && !isComposer(el)) {
+      const field = el.getAttribute("bind");
+      if (!ctx.view) {
+        paints.push({ el, kind: "projection", field, ctx });
+      } else if (ownsField(recordElOf(ctx.item), field)) {
+        el._sapViewBind = "item";
+        paints.push({ el, kind: "projection", field, ctx, from: "item" });
+      } else if (field in ctx.state || field in ctx.root) {
+        el._sapViewBind = "drawn";
+        paints.push({ el, kind: "projection", field, ctx, from: "drawn" });
+      } else {
+        el._sapViewBind = null;
+        app.diag.error("E43", el, {
+          attr: "bind", expr: field,
+          problem: `bind="${field}" inside an each row matches no field of the row's record or of the scope the row is drawn in`,
+          fix: "bind a field the record owns (bind, state= or items= on the [item]), or declare it with state= where the list is drawn",
+        });
+      }
     }
   }
 
@@ -199,15 +209,19 @@ function runPassBody(app, opts) {
     });
   }
 
+  // A path segment applied to an array collects that field from every row, so
+  // "lists.cards" is every card of every list.
   function resolvePathValue(path, ctx) {
     const segs = String(path).split(".");
-    let o = ctx.state;
-    for (const s of segs) o = o == null ? undefined : o[s];
-    if (o === undefined) {
-      o = ctx.root;
-      for (const s of segs) o = o == null ? undefined : o[s];
-    }
-    return o;
+    const walk = (o) => {
+      for (const s of segs) {
+        if (o == null) return undefined;
+        o = Array.isArray(o) ? o.flatMap((r) => (r && r[s] != null ? r[s] : [])) : o[s];
+      }
+      return o;
+    };
+    const o = walk(ctx.state);
+    return o === undefined ? walk(ctx.root) : o;
   }
 
   // A detail's own state= declarations name the key field; it lives on the
@@ -216,7 +230,7 @@ function runPassBody(app, opts) {
   // its list still finds it.
   function handleDetail(el, parentObj, ctx) {
     for (const d of parseStateDecl(el.getAttribute("state") || "")) {
-      if (!(d.name in parentObj)) parentObj[d.name] = resolveDefault(el, d);
+      if (!(d.name in parentObj)) parentObj[d.name] = isPresenceDecl(el, d) ? el.hasAttribute(d.attr) : resolveDefault(el, d);
     }
     deferredDetails.push({ el, parentObj, ctx });
   }
@@ -239,22 +253,65 @@ function runPassBody(app, opts) {
     } catch {
       keyVal = undefined;
     }
-    const row = Array.isArray(arr) ? arr.find((r) => r && String(r.$key) === String(keyVal)) : null;
+    const row = Array.isArray(arr) && keyVal != null
+      ? arr.find((r) => r && typeof r === "object" && r.$el && String(r.$key) === String(keyVal))
+      : null;
     el._sapDetailRow = row ? row.$el : null;
-    if (!row) {
-      if (!el.hidden) el.hidden = true;
-      return;
+    if (el.tagName === "DIALOG") {
+      // A dialog found closed while the key it was opened for still matches was
+      // dismissed by the user; it stays closed until the key changes.
+      const k = row ? String(row.$key) : null;
+      if (k !== el._sapDetailKey) {
+        el._sapDetailKey = k;
+        el._sapDismissed = false;
+      }
+      if (!row) {
+        el._sapOpenedFor = null;
+        if (el.open && typeof el.close === "function") {
+          el._sapEngineClose = true;
+          el.close();
+        }
+        return;
+      }
+      if (el.open) {
+        el._sapOpenedFor = k;
+      } else {
+        if (el._sapOpenedFor === k) el._sapDismissed = true;
+        el._sapOpenedFor = null;
+        if (!el._sapDismissed && el.isConnected && typeof el.showModal === "function") {
+          if (el.hidden) el.hidden = false;
+          el.showModal();
+          el._sapOpenedFor = k;
+        }
+      }
+    } else {
+      if (!row) {
+        if (!el.hidden) el.hidden = true;
+        return;
+      }
+      if (el.hidden) el.hidden = false;
     }
-    if (el.hidden) el.hidden = false;
     const dctx = { root: ctx.root, state: parentObj, item: row, ownerEl: row.$el, projection: true };
     collectEl(el, dctx);
     walkScope(el, row, dctx);
+  }
+
+  // The element whose scope an each= container's rows resolve non-record fields
+  // in: the nearest ancestor that owns ctx.state, skipping detail panels, whose
+  // _sapScope is the enclosing scope's object.
+  function drawnElFor(el, stateObj) {
+    for (let cur = el.parentElement; cur; cur = cur.parentElement) {
+      if (cur._sapScope === stateObj && !cur.hasAttribute("detail")) return cur;
+      if (cur.hasAttribute("sap")) return cur;
+    }
+    return root;
   }
 
   // Reconcile one each= container against its array, by key. Rows are reused,
   // moved and removed, never rebuilt, so focus and scroll inside them survive.
   // Returns how many structural changes it made.
   function reconcileEach(el, ctx) {
+    el._sapDrawnEl = drawnElFor(el, ctx.state);
     const tmpl = [...el.children].find((c) => c.tagName === "TEMPLATE");
     const blueprint = tmpl && tmpl.content.children.length === 1 ? tmpl.content.firstElementChild : null;
     if (!blueprint) {
@@ -449,6 +506,12 @@ function nearestMode(el, field, values, notMode) {
 
 function applyProjection(el, v) {
   if (el === el.ownerDocument.activeElement) return 0; // user is typing here
+  if (el.type === "radio") {
+    const want = v != null && String(el.value) === String(v);
+    if (el.checked === want) return 0;
+    el.checked = want;
+    return 1;
+  }
   const c = carrierFor(el);
   const cur = c.read();
   const nv = v == null ? "" : v;
@@ -461,6 +524,10 @@ function applyProjection(el, v) {
 
 function paintOne(p, app) {
   if (p.kind === "projection") {
+    if (p.from === "drawn") {
+      const s = p.field in p.ctx.state ? p.ctx.state : p.ctx.root;
+      return applyProjection(p.el, s[p.field]);
+    }
     return applyProjection(p.el, p.ctx.item ? p.ctx.item[p.field] : "");
   }
   if (p.kind === "when") {
@@ -523,6 +590,19 @@ function applyPaint(p, value) {
     }
     case "attr": {
       const a = p.arg;
+      if ((a === "checked" || a === "selected") && typeof el[a] === "boolean" && !el.hasAttribute("bind") && !el.closest("select[bind]")) {
+        let n = 0;
+        if (el[a] !== !!value) {
+          el[a] = !!value;
+          n = 1;
+        }
+        if (!!value !== el.hasAttribute(a)) {
+          if (value) el.setAttribute(a, "");
+          else el.removeAttribute(a);
+          n = 1;
+        }
+        return n;
+      }
       if (NATIVE_BOOLEAN_SET.has(a)) {
         const has = el.hasAttribute(a);
         if (value && !has) {
