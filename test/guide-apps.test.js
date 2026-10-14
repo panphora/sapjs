@@ -26,6 +26,9 @@ function mountClean(name) {
   expect(Sap.report().warnings).toEqual([]);
   expect(status.ok).toBe(true);
   expect(status.apps[0].mountWrites).toBe(0);
+  for (const panel of root.querySelectorAll("[detail]")) {
+    expect(panel.parentElement.closest('[clay="freeze"]')).not.toBeNull();
+  }
   return root;
 }
 const submit = (form) => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -46,6 +49,7 @@ describe("9.1 expense tracker", () => {
     Sap.refresh();
     expect(total.textContent).toBe("$66.50");
     expect(food.textContent).toBe("$54.50");
+    expect(root.querySelector('[data-id="e-groc"] input[type=number]').getAttribute("value")).toBe("54.5");
 
     const form = root.querySelector("form");
     const what = form.querySelector('[bind="what"]');
@@ -65,6 +69,7 @@ describe("9.1 expense tracker", () => {
     expect(food.textContent).toBe("$57.50");
     expect(what.value).toBe("");
     expect(document.activeElement).toBe(what);
+    expect(form.querySelector("select").value).toBe("food");
 
     root.querySelector('[data-id="e-train"] [trigger-remove]').click();
     await flush();

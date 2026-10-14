@@ -12,6 +12,10 @@ https://saphtml.com. Every attribute name, helper, format and error code below w
 out of the source. The npm package is `@panphora/sapjs`, the browser global is `Sap`, and
 the license is MIT-0 (MIT No Attribution).
 
+To build an app (a tracker, a board, a notes list) rather than look up one attribute,
+read https://saphtml.com/guide.md first. It covers where each piece of data goes, which
+feature fits each part of an app, three complete tested apps, and a trap table.
+
 sapjs competes with Alpine plus a little hand-written JavaScript, not with React. It suits
 trackers, calculators, forms with real validation, small CRUD apps and prototypes that fit
 in one screen of readable HTML. It is a poor fit for large datasets, data behind
@@ -25,7 +29,7 @@ Classic script tag, auto-mounts every `[sap]` root on load:
 <script src="https://cdn.jsdelivr.net/npm/@panphora/sapjs/dist/sap.min.js"></script>
 ```
 
-The bundle is an IIFE, about 49 KB minified. Do not add `type="module"` to that tag. Pin a
+The bundle is an IIFE, about 59 KB minified (20 KB gzipped). Do not add `type="module"` to that tag. Pin a
 version with `@panphora/sapjs@0.5.0` (or `@0.5`) in the URL. The same file is on unpkg at
 `https://unpkg.com/@panphora/sapjs/dist/sap.min.js`, and the site serves it at
 `https://saphtml.com/dist/sap.min.js`. Unminified: `dist/sap.js`.

@@ -13,7 +13,7 @@ const slug = (text) => text.toLowerCase().replace(/<[^>]+>/g, "").replace(/&[a-z
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 const toc = [];
-const seen = new Map();
+const used = new Set();
 let title = "sapjs guide";
 const marked = new Marked({ gfm: true });
 marked.use({
@@ -25,9 +25,9 @@ marked.use({
         return `<h1>${html}</h1>\n`;
       }
       let id = slug(html);
-      const n = seen.get(id) || 0;
-      seen.set(id, n + 1);
-      if (n) id += `-${n}`;
+      const base = id;
+      for (let n = 1; used.has(id); n++) id = `${base}-${n}`;
+      used.add(id);
       if (depth === 2) toc.push(`<li><a href="#${id}">${html.replace(/<[^>]+>/g, "")}</a></li>`);
       return `<h${depth} id="${id}"><a class="anchor" href="#${id}">#</a>${html}</h${depth}>\n`;
     },
@@ -45,7 +45,7 @@ const page = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)}</title>
+<title>${title}</title>
 <meta name="description" content="How to build malleable document apps (trackers, boards, notes) in one HTML file with sapjs and ClayJS.">
 <link rel="canonical" href="https://saphtml.com/guide.html">
 <link rel="alternate" type="text/markdown" href="./guide.md">
@@ -93,5 +93,14 @@ ${content}
 </html>
 `;
 
-writeFileSync(join(root, "guide.html"), page, "utf8");
-console.log(`build:guide → guide.html (${Buffer.byteLength(page)} bytes, ${toc.length} sections)`);
+const out = join(root, "guide.html");
+if (process.argv.includes("--check")) {
+  if (readFileSync(out, "utf8") !== page) {
+    console.error("guide.html is stale: run npm run build:guide");
+    process.exit(1);
+  }
+  console.log("build:guide --check: guide.html is current");
+} else {
+  writeFileSync(out, page, "utf8");
+  console.log(`build:guide → guide.html (${Buffer.byteLength(page)} bytes, ${toc.length} sections)`);
+}

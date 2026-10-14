@@ -1,6 +1,6 @@
-// Helpers for testing the public homepage (index.html).
+// Helpers for testing the demos page (demos.html).
 //
-// Unlike the explainer (docs/sapjs-explained.html), index.html is hand-authored
+// Unlike the explainer (docs/sapjs-explained.html), demos.html is hand-authored
 // source, not generated, and it loads the engine over a <script src="./dist/sap.min.js">
 // tag rather than inlining it. So these helpers parse the page for structure and
 // extract each demo's markup, then load the readable dist/sap.js build directly to
@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 // __dirname is available because babel-jest transpiles these ESM files to CommonJS.
 export const ROOT = join(__dirname, "..", "..");
-export const INDEX_PATH = join(ROOT, "index.html");
+export const INDEX_PATH = join(ROOT, "demos.html");
 export const DIST_PATH = join(ROOT, "dist", "sap.js");
 
 export const indexHtml = readFileSync(INDEX_PATH, "utf8");

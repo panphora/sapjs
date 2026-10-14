@@ -4,6 +4,8 @@
 
 Sap is a tiny reactive layer for hand-written HTML files. You declare state, formulas, and paints as plain attributes; Sap rebuilds everything from the live DOM on every change. The DOM is the only store, so the file you save *is* the app: open it in any browser, it runs.
 
+**Building an app?** Read the [guide](https://saphtml.com/guide.html) ([Markdown](./guide.md)): where each piece of data goes, which feature fits each part of an app, three complete tested apps, and a trap table.
+
 ```html
 <script src="https://cdn.jsdelivr.net/npm/@panphora/sapjs/dist/sap.min.js"></script>
 

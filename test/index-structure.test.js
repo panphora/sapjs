@@ -1,4 +1,4 @@
-// index.html is the public homepage and, after the explainer is retired, the single
+// demos.html (formerly the homepage) is, after the explainer is retired, the single
 // complete sapjs doc. These tests guard its information architecture: the sections
 // exist in order, the nav is wired with no dead links, every demo is present and
 // runnable, and the two carried diagrams are intact.

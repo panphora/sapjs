@@ -3023,7 +3023,7 @@ if (typeof window !== 'undefined' && Sap && Sap.default) window.Sap = Sap.defaul
   .note.blue { background: rgba(124,196,255,0.06); border-color: rgba(124,196,255,0.28); }
   .note.blue b { color: var(--blue); }
 
-  /* Demo cards (ported from index.html) */
+  /* Demo cards (ported from demos.html) */
   .demo { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; margin: 16px 0; overflow: hidden; }
   .demo-head { padding: 14px 18px 0; display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
   .demo-head h4 { margin: 0; font-size: 15px; }
@@ -3055,7 +3055,7 @@ if (typeof window !== 'undefined' && Sap && Sap.default) window.Sap = Sap.defaul
   .tok-punc { color: var(--faint); }
   .tok-comment { color: var(--faint); font-style: italic; }
 
-  /* rendered demo widgets (ported from index.html) */
+  /* rendered demo widgets (ported from demos.html) */
   .live input[type=text], .live input[type=number], .live input[type=email], .live input[type=password],
   .live input[type=search], .live input[type=date], .live input[type=time], .live input:not([type]),
   .live textarea, .live select {
@@ -3959,7 +3959,7 @@ Sap.config({ formats: { gbp: (n) =&gt; "£" + Number(n).toFixed(2) } });
 <!-- ================= VERIFY ================= -->
 <section class="wrap" id="verify">
   <h2><span class="num">06</span>Verify it yourself</h2>
-  <p class="lead">This page is held to sap's own agent contract (<code class="mono">index.html:800-804</code>): every demo mounts <code>sap ✓</code>, <code>Sap.status().ok</code> is true, and there are zero <code>[sap-error]</code> beacons — three of the contract's four clauses (the fourth, an empty <code>Sap.doctor()</code>, is advisory on a teaching page). Run the checks below; they call the real console API on the demos above.</p>
+  <p class="lead">This page is held to sap's own agent contract (<code class="mono">demos.html:1173-1175</code>): every demo mounts <code>sap ✓</code>, <code>Sap.status().ok</code> is true, and there are zero <code>[sap-error]</code> beacons — three of the contract's four clauses (the fourth, an empty <code>Sap.doctor()</code>, is advisory on a teaching page). Run the checks below; they call the real console API on the demos above.</p>
   <div class="console">
     <div class="console-bar">
       <button onclick="runConsole('verify')">Run page gate</button>
@@ -3990,7 +3990,7 @@ Sap.config({ formats: { gbp: (n) =&gt; "£" + Number(n).toFixed(2) } });
   Sap.formats.eur = (n) => "€" + Number(n).toFixed(2);
   Sap.config({ formats: { gbp: (n) => "£" + Number(n).toFixed(2) } });
 
-  // ---- dedent helper (from index.html) ----
+  // ---- dedent helper (from demos.html) ----
   function dedent(s) {
     let lines = s.replace(/\t/g, "  ").split("\n");
     while (lines.length && !lines[0].trim()) lines.shift();
