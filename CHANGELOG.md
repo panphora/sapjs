@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0] - 2026-10-14
+
+### Added
+- Shared site.css stylesheet used across all pages
+- How-it-works page
+- New home page
+- Guide for building malleable document apps, generated at build time
+- Editable rows in each loops
+- Presence fields
+- Detail dialogs
+- Shared blueprints
+
+
+
 ## [0.4.0] - 2026-10-12
 
 ### Added

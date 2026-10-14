@@ -2786,7 +2786,7 @@ ${src}` : `"use strict"; return (${src});`;
   }
 
   // src/version.js
-  var VERSION = "0.4.0";
+  var VERSION = "0.5.0";
 
   // src/sap.js
   var registry = /* @__PURE__ */ new Map();
