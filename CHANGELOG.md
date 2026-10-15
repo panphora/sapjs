@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.1] - 2026-10-15
+
+### Changed
+- Reworded the sapjs homepage meta description and heading
+- The self-contained doc test now allows the polite pop loader, and only that loader
+- The polite pop newsletter ask now loads from hyperclay.com
+- Doubled the space between the hero demo and its code
+- Elements with no directives now share one empty plan
+
+### Fixed
+- A change at 10,000 rows now stays under 50 ms because parsed directives are cached
+
+
+
 ## [0.5.0] - 2026-10-14
 
 ### Added
