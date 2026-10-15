@@ -123,3 +123,21 @@ test("a row whose connectedCallback edits its directives while the pass places i
   expect(moved.length).toBeGreaterThan(0);
   for (const el of moved) expect(el.textContent.startsWith("Moved ")).toBe(true);
 });
+
+test("a plain element shares the empty plan until it gains a directive", async () => {
+  const root = mount(`<main sap><input id="i" bind="m" value="hi"><p id="a"></p><p id="b"></p></main>`);
+  await tick();
+  typeIn(root, "yo");
+  await tick();
+  const a = root.querySelector("#a");
+  const b = root.querySelector("#b");
+  expect(a._sapPlan).toBeTruthy();
+  expect(a._sapPlan).toBe(b._sapPlan);
+  expect(Object.isFrozen(a._sapPlan)).toBe(true);
+  a.setAttribute("text", "state.m");
+  typeIn(root, "ok");
+  await tick();
+  expect(a.textContent).toBe("ok");
+  expect(b.textContent).toBe("");
+  expect(a._sapPlan).not.toBe(b._sapPlan);
+});

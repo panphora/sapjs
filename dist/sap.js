@@ -856,7 +856,34 @@ ${src}` : `"use strict"; return (${src});`;
       }
     }
     plan.boundary = plan.scope ? "scope" : plan.items ? "items" : plan.detail ? "detail" : plan.each ? "each" : null;
-    return plan;
+    return isEmpty(plan) ? emptyPlan() : plan;
+  }
+  var empty = null;
+  function emptyPlan() {
+    if (!empty || empty.gen !== planGen) {
+      empty = Object.freeze({
+        gen: planGen,
+        inert: false,
+        template: false,
+        item: false,
+        scope: false,
+        items: false,
+        detail: false,
+        each: false,
+        boundary: null,
+        bind: null,
+        transient: false,
+        decls: null,
+        calcs: null,
+        paints: null,
+        effects: null,
+        invalids: null
+      });
+    }
+    return empty;
+  }
+  function isEmpty(plan) {
+    return !plan.inert && !plan.item && plan.boundary === null && plan.bind === null && !plan.transient && !plan.decls && !plan.calcs && !plan.paints && !plan.effects && !plan.invalids;
   }
 
   // src/control-serialize.js
