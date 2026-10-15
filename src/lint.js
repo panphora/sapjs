@@ -40,16 +40,15 @@ function isBound(el) {
 // A shared <template items> blueprint is checked through its content.
 function walkAll(root, visit) {
   visit(root);
-  for (const child of root.children) descend(child);
+  for (let child = root.firstElementChild; child; child = child.nextElementSibling) descend(child);
   function descend(el) {
-    if (el.nodeType !== 1) return;
     if (el.hasAttribute("sap-ignore")) return;
     if (el.tagName === "TEMPLATE") {
-      if (el.hasAttribute("items")) for (const c of el.content.children) descend(c);
+      if (el.hasAttribute("items")) for (let c = el.content.firstElementChild; c; c = c.nextElementSibling) descend(c);
       return;
     }
     visit(el);
-    for (const c of el.children) descend(c);
+    for (let c = el.firstElementChild; c; c = c.nextElementSibling) descend(c);
   }
 }
 

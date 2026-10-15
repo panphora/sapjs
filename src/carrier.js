@@ -106,6 +106,17 @@ function fire(el) {
   el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+// Non-allocating read and write for a control whose kind is already known; the pass
+// uses these instead of a carrier object.
+export function readControl(el, kind) {
+  return readBy(el, kind);
+}
+
+export function writeControl(el, kind, v) {
+  writeBy(el, kind, v);
+  mirror(el);
+}
+
 export function carrierFor(el) {
   const kind = kindOf(el);
   return {

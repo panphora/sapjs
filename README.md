@@ -108,7 +108,7 @@ The form's input is named `title`, the same as the row's field. On Enter, `trigg
 
 ## How it works
 
-**Every change triggers one pass.** A pass throws away all in-memory state and rebuilds it by reading the DOM top to bottom: every `state=`, `bind`, and `items=` is read into a fresh object, `calc:` fields compute, then paints write only what changed. The objects are then discarded. There is no retained JS state to drift from the DOM, which is why a hand-edit in devtools, a console paste, or a live-sync morph all just work: each is simply the next pass's input.
+**Every change triggers one pass.** A pass throws away all in-memory state and rebuilds it by reading the DOM top to bottom: every `state=`, `bind`, and `items=` is read into a fresh object, `calc:` fields compute, then paints write only what changed. The objects are then discarded. The one thing kept between passes is each element's parsed attributes, and an element's are dropped the moment any of its attributes change. There is no retained JS state to drift from the DOM, which is why a hand-edit in devtools, a console paste, or a live-sync morph all just work: each is simply the next pass's input.
 
 **Passes are batched.** A burst of writes coalesces into one pass on the next microtask, so reading painted output on the line right after a write sees the old DOM. Call `Sap.refresh()` for an immediate synchronous pass when you must read painted output now.
 

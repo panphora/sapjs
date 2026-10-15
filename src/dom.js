@@ -42,13 +42,12 @@ export function isInert(el) {
 // boundaries (scope/items/detail) and skips inert subtrees (sap-ignore/template).
 // visit(el, isBoundary) is called for every owned element including boundaries.
 export function walkOwned(scopeEl, visit) {
-  for (const child of scopeEl.children) descend(child);
+  for (let child = scopeEl.firstElementChild; child; child = child.nextElementSibling) descend(child);
   function descend(el) {
-    if (el.nodeType !== 1) return;
     if (isInert(el)) return;
     const boundary = isScopeBoundary(el);
     visit(el, boundary);
-    if (!boundary) for (const c of el.children) descend(c);
+    if (!boundary) for (let c = el.firstElementChild; c; c = c.nextElementSibling) descend(c);
   }
 }
 
@@ -138,7 +137,11 @@ export function isComposer(el) {
 }
 
 export function rowsOf(listEl) {
-  return [...listEl.children].filter((c) => c.hasAttribute("item") && !c.hasAttribute("template"));
+  const rows = [];
+  for (let c = listEl.firstElementChild; c; c = c.nextElementSibling) {
+    if (c.hasAttribute("item") && !c.hasAttribute("template")) rows.push(c);
+  }
+  return rows;
 }
 
 // The shared <template items="NAME"> of one app, ignoring templates that belong to
@@ -152,8 +155,9 @@ export function sharedTemplate(appRoot, name) {
 
 // A list's own [item template] row, else the app's shared <template items="NAME">.
 export function templateOf(listEl) {
-  const own = [...listEl.children].find((c) => c.hasAttribute("item") && c.hasAttribute("template"));
-  if (own) return own;
+  for (let c = listEl.firstElementChild; c; c = c.nextElementSibling) {
+    if (c.hasAttribute("item") && c.hasAttribute("template")) return c;
+  }
   return sharedTemplate(listEl.closest("[sap]"), listEl.getAttribute("items"));
 }
 

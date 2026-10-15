@@ -1,4 +1,4 @@
-import { helperBundle } from "./helpers.js";
+import { formats, num, sum, count, avg, min, max, plural, days } from "./helpers.js";
 
 // The frozen compile signature. These argument names are fixed forever.
 // App-registered formats extend the `fmt` namespace object, never this list,
@@ -43,8 +43,13 @@ export function compile(src, statement = false) {
 // Evaluate a compiled entry against an { state, item, el, root } context.
 // Throws if the expression throws (callers do preserve-on-error).
 export function run(entry, ctx) {
+  return runWith(entry, ctx.state, ctx.item, ctx.el ?? null, ctx.root);
+}
+
+// The same call without a context object: the pass runs every paint through this.
+export function runWith(entry, state, item, el, root) {
   if (entry.error) throw entry.error;
-  return entry.fn(ctx.state, ctx.item, ctx.el ?? null, ctx.root, ...helperBundle());
+  return entry.fn(state, item, el, root, formats, num, sum, count, avg, min, max, plural, days);
 }
 
 export function clearCompileCache() {

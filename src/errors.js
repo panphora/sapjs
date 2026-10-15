@@ -66,8 +66,14 @@ export function cssPath(el) {
     let seg = cur.tagName.toLowerCase();
     if (cur.hasAttribute("sap")) seg += "[sap]";
     else if (cur.parentElement) {
-      const sibs = [...cur.parentElement.children].filter((c) => c.tagName === cur.tagName);
-      if (sibs.length > 1) seg += `:nth-of-type(${sibs.indexOf(cur) + 1})`;
+      let count = 0;
+      let index = 0;
+      for (let c = cur.parentElement.firstElementChild; c; c = c.nextElementSibling) {
+        if (c.tagName !== cur.tagName) continue;
+        count++;
+        if (c === cur) index = count;
+      }
+      if (count > 1) seg += `:nth-of-type(${index})`;
     }
     parts.unshift(seg);
     if (cur.hasAttribute("sap")) break;

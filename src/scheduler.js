@@ -31,7 +31,7 @@ export function createScheduler(runPass) {
     for (const app of apps) runWithBreaker(app);
   }
 
-  function runWithBreaker(app) {
+  function runWithBreaker(app, full = false) {
     if (app._broken) return;
     app._passes = (app._passes || 0) + 1;
     if (app._passes > MAX_PASSES) {
@@ -47,13 +47,14 @@ export function createScheduler(runPass) {
         app._resetArmed = false;
       }, 0);
     }
-    runPass(app);
+    runPass(app, full ? { full: true } : {});
   }
 
-  // Synchronous pass (Sap.refresh / livesync resync). Still breaker-guarded.
+  // Synchronous pass (Sap.refresh / livesync resync). Still breaker-guarded. The
+  // caller cannot say which elements changed, so every directive is re-read.
   function runNow(app, trigger) {
     note(trigger);
-    runWithBreaker(app);
+    runWithBreaker(app, true);
   }
 
   function rearm(app) {

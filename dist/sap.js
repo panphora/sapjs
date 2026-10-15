@@ -52,7 +52,7 @@ var Sap = (() => {
       dirty.clear();
       for (const app of apps) runWithBreaker(app);
     }
-    function runWithBreaker(app) {
+    function runWithBreaker(app, full = false) {
       if (app._broken) return;
       app._passes = (app._passes || 0) + 1;
       if (app._passes > MAX_PASSES) {
@@ -68,11 +68,11 @@ var Sap = (() => {
           app._resetArmed = false;
         }, 0);
       }
-      runPass2(app);
+      runPass2(app, full ? { full: true } : {});
     }
     function runNow(app, trigger) {
       note(trigger);
-      runWithBreaker(app);
+      runWithBreaker(app, true);
     }
     function rearm(app) {
       app._broken = false;
@@ -193,8 +193,14 @@ var Sap = (() => {
       let seg = cur.tagName.toLowerCase();
       if (cur.hasAttribute("sap")) seg += "[sap]";
       else if (cur.parentElement) {
-        const sibs = [...cur.parentElement.children].filter((c) => c.tagName === cur.tagName);
-        if (sibs.length > 1) seg += `:nth-of-type(${sibs.indexOf(cur) + 1})`;
+        let count2 = 0;
+        let index = 0;
+        for (let c = cur.parentElement.firstElementChild; c; c = c.nextElementSibling) {
+          if (c.tagName !== cur.tagName) continue;
+          count2++;
+          if (c === cur) index = count2;
+        }
+        if (count2 > 1) seg += `:nth-of-type(${index})`;
       }
       parts.unshift(seg);
       if (cur.hasAttribute("sap")) break;
@@ -330,13 +336,12 @@ var Sap = (() => {
     return el.tagName === "TEMPLATE" || el.hasAttribute("sap-ignore") || el.hasAttribute("template");
   }
   function walkOwned(scopeEl, visit) {
-    for (const child of scopeEl.children) descend(child);
+    for (let child = scopeEl.firstElementChild; child; child = child.nextElementSibling) descend(child);
     function descend(el) {
-      if (el.nodeType !== 1) return;
       if (isInert(el)) return;
       const boundary = isScopeBoundary(el);
       visit(el, boundary);
-      if (!boundary) for (const c of el.children) descend(c);
+      if (!boundary) for (let c = el.firstElementChild; c; c = c.nextElementSibling) descend(c);
     }
   }
   function nearestScopeEl(el) {
@@ -401,7 +406,11 @@ var Sap = (() => {
     return !!el.closest("form[trigger-add]");
   }
   function rowsOf(listEl) {
-    return [...listEl.children].filter((c) => c.hasAttribute("item") && !c.hasAttribute("template"));
+    const rows = [];
+    for (let c = listEl.firstElementChild; c; c = c.nextElementSibling) {
+      if (c.hasAttribute("item") && !c.hasAttribute("template")) rows.push(c);
+    }
+    return rows;
   }
   function sharedTemplate(appRoot, name) {
     if (!appRoot || !name) return null;
@@ -410,8 +419,9 @@ var Sap = (() => {
     return blueprint && blueprint.hasAttribute("item") ? blueprint : null;
   }
   function templateOf(listEl) {
-    const own = [...listEl.children].find((c) => c.hasAttribute("item") && c.hasAttribute("template"));
-    if (own) return own;
+    for (let c = listEl.firstElementChild; c; c = c.nextElementSibling) {
+      if (c.hasAttribute("item") && c.hasAttribute("template")) return c;
+    }
     return sharedTemplate(listEl.closest("[sap]"), listEl.getAttribute("items"));
   }
   function parseStateDecl(str) {
@@ -623,9 +633,6 @@ var Sap = (() => {
     }
     return f(v);
   }
-  function helperBundle() {
-    return [formats, num, sum, count, avg, min, max, plural, days];
-  }
 
   // src/compile.js
   var ARGS = ["state", "item", "el", "root", "fmt", "num", "sum", "count", "avg", "min", "max", "plural", "days"];
@@ -659,8 +666,11 @@ ${src}` : `"use strict"; return (${src});`;
     return entry;
   }
   function run(entry, ctx) {
+    return runWith(entry, ctx.state, ctx.item, ctx.el ?? null, ctx.root);
+  }
+  function runWith(entry, state, item, el, root) {
     if (entry.error) throw entry.error;
-    return entry.fn(ctx.state, ctx.item, ctx.el ?? null, ctx.root, ...helperBundle());
+    return entry.fn(state, item, el, root, formats, num, sum, count, avg, min, max, plural, days);
   }
   function topoSort(calcs) {
     const byName = /* @__PURE__ */ new Map();
@@ -694,6 +704,159 @@ ${src}` : `"use strict"; return (${src});`;
     }
     for (const c of calcs) visit(c);
     return out;
+  }
+
+  // src/plan.js
+  var planGen = 0;
+  var watcher = null;
+  var canWatch = true;
+  var cacheable = false;
+  function dropPlans() {
+    planGen++;
+  }
+  function beginPlans(root) {
+    const prev = cacheable;
+    if (watcher) clearFromRecords(watcher.takeRecords());
+    else if (canWatch) watchPlans();
+    cacheable = !!watcher && root.getRootNode() === document;
+    return prev;
+  }
+  function endPlans(prev) {
+    cacheable = prev;
+  }
+  function drainPlans() {
+    if (watcher) clearFromRecords(watcher.takeRecords());
+  }
+  function watchPlans() {
+    if (typeof document === "undefined" || typeof MutationObserver !== "function") {
+      canWatch = false;
+      return;
+    }
+    watcher = new MutationObserver(clearFromRecords);
+    watcher.observe(document, { attributes: true, childList: true, subtree: true });
+  }
+  function clearFromRecords(records) {
+    for (const rec of records) {
+      if (rec.type === "attributes") {
+        if (rec.target._sapPlan) rec.target._sapPlan = null;
+      } else {
+        for (const node of rec.addedNodes) if (node.nodeType === 1) clearTree(node);
+      }
+    }
+  }
+  function clearTree(el) {
+    if (el._sapPlan) el._sapPlan = null;
+    for (let c = el.firstElementChild; c; c = c.nextElementSibling) clearTree(c);
+  }
+  function planOf(el) {
+    if (!cacheable) return buildPlan(el);
+    const p = el._sapPlan;
+    if (p && p.gen === planGen) return p;
+    return el._sapPlan = buildPlan(el);
+  }
+  function buildPlan(el) {
+    const plan = {
+      gen: planGen,
+      inert: el.tagName === "TEMPLATE",
+      template: false,
+      item: false,
+      scope: false,
+      items: false,
+      detail: false,
+      each: false,
+      boundary: null,
+      bind: null,
+      transient: false,
+      decls: null,
+      calcs: null,
+      paints: null,
+      effects: null,
+      invalids: null
+    };
+    for (const attr of el.attributes) {
+      const name = attr.name;
+      const val = attr.value;
+      const colon = name.indexOf(":");
+      if (colon < 0) {
+        switch (name) {
+          case "sap-ignore":
+            plan.inert = true;
+            break;
+          case "template":
+            plan.inert = true;
+            plan.template = true;
+            break;
+          case "item":
+            plan.item = true;
+            break;
+          case "scope":
+            plan.scope = true;
+            break;
+          case "items":
+            plan.items = true;
+            break;
+          case "detail":
+            plan.detail = true;
+            break;
+          case "each":
+            plan.each = true;
+            break;
+          case "bind":
+            plan.bind = val;
+            break;
+          case "transient":
+            plan.transient = true;
+            break;
+          case "state":
+            plan.decls = parseStateDecl(val);
+            break;
+          case "text":
+            (plan.paints || (plan.paints = [])).push({ kind: "text", fmt: null, entry: compile(val) });
+            break;
+          case "show":
+            (plan.paints || (plan.paints = [])).push({ kind: "show", entry: compile(val) });
+            break;
+          case "effect":
+            (plan.effects || (plan.effects = [])).push({ entry: compile(val, true) });
+            break;
+          case "invalid":
+            (plan.invalids || (plan.invalids = [])).push({ entry: compile(val) });
+            break;
+        }
+        continue;
+      }
+      const head = name.slice(0, colon);
+      const tail = name.slice(colon + 1);
+      switch (head) {
+        case "calc":
+          (plan.calcs || (plan.calcs = [])).push({ name: tail, entry: compile(val) });
+          break;
+        case "text":
+          (plan.paints || (plan.paints = [])).push({ kind: "text", fmt: tail, entry: compile(val) });
+          break;
+        case "attr":
+          (plan.paints || (plan.paints = [])).push({ kind: "attr", arg: tail, entry: compile(val) });
+          break;
+        case "class":
+          (plan.paints || (plan.paints = [])).push({ kind: "class", arg: tail, entry: compile(val) });
+          break;
+        case "css":
+          (plan.paints || (plan.paints = [])).push({ kind: "css", arg: tail, entry: compile(val) });
+          break;
+        case "show-when":
+        case "option":
+          (plan.paints || (plan.paints = [])).push({ kind: "when", match: "show", field: tail, values: val.split("|") });
+          break;
+        case "hide-when":
+          (plan.paints || (plan.paints = [])).push({ kind: "when", match: "hide", field: tail, values: val.split("|") });
+          break;
+        case "option-not":
+          (plan.paints || (plan.paints = [])).push({ kind: "when", match: "show-not", field: tail, values: val.split("|") });
+          break;
+      }
+    }
+    plan.boundary = plan.scope ? "scope" : plan.items ? "items" : plan.detail ? "detail" : plan.each ? "each" : null;
+    return plan;
   }
 
   // src/control-serialize.js
@@ -944,6 +1107,13 @@ ${src}` : `"use strict"; return (${src});`;
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
+  function readControl(el, kind) {
+    return readBy(el, kind);
+  }
+  function writeControl(el, kind, v) {
+    writeBy(el, kind, v);
+    mirror(el);
+  }
   function carrierFor(el) {
     const kind = kindOf(el);
     return {
@@ -1132,7 +1302,13 @@ ${src}` : `"use strict"; return (${src});`;
       setBeacon(app.root, "loop");
       return;
     }
-    withDomMutationPaused(() => runPassBody(app, opts));
+    if (opts.full) dropPlans();
+    const plans = beginPlans(app.root);
+    try {
+      withDomMutationPaused(() => runPassBody(app, opts));
+    } finally {
+      endPlans(plans);
+    }
     if (app._viewsChanged) {
       app._viewsChanged = false;
       app.root.dispatchEvent(new CustomEvent("sap:views-updated", { bubbles: true }));
@@ -1160,9 +1336,9 @@ ${src}` : `"use strict"; return (${src});`;
       }
       return parseTyped(raw, d.type);
     }
-    function readState(el, obj) {
-      const decls = parseStateDecl(el.getAttribute("state") || "");
-      el._sapStateDecls = decls;
+    function readState(el, plan, obj) {
+      const decls = plan.decls;
+      if (!decls) return;
       for (const d of decls) {
         if (d.transient) {
           obj[d.name] = readTransient(el, d);
@@ -1175,66 +1351,44 @@ ${src}` : `"use strict"; return (${src});`;
         obj[d.name] = resolveDefault(el, d);
       }
     }
-    function readBindInto(el, ctx) {
-      if (!el.hasAttribute("bind")) return;
-      const field = el.getAttribute("bind");
+    function readBindInto(el, plan, ctx) {
+      const field = plan.bind;
       const owner = ctx.item || ctx.state;
-      const c = carrierFor(el);
-      if (c.kind === "radio") {
+      const kind = kindOf(el);
+      if (kind === "radio") {
         if (!(field in owner)) owner[field] = "";
         if (el.checked) owner[field] = el.value;
       } else {
-        owner[field] = c.read();
+        owner[field] = readControl(el, kind);
       }
-      if (el.hasAttribute("transient")) {
+      if (plan.transient) {
         el.removeAttribute("value");
         el.removeAttribute("checked");
       }
     }
-    function collectEl(el, ctx) {
-      for (const attr of el.attributes) {
-        const name = attr.name;
-        const val = attr.value;
-        if (name.startsWith("calc:")) {
-          calcs.push({ owner: ctx.item || ctx.state, ownerEl: ctx.ownerEl, name: name.slice(5), entry: compile(val), el, ctx });
-        } else if (name === "text" || name.startsWith("text:")) {
-          paints.push({ el, kind: "text", fmt: name.includes(":") ? name.slice(5) : null, entry: compile(val), ctx });
-        } else if (name === "show") {
-          paints.push({ el, kind: "show", entry: compile(val), ctx });
-        } else if (name.startsWith("attr:")) {
-          paints.push({ el, kind: "attr", arg: name.slice(5), entry: compile(val), ctx });
-        } else if (name.startsWith("class:")) {
-          paints.push({ el, kind: "class", arg: name.slice(6), entry: compile(val), ctx });
-        } else if (name.startsWith("css:")) {
-          paints.push({ el, kind: "css", arg: name.slice(4), entry: compile(val), ctx });
-        } else if (name === "effect") {
-          effects.push({ el, entry: compile(val, true), ctx });
-        } else if (name === "invalid") {
-          invalids.push({ el, entry: compile(val), ctx });
-        } else if (name.startsWith("show-when:") || name.startsWith("option:")) {
-          const field = name.slice(name.indexOf(":") + 1);
-          whenFields.add(field);
-          paints.push({ el, kind: "when", match: "show", field, values: val.split("|"), ctx });
-        } else if (name.startsWith("hide-when:")) {
-          const field = name.slice(name.indexOf(":") + 1);
-          whenFields.add(field);
-          paints.push({ el, kind: "when", match: "hide", field, values: val.split("|"), ctx });
-        } else if (name.startsWith("option-not:")) {
-          const field = name.slice(name.indexOf(":") + 1);
-          whenFields.add(field);
-          paints.push({ el, kind: "when", match: "show-not", field, values: val.split("|"), ctx });
+    function collectEl(el, plan, ctx) {
+      if (plan.calcs) {
+        const owner = ctx.item || ctx.state;
+        for (const def of plan.calcs) calcs.push({ owner, ownerEl: ctx.ownerEl, name: def.name, entry: def.entry, def, el, ctx });
+      }
+      if (plan.paints) {
+        for (const def of plan.paints) {
+          if (def.kind === "when") whenFields.add(def.field);
+          paints.push({ def, el, ctx });
         }
       }
-      if (el.hasAttribute("bind") && (ctx.view || ctx.projection) && !isComposer(el)) {
-        const field = el.getAttribute("bind");
+      if (plan.effects) for (const def of plan.effects) effects.push({ def, el, ctx });
+      if (plan.invalids) for (const def of plan.invalids) invalids.push({ def, el, ctx });
+      if (plan.bind != null && (ctx.view || ctx.projection) && !isComposer(el)) {
+        const field = plan.bind;
         if (!ctx.view) {
-          paints.push({ el, kind: "projection", field, ctx });
+          paints.push({ def: { kind: "projection", field, from: null }, el, ctx });
         } else if (ownsField(recordElOf(ctx.item), field)) {
           el._sapViewBind = "item";
-          paints.push({ el, kind: "projection", field, ctx, from: "item" });
+          paints.push({ def: { kind: "projection", field, from: "item" }, el, ctx });
         } else if (field in ctx.state || field in ctx.root) {
           el._sapViewBind = "drawn";
-          paints.push({ el, kind: "projection", field, ctx, from: "drawn" });
+          paints.push({ def: { kind: "projection", field, from: "drawn" }, el, ctx });
         } else {
           el._sapViewBind = null;
           app.diag.error("E43", el, {
@@ -1252,30 +1406,35 @@ ${src}` : `"use strict"; return (${src});`;
       Object.defineProperty(rowObj, "$el", { value: rowEl, enumerable: false });
     }
     function enterScope(el, obj, ctx) {
-      readState(el, obj);
+      const plan = planOf(el);
+      readState(el, plan, obj);
       el._sapScope = obj;
-      if (!ctx.projection && el.hasAttribute("bind")) readBindInto(el, ctx);
-      collectEl(el, ctx);
-      if (el.hasAttribute("items")) handleItems(el, obj, ctx);
+      if (!ctx.projection && plan.bind != null) readBindInto(el, plan, ctx);
+      collectEl(el, plan, ctx);
+      if (plan.items) handleItems(el, obj, ctx);
       else walkScope(el, obj, ctx);
     }
     function walkScope(scopeEl, scopeObj, ctx) {
-      walkOwned(scopeEl, (el, boundary) => {
-        if (boundary) {
-          if (el.hasAttribute("scope")) handleScope(el, scopeObj, ctx);
-          else if (el.hasAttribute("items")) {
-            collectEl(el, ctx);
-            handleItems(el, scopeObj, ctx);
-          } else if (el.hasAttribute("detail")) handleDetail(el, scopeObj, ctx);
-          else if (el.hasAttribute("each")) {
-            collectEl(el, ctx);
-            eachList.push({ el, ctx });
-          }
-        } else {
-          if (!ctx.projection && !ctx.view) readBindInto(el, ctx);
-          collectEl(el, ctx);
+      for (let el = scopeEl.firstElementChild; el; el = el.nextElementSibling) visitOwned(el, scopeObj, ctx);
+    }
+    function visitOwned(el, scopeObj, ctx) {
+      const plan = planOf(el);
+      if (plan.inert) return;
+      if (plan.boundary) {
+        if (plan.boundary === "scope") handleScope(el, scopeObj, ctx);
+        else if (plan.boundary === "items") {
+          collectEl(el, plan, ctx);
+          handleItems(el, scopeObj, ctx);
+        } else if (plan.boundary === "detail") handleDetail(el, scopeObj, ctx);
+        else {
+          collectEl(el, plan, ctx);
+          eachList.push({ el, ctx });
         }
-      });
+        return;
+      }
+      if (!ctx.projection && !ctx.view && plan.bind != null) readBindInto(el, plan, ctx);
+      collectEl(el, plan, ctx);
+      for (let c = el.firstElementChild; c; c = c.nextElementSibling) visitOwned(c, scopeObj, ctx);
     }
     function handleScope(el, parentObj, ctx) {
       const name = el.getAttribute("scope");
@@ -1289,13 +1448,17 @@ ${src}` : `"use strict"; return (${src});`;
       const arr = [];
       parentObj[name] = arr;
       listEl._sapList = arr;
-      rowsOf(listEl).forEach((rowEl, i) => {
+      let i = 0;
+      for (let rowEl = listEl.firstElementChild; rowEl; rowEl = rowEl.nextElementSibling) {
+        const rp = planOf(rowEl);
+        if (!rp.item || rp.template) continue;
         const rowObj = {};
         defineRowMeta(rowObj, rowEl, i);
         const rctx = { root: ctx.root, state: ctx.state, item: rowObj, ownerEl: rowEl, projection: ctx.projection };
         enterScope(rowEl, rowObj, rctx);
         arr.push(rowObj);
-      });
+        i++;
+      }
     }
     function resolvePathValue(path, ctx) {
       const segs = String(path).split(".");
@@ -1367,8 +1530,9 @@ ${src}` : `"use strict"; return (${src});`;
         }
         if (el.hidden) el.hidden = false;
       }
+      drainPlans();
       const dctx = { root: ctx.root, state: parentObj, item: row, ownerEl: row.$el, projection: true };
-      collectEl(el, dctx);
+      collectEl(el, planOf(el), dctx);
       walkScope(el, row, dctx);
     }
     function drawnElFor(el, stateObj) {
@@ -1380,7 +1544,11 @@ ${src}` : `"use strict"; return (${src});`;
     }
     function reconcileEach(el, ctx) {
       el._sapDrawnEl = drawnElFor(el, ctx.state);
-      const tmpl = [...el.children].find((c) => c.tagName === "TEMPLATE");
+      let tmpl = null;
+      for (let c = el.firstElementChild; c; c = c.nextElementSibling) if (c.tagName === "TEMPLATE") {
+        tmpl = c;
+        break;
+      }
       const blueprint = tmpl && tmpl.content.children.length === 1 ? tmpl.content.firstElementChild : null;
       if (!blueprint) {
         app.diag.error("E42", el, { attr: "each", problem: "each needs one <template> child with exactly one element root" });
@@ -1404,7 +1572,7 @@ ${src}` : `"use strict"; return (${src});`;
       for (const item of list) {
         let k;
         try {
-          k = run(keyEntry, { state: ctx.state, item, el, root: ctx.root });
+          k = runWith(keyEntry, ctx.state, item, el, ctx.root);
         } catch {
           k = void 0;
         }
@@ -1449,10 +1617,11 @@ ${src}` : `"use strict"; return (${src});`;
         }
       }
       el._sapEach = next;
+      drainPlans();
       keys.forEach((k, i) => {
         const rowEl = next.get(k);
         const rctx = { root: ctx.root, state: ctx.state, item: list[i], ownerEl: rowEl, projection: false, view: true };
-        collectEl(rowEl, rctx);
+        collectEl(rowEl, planOf(rowEl), rctx);
         walkScope(rowEl, {}, rctx);
       });
       return changes;
@@ -1489,7 +1658,7 @@ ${src}` : `"use strict"; return (${src});`;
       }
       for (const c of sorted) {
         try {
-          c.owner[c.name] = run(c.entry, { state: c.ctx.state, item: c.ctx.item, el: c.el, root: c.ctx.root });
+          c.owner[c.name] = runWith(c.entry, c.ctx.state, c.ctx.item, c.el, c.ctx.root);
           clearBeacon(c.el);
         } catch (err) {
           c.owner[c.name] = void 0;
@@ -1524,13 +1693,13 @@ ${src}` : `"use strict"; return (${src});`;
       console.log(`sap pass \xB7 trigger: ${app._lastPass.trigger} \xB7 writes ${writes}/${paints.length}`);
     }
   }
-  function paintAttrName(p) {
-    if (p.kind === "text") return p.fmt ? "text:" + p.fmt : "text";
-    if (p.kind === "attr") return "attr:" + p.arg;
-    if (p.kind === "class") return "class:" + p.arg;
-    if (p.kind === "css") return "css:" + p.arg;
-    if (p.kind === "when") return (p.match === "hide" ? "hide-when:" : p.match === "show-not" ? "option-not:" : "show-when:") + p.field;
-    return p.kind;
+  function paintAttrName(def) {
+    if (def.kind === "text") return def.fmt ? "text:" + def.fmt : "text";
+    if (def.kind === "attr") return "attr:" + def.arg;
+    if (def.kind === "class") return "class:" + def.arg;
+    if (def.kind === "css") return "css:" + def.arg;
+    if (def.kind === "when") return (def.match === "hide" ? "hide-when:" : def.match === "show-not" ? "option-not:" : "show-when:") + def.field;
+    return def.kind;
   }
   function nearestMode(el, field, values2, notMode) {
     let cur = el;
@@ -1551,47 +1720,47 @@ ${src}` : `"use strict"; return (${src});`;
       el.checked = want;
       return 1;
     }
-    const c = carrierFor(el);
-    const cur = c.read();
+    const kind = kindOf(el);
+    const cur = readControl(el, kind);
     const nv = v == null ? "" : v;
     if (String(cur) !== String(nv)) {
-      c.write(nv, { silent: true });
+      writeControl(el, kind, nv);
       return 1;
     }
     return 0;
   }
   function paintOne(p, app) {
-    if (p.kind === "projection") {
-      if (p.from === "drawn") {
-        const s = p.field in p.ctx.state ? p.ctx.state : p.ctx.root;
-        return applyProjection(p.el, s[p.field]);
+    const def = p.def;
+    const el = p.el;
+    if (def.kind === "projection") {
+      if (def.from === "drawn") {
+        const s = def.field in p.ctx.state ? p.ctx.state : p.ctx.root;
+        return applyProjection(el, s[def.field]);
       }
-      return applyProjection(p.el, p.ctx.item ? p.ctx.item[p.field] : "");
+      return applyProjection(el, p.ctx.item ? p.ctx.item[def.field] : "");
     }
-    if (p.kind === "when") {
-      return applyPaint(p, null);
+    if (def.kind === "when") {
+      return applyPaint(def, el, null);
     }
-    const ctx = { state: p.ctx.state, item: p.ctx.item, el: p.el, root: p.ctx.root };
     try {
-      const value = run(p.entry, ctx);
-      const n2 = applyPaint(p, value);
-      clearBeacon(p.el);
+      const value = runWith(def.entry, p.ctx.state, p.ctx.item, el, p.ctx.root);
+      const n2 = applyPaint(def, el, value);
+      clearBeacon(el);
       return n2;
     } catch (err) {
-      app.diag.error(err.sapCode === "E22" ? "E22" : "E24", p.el, {
-        attr: paintAttrName(p),
-        expr: p.entry && p.entry.src,
+      app.diag.error(err.sapCode === "E22" ? "E22" : "E24", el, {
+        attr: paintAttrName(def),
+        expr: def.entry && def.entry.src,
         problem: String(err.message)
       });
-      setBeacon(p.el, err.sapCode || "E24");
+      setBeacon(el, err.sapCode || "E24");
       return 0;
     }
   }
-  function applyPaint(p, value) {
-    const el = p.el;
-    switch (p.kind) {
+  function applyPaint(def, el, value) {
+    switch (def.kind) {
       case "text": {
-        const s = p.fmt != null ? applyFormat(p.fmt, value) : value == null ? "" : String(value);
+        const s = def.fmt != null ? applyFormat(def.fmt, value) : value == null ? "" : String(value);
         if (el.textContent !== s) {
           el.textContent = s;
           return 1;
@@ -1617,9 +1786,9 @@ ${src}` : `"use strict"; return (${src});`;
           return 0;
         }
         let visible;
-        if (p.match === "hide") visible = !nearestMode(el, p.field, p.values, false);
-        else if (p.match === "show-not") visible = nearestMode(el, p.field, p.values, true);
-        else visible = nearestMode(el, p.field, p.values, false);
+        if (def.match === "hide") visible = !nearestMode(el, def.field, def.values, false);
+        else if (def.match === "show-not") visible = nearestMode(el, def.field, def.values, true);
+        else visible = nearestMode(el, def.field, def.values, false);
         el._sapWhen = true;
         const hide = !visible;
         if (el.hidden !== hide) {
@@ -1629,7 +1798,7 @@ ${src}` : `"use strict"; return (${src});`;
         return 0;
       }
       case "attr": {
-        const a = p.arg;
+        const a = def.arg;
         if ((a === "checked" || a === "selected") && typeof el[a] === "boolean" && !el.hasAttribute("bind") && !el.closest("select[bind]")) {
           let n2 = 0;
           if (el[a] !== !!value) {
@@ -1664,16 +1833,16 @@ ${src}` : `"use strict"; return (${src});`;
       }
       case "class": {
         const on = !!value;
-        if (el.classList.contains(p.arg) !== on) {
-          el.classList.toggle(p.arg, on);
+        if (el.classList.contains(def.arg) !== on) {
+          el.classList.toggle(def.arg, on);
           return 1;
         }
         return 0;
       }
       case "css": {
         const s = value == null ? "" : String(value);
-        if (el.style.getPropertyValue("--" + p.arg) !== s) {
-          el.style.setProperty("--" + p.arg, s);
+        if (el.style.getPropertyValue("--" + def.arg) !== s) {
+          el.style.setProperty("--" + def.arg, s);
           return 1;
         }
         return 0;
@@ -1684,17 +1853,17 @@ ${src}` : `"use strict"; return (${src});`;
   }
   function runEffect(e, app) {
     try {
-      run(e.entry, { state: e.ctx.state, item: e.ctx.item, el: e.el, root: e.ctx.root });
+      runWith(e.def.entry, e.ctx.state, e.ctx.item, e.el, e.ctx.root);
       clearBeacon(e.el);
     } catch (err) {
-      app.diag.error("E24", e.el, { attr: "effect", expr: e.entry && e.entry.src, problem: String(err.message) });
+      app.diag.error("E24", e.el, { attr: "effect", expr: e.def.entry && e.def.entry.src, problem: String(err.message) });
       setBeacon(e.el, "E24");
     }
   }
   function runInvalid(iv) {
     let msg = "";
     try {
-      const v = run(iv.entry, { state: iv.ctx.state, item: iv.ctx.item, el: iv.el, root: iv.ctx.root });
+      const v = runWith(iv.def.entry, iv.ctx.state, iv.ctx.item, iv.el, iv.ctx.root);
       msg = typeof v === "string" ? v : "";
     } catch {
       msg = "";
@@ -1770,16 +1939,15 @@ ${src}` : `"use strict"; return (${src});`;
   }
   function walkAll(root, visit) {
     visit(root);
-    for (const child of root.children) descend(child);
+    for (let child = root.firstElementChild; child; child = child.nextElementSibling) descend(child);
     function descend(el) {
-      if (el.nodeType !== 1) return;
       if (el.hasAttribute("sap-ignore")) return;
       if (el.tagName === "TEMPLATE") {
-        if (el.hasAttribute("items")) for (const c of el.content.children) descend(c);
+        if (el.hasAttribute("items")) for (let c = el.content.firstElementChild; c; c = c.nextElementSibling) descend(c);
         return;
       }
       visit(el);
-      for (const c of el.children) descend(c);
+      for (let c = el.firstElementChild; c; c = c.nextElementSibling) descend(c);
     }
   }
   function lintApp(root, diag) {
@@ -1991,7 +2159,7 @@ ${src}` : `"use strict"; return (${src});`;
     injectStyles(root.ownerDocument);
     for (const ta of root.querySelectorAll("textarea[data-value]")) rehydrateControlFromAttributes(ta);
     const t0 = now();
-    runPass(appRec, { trigger: "mount" });
+    runPass(appRec, { trigger: "mount", full: true });
     appRec._mountMs = now() - t0;
     appRec._mountWrites = appRec._stats ? appRec._stats.writes : 0;
     if (appRec._mountWrites > 0) {

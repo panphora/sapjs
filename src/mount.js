@@ -71,7 +71,7 @@ export function mountApp(root) {
   for (const ta of root.querySelectorAll("textarea[data-value]")) rehydrateControlFromAttributes(ta);
 
   const t0 = now();
-  runPass(appRec, { trigger: "mount" });
+  runPass(appRec, { trigger: "mount", full: true });
   appRec._mountMs = now() - t0;
   appRec._mountWrites = appRec._stats ? appRec._stats.writes : 0;
   if (appRec._mountWrites > 0) {
