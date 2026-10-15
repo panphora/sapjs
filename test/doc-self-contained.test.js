@@ -5,6 +5,12 @@
 import { readFileSync } from "node:fs";
 import { docHtml, DIST_PATH, inlinedEngineCode, parseDoc } from "./helpers/doc.js";
 
+// The one allowed network dependency: the optional newsletter ask every sapjs page
+// loads. It is deferred, so offline it fails to load and the doc still works. The
+// offline checks below run on the doc with this tag removed.
+const POLITE_POP_TAG = '<script src="https://hyperclay.com/public/js/polite-pop.js" defer></script>';
+const offlineHtml = docHtml.replace(POLITE_POP_TAG, "");
+
 describe("doc is self-contained and in sync with the built engine", () => {
   test("the shipped file exists and is substantial", () => {
     expect(docHtml.length).toBeGreaterThan(100_000);
@@ -32,31 +38,35 @@ describe("doc is self-contained and in sync with the built engine", () => {
     expect(code).toContain("window.Sap = Sap.default");
     // exactly two attribute-less scripts: the engine and the boot harness
     const doc = parseDoc();
-    const typeless = [...doc.querySelectorAll("script")].filter((s) => !s.getAttribute("type"));
+    const typeless = [...doc.querySelectorAll("script")].filter((s) => !s.getAttribute("type") && !s.hasAttribute("src"));
     expect(typeless.length).toBe(2);
   });
 
   test("no external script is loaded (engine is inlined, not a CDN <script src>)", () => {
-    expect(docHtml).not.toMatch(/<script[^>]+\bsrc\s*=/i);
+    expect(offlineHtml).not.toMatch(/<script[^>]+\bsrc\s*=/i);
   });
 
   test("no external stylesheet, font, or preloaded resource", () => {
     // All CSS is an inline <style>; the only <link> is a data: favicon.
-    expect(docHtml).not.toMatch(/<link[^>]+rel\s*=\s*["']?(stylesheet|preload|prefetch|dns-prefetch)/i);
-    expect(docHtml).not.toMatch(/<link[^>]+href\s*=\s*["']https?:/i);
-    expect(docHtml).not.toContain("@import");
+    expect(offlineHtml).not.toMatch(/<link[^>]+rel\s*=\s*["']?(stylesheet|preload|prefetch|dns-prefetch)/i);
+    expect(offlineHtml).not.toMatch(/<link[^>]+href\s*=\s*["']https?:/i);
+    expect(offlineHtml).not.toContain("@import");
   });
 
   test("no remote URLs are fetched at load (no http(s) in src/url())", () => {
     // A remote <img src>, background, or @font-face would break offline use.
-    expect(docHtml).not.toMatch(/\bsrc\s*=\s*["']https?:\/\//i);
-    expect(docHtml).not.toMatch(/url\(\s*['"]?https?:\/\//i);
+    expect(offlineHtml).not.toMatch(/\bsrc\s*=\s*["']https?:\/\//i);
+    expect(offlineHtml).not.toMatch(/url\(\s*['"]?https?:\/\//i);
   });
 
   test("the only http(s) URL in the whole file is the inert SVG namespace", () => {
     // Sanity backstop: prove the bans above aren't missing a network dependency.
     // The lone remaining http(s) string is the xmlns inside the data-URI favicon.
-    const urls = [...new Set(docHtml.match(/https?:\/\/[^"'\s)<]+/g) || [])];
+    const urls = [...new Set(offlineHtml.match(/https?:\/\/[^"'\s)<]+/g) || [])];
     expect(urls).toEqual(["http://www.w3.org/2000/svg"]);
+  });
+
+  test("the polite pop loader is the only external script, loaded once", () => {
+    expect(docHtml.split(POLITE_POP_TAG).length - 1).toBe(1);
   });
 });
