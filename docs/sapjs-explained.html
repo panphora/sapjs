@@ -344,7 +344,7 @@
     return el.hasAttribute("scope") || el.hasAttribute("items") || el.hasAttribute("detail") || el.hasAttribute("each");
   }
   function isInert(el) {
-    return el.tagName === "TEMPLATE" || el.hasAttribute("sap-ignore") || el.hasAttribute("template");
+    return el.tagName === "TEMPLATE" || el.hasAttribute("sap-ignore") || el.hasAttribute("template") || el.hasAttribute("cms-template");
   }
   function walkOwned(scopeEl, visit) {
     for (let child = scopeEl.firstElementChild; child; child = child.nextElementSibling) descend(child);
@@ -419,7 +419,7 @@
   function rowsOf(listEl) {
     const rows = [];
     for (let c = listEl.firstElementChild; c; c = c.nextElementSibling) {
-      if (c.hasAttribute("item") && !c.hasAttribute("template")) rows.push(c);
+      if (c.hasAttribute("item") && !c.hasAttribute("template") && !c.hasAttribute("cms-template")) rows.push(c);
     }
     return rows;
   }
@@ -791,6 +791,9 @@ ${src}` : `"use strict"; return (${src});`;
       if (colon < 0) {
         switch (name) {
           case "sap-ignore":
+            plan.inert = true;
+            break;
+          case "cms-template":
             plan.inert = true;
             break;
           case "template":
@@ -1259,7 +1262,7 @@ ${src}` : `"use strict"; return (${src});`;
     return out;
   }
   function inertSubtree(el) {
-    return !!(el.closest && el.closest("[sap-ignore],[template]"));
+    return !!(el.closest && el.closest("[sap-ignore],[template],[cms-template]"));
   }
   function scheduleAffectedApps(runtime2, changes) {
     runtime2.pruneDisconnected();
@@ -1489,7 +1492,7 @@ ${src}` : `"use strict"; return (${src});`;
       let i = 0;
       for (let rowEl = listEl.firstElementChild; rowEl; rowEl = rowEl.nextElementSibling) {
         const rp = planOf(rowEl);
-        if (!rp.item || rp.template) continue;
+        if (!rp.item || rp.template || rowEl.hasAttribute("cms-template")) continue;
         const rowObj = {};
         defineRowMeta(rowObj, rowEl, i);
         const rctx = { root: ctx.root, state: ctx.state, item: rowObj, ownerEl: rowEl, projection: ctx.projection };
