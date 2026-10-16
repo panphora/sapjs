@@ -98,6 +98,7 @@ function buildPlan(el) {
     if (colon < 0) {
       switch (name) {
         case "sap-ignore": plan.inert = true; break;
+        case "cms-template": plan.inert = true; break;
         case "template": plan.inert = true; plan.template = true; break;
         case "item": plan.item = true; break;
         case "scope": plan.scope = true; break;

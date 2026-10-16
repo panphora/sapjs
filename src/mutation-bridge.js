@@ -72,7 +72,7 @@ function nativeSource() {
 
 // Normalize MutationRecords into the hub's change shape { type, element, parent },
 // mirroring the hub's added-subtree expansion and removed-node parent resolution, and
-// skipping sap-inert subtrees (sap-ignore / template) — the standalone analogue of the
+// skipping sap-inert subtrees (sap-ignore / template / cms-template) — the standalone analogue of the
 // hub's intake isInert drop.
 function changesFromRecords(records) {
   const out = [];
@@ -103,7 +103,7 @@ function changesFromRecords(records) {
 }
 
 function inertSubtree(el) {
-  return !!(el.closest && el.closest("[sap-ignore],[template]"));
+  return !!(el.closest && el.closest("[sap-ignore],[template],[cms-template]"));
 }
 
 // Shared by both backends: resolve each change to its owning [sap] app and schedule it

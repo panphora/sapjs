@@ -35,11 +35,11 @@ export function isScopeBoundary(el) {
 }
 
 export function isInert(el) {
-  return el.tagName === "TEMPLATE" || el.hasAttribute("sap-ignore") || el.hasAttribute("template");
+  return el.tagName === "TEMPLATE" || el.hasAttribute("sap-ignore") || el.hasAttribute("template") || el.hasAttribute("cms-template");
 }
 
 // Walk descendants that belong to scopeEl's own scope. Stops descent at nested
-// boundaries (scope/items/detail) and skips inert subtrees (sap-ignore/template).
+// boundaries (scope/items/detail) and skips inert subtrees (sap-ignore/template/cms-template).
 // visit(el, isBoundary) is called for every owned element including boundaries.
 export function walkOwned(scopeEl, visit) {
   for (let child = scopeEl.firstElementChild; child; child = child.nextElementSibling) descend(child);
@@ -139,7 +139,7 @@ export function isComposer(el) {
 export function rowsOf(listEl) {
   const rows = [];
   for (let c = listEl.firstElementChild; c; c = c.nextElementSibling) {
-    if (c.hasAttribute("item") && !c.hasAttribute("template")) rows.push(c);
+    if (c.hasAttribute("item") && !c.hasAttribute("template") && !c.hasAttribute("cms-template")) rows.push(c);
   }
   return rows;
 }

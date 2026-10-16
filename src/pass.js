@@ -163,7 +163,7 @@ function runPassBody(app, opts) {
   }
 
   // Visit one element that belongs to the enclosing scope. Descent stops at nested
-  // boundaries (scope/items/detail/each) and skips inert subtrees (sap-ignore/template).
+  // boundaries (scope/items/detail/each) and skips inert subtrees (sap-ignore/template/cms-template).
   function visitOwned(el, scopeObj, ctx) {
     const plan = planOf(el);
     if (plan.inert) return;
@@ -200,7 +200,7 @@ function runPassBody(app, opts) {
     let i = 0;
     for (let rowEl = listEl.firstElementChild; rowEl; rowEl = rowEl.nextElementSibling) {
       const rp = planOf(rowEl);
-      if (!rp.item || rp.template) continue;
+      if (!rp.item || rp.template || rowEl.hasAttribute("cms-template")) continue;
       const rowObj = {};
       defineRowMeta(rowObj, rowEl, i);
       const rctx = { root: ctx.root, state: ctx.state, item: rowObj, ownerEl: rowEl, projection: ctx.projection };
