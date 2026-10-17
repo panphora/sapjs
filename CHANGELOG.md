@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.2] - 2026-10-17
+
+### Changed
+- Homepage no longer shows the CSP unsafe-eval callout
+- Homepage uses plain section headings, adds a "When to use it" section, and renames the explainer to "How it works"
+- Homepage restates the large-records limit using the 10,000-row numbers
+- Site uses Newsreader instead of Fraunces for headings and all serif text
+- Rebuilt dist and docs for inert seed rows
+- cms-template seed rows are treated as inert
+
+### Fixed
+- W30 is skipped after a visitor draft restore, and warnings are printed as warnings
+
+
+
 ## [0.5.1] - 2026-10-15
 
 ### Changed
