@@ -52,14 +52,14 @@ const page = `<!doctype html>
 <link rel="icon" href="./favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600;6..72,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./site.css">
 <style>
   * { box-sizing: border-box; }
   body { font: 16px/1.65 Inter, system-ui, sans-serif; }
   a { color: var(--accent); }
   .wrap { max-width: 820px; margin: 0 auto; padding: 40px 24px 96px; }
-  h1, h2, h3, h4 { font-family: Fraunces, Georgia, serif; font-weight: 600; letter-spacing: -.01em; line-height: 1.2; position: relative; }
+  h1, h2, h3, h4 { font-family: Newsreader, Georgia, serif; font-weight: 600; letter-spacing: -.01em; line-height: 1.2; position: relative; }
   h1 { font-size: clamp(32px, 5vw, 44px); margin: 0 0 16px; }
   h2 { font-size: 26px; margin: 56px 0 12px; padding-top: 16px; border-top: 1px solid var(--rule); }
   h3 { font-size: 20px; margin: 32px 0 8px; }

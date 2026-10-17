@@ -6,6 +6,9 @@
 <title>How sapjs works · live, source-grounded explainer</title>
 <meta name="description" content="An authoritative, live explainer of the shipped sapjs engine: transient state, rich text, extending sap, every way to set state, and modals. Real demos, no network.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c10'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%236ee7a8' text-anchor='middle'%3Es%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600;6..72,700&display=swap" rel="stylesheet">
 <!-- The REAL sapjs engine (dist/sap.js), inlined. No network, no build, no CDN. -->
 <!-- Self-contained explainer. Content source: docs/sapjs-explained.template.html. Refresh the inlined engine after a dist rebuild with: npm run build:docs -->
 
@@ -3384,7 +3387,7 @@ if (typeof window !== 'undefined' && Sap && Sap.default) window.Sap = Sap.defaul
   --bad-soft: #f2d8d1;
   --code-bg: #efe8da;
   --shadow: 0 1px 0 rgba(60, 45, 20, .05), 0 8px 24px -12px rgba(60, 45, 20, .18);
-  --serif: Fraunces, Georgia, serif;
+  --serif: Newsreader, Georgia, serif;
   --sans-ui: Inter, system-ui, sans-serif;
   --mono-ui: "JetBrains Mono", ui-monospace, monospace;
 }
@@ -3439,7 +3442,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); }
     --warn: var(--mid); --blue: var(--good);
     --mono: "JetBrains Mono", ui-monospace, monospace; --sans: Inter, system-ui, sans-serif;
   }
-  h1, h2, h3 { font-family: Fraunces, Georgia, serif; font-weight: 600; letter-spacing: -.01em; }
+  h1, h2, h3 { font-family: Newsreader, Georgia, serif; font-weight: 600; letter-spacing: -.01em; }
   pre.code, pre.block, pre.html-out, .src-edit { color: var(--ink-2); }
   .tok-attr { color: var(--good); }
   .btn.primary, .live .pill.active, .funnel .converge .node { color: var(--paper); }
