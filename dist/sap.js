@@ -250,7 +250,7 @@ var Sap = (() => {
       if (rec.problem) out.push(`  problem: ${rec.problem}`);
       if (rec.didYouMean) out.push(`  did you mean: ${rec.didYouMean}`);
       if (rec.fix) out.push(`  fix: ${rec.fix}`);
-      console.error(out.join("\n"));
+      (code[0] === "W" ? console.warn : console.error)(out.join("\n"));
       return rec;
     }
     error(code, el, info = {}) {
@@ -957,6 +957,10 @@ ${src}` : `"use strict"; return (${src});`;
     const clay = window.clay, hyperclay = window.hyperclay;
     if (name === "consent") return clay?.confirm || hyperclay?.consent || null;
     return clay?.[name] || hyperclay?.[name] || null;
+  }
+  function draftsRestored() {
+    const drafts = capability("visitorDrafts");
+    return Boolean(drafts && typeof drafts.restored === "function" && drafts.restored()?.restored);
   }
   var MUTATION_READY = ["clay:mutation-ready", "hyperclay:mutation-ready"];
   var LIVESYNC_APPLIED = ["clay:sync-applied", "hyperclay:livesync-applied"];
@@ -2192,7 +2196,7 @@ ${src}` : `"use strict"; return (${src});`;
     runPass(appRec, { trigger: "mount", full: true });
     appRec._mountMs = now() - t0;
     appRec._mountWrites = appRec._stats ? appRec._stats.writes : 0;
-    if (appRec._mountWrites > 0) {
+    if (appRec._mountWrites > 0 && !draftsRestored()) {
       diag.warn("W30", root, {
         problem: `${appRec._mountWrites} paint(s) ran at mount; the saved file was out of sync with its declared state`,
         fix: "re-save once so the file mounts clean (a settled file writes nothing)"

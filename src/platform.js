@@ -15,6 +15,14 @@ export function capability(name) {
   return clay?.[name] || hyperclay?.[name] || null;
 }
 
+// True when ClayJS poured a visitor's saved edits into the page before this mount.
+// The derived copies baked into the file still show the original data, so the first
+// pass is expected to repaint them.
+export function draftsRestored() {
+  const drafts = capability("visitorDrafts");
+  return Boolean(drafts && typeof drafts.restored === "function" && drafts.restored()?.restored);
+}
+
 // Both clients dispatch the same moment under different names, and clayjs fires its
 // pair back to back in one tick. A plain listener on each name would run the handler
 // twice per occurrence.

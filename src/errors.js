@@ -136,7 +136,7 @@ export class Diagnostics {
     if (rec.problem) out.push(`  problem: ${rec.problem}`);
     if (rec.didYouMean) out.push(`  did you mean: ${rec.didYouMean}`);
     if (rec.fix) out.push(`  fix: ${rec.fix}`);
-    console.error(out.join("\n"));
+    (code[0] === "W" ? console.warn : console.error)(out.join("\n"));
     return rec;
   }
 

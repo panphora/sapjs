@@ -6,9 +6,6 @@
 <title>How sapjs works · live, source-grounded explainer</title>
 <meta name="description" content="An authoritative, live explainer of the shipped sapjs engine: transient state, rich text, extending sap, every way to set state, and modals. Real demos, no network.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0c10'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='700' fill='%236ee7a8' text-anchor='middle'%3Es%3C/text%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600;6..72,700&display=swap" rel="stylesheet">
 <!-- The REAL sapjs engine (dist/sap.js), inlined. No network, no build, no CDN. -->
 <!-- Self-contained explainer. Content source: docs/sapjs-explained.template.html. Refresh the inlined engine after a dist rebuild with: npm run build:docs -->
 
@@ -264,7 +261,7 @@
       if (rec.problem) out.push(`  problem: ${rec.problem}`);
       if (rec.didYouMean) out.push(`  did you mean: ${rec.didYouMean}`);
       if (rec.fix) out.push(`  fix: ${rec.fix}`);
-      console.error(out.join("\n"));
+      (code[0] === "W" ? console.warn : console.error)(out.join("\n"));
       return rec;
     }
     error(code, el, info = {}) {
@@ -971,6 +968,10 @@ ${src}` : `"use strict"; return (${src});`;
     const clay = window.clay, hyperclay = window.hyperclay;
     if (name === "consent") return clay?.confirm || hyperclay?.consent || null;
     return clay?.[name] || hyperclay?.[name] || null;
+  }
+  function draftsRestored() {
+    const drafts = capability("visitorDrafts");
+    return Boolean(drafts && typeof drafts.restored === "function" && drafts.restored()?.restored);
   }
   var MUTATION_READY = ["clay:mutation-ready", "hyperclay:mutation-ready"];
   var LIVESYNC_APPLIED = ["clay:sync-applied", "hyperclay:livesync-applied"];
@@ -2206,7 +2207,7 @@ ${src}` : `"use strict"; return (${src});`;
     runPass(appRec, { trigger: "mount", full: true });
     appRec._mountMs = now() - t0;
     appRec._mountWrites = appRec._stats ? appRec._stats.writes : 0;
-    if (appRec._mountWrites > 0) {
+    if (appRec._mountWrites > 0 && !draftsRestored()) {
       diag.warn("W30", root, {
         problem: `${appRec._mountWrites} paint(s) ran at mount; the saved file was out of sync with its declared state`,
         fix: "re-save once so the file mounts clean (a settled file writes nothing)"

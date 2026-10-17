@@ -149,4 +149,23 @@ describe("W30: a file that paints at mount was out of sync", () => {
     expect(Sap.report().warnings.map((w) => w.code)).not.toContain("W30");
     expect(Sap.status().apps[0].mountWrites).toBe(0);
   });
+
+  test("a mount after ClayJS restored visitor edits repaints without warning", () => {
+    window.clay = { visitorDrafts: { restored: () => ({ restored: true, hadDraft: true }) } };
+    try {
+      mount(`<main sap><input type="number" bind="qty" value="2"><output calc:d="state.qty*2" text="state.d"></output></main>`);
+      expect(Sap.report().warnings.map((w) => w.code)).not.toContain("W30");
+      expect(Sap.status().apps[0].mountWrites).toBeGreaterThan(0);
+    } finally {
+      delete window.clay;
+    }
+  });
+
+  test("a warning prints through console.warn, not console.error", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const error = jest.spyOn(console, "error").mockImplementation(() => {});
+    mount(`<main sap><input type="number" bind="qty" value="2"><output calc:d="state.qty*2" text="state.d"></output></main>`);
+    expect(warn.mock.calls.some(([msg]) => String(msg).includes("W30"))).toBe(true);
+    expect(error.mock.calls.some(([msg]) => String(msg).includes("W30"))).toBe(false);
+  });
 });
