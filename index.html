@@ -41,9 +41,9 @@ code { background: var(--code-bg); padding: 1px 6px; border-radius: 5px; overflo
 .lede { font-size: 19px; color: var(--ink-2); }
 .muted { color: var(--ink-3); }
 section { margin-top: 72px; }
-.sec-head { display: flex; gap: 16px; align-items: baseline; border-bottom: 1px solid var(--rule); padding-bottom: 12px; margin-bottom: 24px; }
-.sec-num { font: 500 13px "JetBrains Mono", monospace; color: var(--accent); }
-.sec-head p { margin: 4px 0 0; color: var(--ink-2); }
+section > h2 { margin-bottom: 1.6rem; }
+.uses { margin: 0 0 12px; padding-left: 1.2em; }
+.uses li { margin-bottom: 8px; }
 
 
 .verdict { margin-top: 36px; background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; box-shadow: var(--shadow); padding: 28px; }
@@ -110,7 +110,6 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: anyw
   .g3, .g2, .split { grid-template-columns: 1fr; }
   .verdict { padding: 18px; }
   #hero-demo { padding: 6px 16px 14px; }
-  .sec-head { flex-direction: column; gap: 4px; }
   pre { font-size: 12.5px; padding: 14px; }
   .anno { --cw: 7.5px; }
   .anno pre { padding: 0 14px; }
@@ -214,7 +213,18 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: anyw
 </div>
 
 <section id="when">
-  <div class="sec-head"><span class="sec-num">01</span><div><h2>When to use it</h2><p>A reading log, kept as one file.</p></div></div>
+  <h2>When to use it</h2>
+  <p>Use sapjs when your whole app lives in one HTML file, different parts of the page need to react to each other and you want all the state stored in the document itself.</p>
+  <ul class="uses">
+    <li><strong>State stays in the document.</strong> Records are HTML elements and fields live on their attributes and controls, so the file holds the data with no separate JavaScript store to drift from the page.</li>
+    <li><strong>Formulas live in attributes.</strong> You declare fields and derived values with <code>bind</code>, <code>items</code>, <code>calc:</code> and <code>text</code> instead of writing render code, and any edit updates the rest of the page.</li>
+    <li><strong>Views and editors are built in.</strong> Attributes like <code>trigger-add</code>, <code>each=</code>, <code>detail=</code> and <code>transient</code> handle adding rows from a form, sorted and filtered views, detail panels and search text that never saves.</li>
+    <li><strong>Every change re-reads the DOM.</strong> Each pass rebuilds state from the live markup so devtools edits and live sync work the same as a click, and a change at 10,000 records still takes under 40 ms in Chrome.</li>
+  </ul>
+</section>
+
+<section id="how">
+  <h2>How it works</h2>
 
   <p>Say you keep a reading log as one HTML file. Each book is a <code>&lt;tr&gt;</code> in a table. The day you started and the day you finished are attributes on that row. An <code>&lt;output&gt;</code> under the table shows how many books you finished. Open the file in a text editor and every book is there as markup.</p>
 
@@ -304,7 +314,7 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: anyw
 </section>
 
 <section id="build">
-  <div class="sec-head"><span class="sec-num">02</span><div><h2>What you can build</h2><p>Small tools that live in one file.</p></div></div>
+  <h2>What you can build</h2>
 
   <p>The apps that fit are lists of records. An expense tracker is rows of expenses and a total. A board is columns of cards. With sapjs, each record is an element in the file, and each number is a formula in an attribute.</p>
 
@@ -323,7 +333,7 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: anyw
 </section>
 
 <section id="limits">
-  <div class="sec-head"><span class="sec-num">03</span><div><h2>Where it struggles</h2><p>If your app looks like one of these, pick something else.</p></div></div>
+  <h2>Where this library struggles</h2>
   <div class="grid g2">
     <div class="card"><h3>Tens of thousands of records</h3><p>At 10,000 records a change still takes under 40 ms in Chrome. The cost is the file itself: every row is saved markup, so saving takes about 400 ms and a list of 10,000 text boxes takes over a second to lay out. Past that, measure before you build on it.</p></div>
     <div class="card"><h3>Data some viewers must not see</h3><p>The data is in the markup. Anyone with the file has all of it.</p></div>
@@ -336,7 +346,7 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: anyw
 </section>
 
 <section id="start">
-  <div class="sec-head"><span class="sec-num">04</span><div><h2>Start</h2><p>One script tag to run, two to save.</p></div></div>
+  <h2>Quick start</h2>
 
   <div class="split">
     <div>
