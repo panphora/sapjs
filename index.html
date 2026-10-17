@@ -340,9 +340,6 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: anyw
     <div class="card"><h3>Mostly a window onto a server</h3><p>If the records live behind an API, keeping them in the DOM gives you nothing back.</p></div>
     <div class="card"><h3>An editor built on a rich-text library</h3><p>sapjs state is plain text. A rich-text editor goes inside an element with <code>sap-ignore</code>, an attribute that marks a region sapjs does not read. An app built around such an editor ends up mostly editor code.</p></div>
   </div>
-  <div class="callout">
-    <p>A page with a strict Content Security Policy must allow <code>'unsafe-eval'</code>, because sapjs compiles its formulas at runtime with <code>new Function</code>.</p>
-  </div>
 </section>
 
 <section id="start">
