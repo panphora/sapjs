@@ -17,12 +17,29 @@ import { createSap, autoMount } from "./runtime.js";
 import { createAccessor } from "./scope.js";
 import { createActions } from "./actions.js";
 import { createInput } from "./input.js";
+import { addLintCheck } from "./lint.js";
+import { teachForAttr } from "./teach.js";
+import { addFullDebug } from "./debug-full.js";
 import { registerFullFeatures } from "./features/index.js";
 
 registerFullFeatures();
 
+addLintCheck((el, halt, claimed) => {
+  for (const a of el.attributes) {
+    const teach = teachForAttr(a.name);
+    if (!teach) continue;
+    halt("E01", el, {
+      attr: a.name, expr: a.value,
+      problem: `"${a.name}" is a foreign-dialect attribute; Sap has no ${a.name.split(/[:=]/)[0]} directive`,
+      fix: teach + " — or wrap the subtree in sap-ignore if intentional",
+    });
+    claimed(a.name);
+  }
+});
+
 const { Sap, mountAll, mount, runtime } = createSap({
   createAccessor,
+  debugExtras: addFullDebug,
   installInput(runtime, accessor, doc) {
     const input = createInput(runtime);
     const actions = createActions(runtime, accessor);

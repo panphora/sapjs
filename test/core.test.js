@@ -48,3 +48,13 @@ test("full-sapjs markup added after mount is flagged, not ignored", () => {
 test("Sap(el) names full sapjs", () => {
   expect(() => Sap(document.body)).toThrow(/full sapjs/);
 });
+
+test("Sap.why() names full sapjs, and a foreign-dialect attribute is not the core's error", () => {
+  const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+  expect(Sap.why(document.body)).toBeNull();
+  expect(warn).toHaveBeenCalledWith("Sap.why is full sapjs; load https://clayjs.com/v1/sap.js");
+  document.body.innerHTML = `<main sap state="x"><div v-if="state.x">x</div></main>`;
+  const app = Sap.mount(document.querySelector("[sap]"));
+  expect(app.halted).toBeFalsy();
+  expect(app.diag.errors.map((e) => e.code)).not.toContain("E01");
+});

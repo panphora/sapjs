@@ -11,7 +11,7 @@ import { formats } from "./helpers.js";
 import { VERSION } from "./version.js";
 import { serializeControlToAttributes, finalizeControlForSave, rehydrateControlFromAttributes } from "./control-serialize.js";
 
-export function createSap({ createAccessor, installInput }) {
+export function createSap({ createAccessor, installInput, debugExtras }) {
   const registry = new Map(); // root element -> appRec
   const order = []; // appRecs in mount order
 
@@ -71,6 +71,7 @@ export function createSap({ createAccessor, installInput }) {
 
   const accessor = createAccessor(runtime);
   const debugApi = createDebug(runtime);
+  const extras = debugExtras ? debugExtras(runtime, debugApi) : {};
 
   let installed = false;
   let disabled = false;
@@ -136,9 +137,9 @@ export function createSap({ createAccessor, installInput }) {
   Sap.batch = batch;
   Sap.status = debugApi.status;
   Sap.report = debugApi.report;
-  Sap.why = debugApi.why;
+  Sap.why = extras.why;
   Sap.debug = debugApi.debug;
-  Sap.doctor = debugApi.doctor;
+  Sap.doctor = extras.doctor;
   Sap.greenLine = debugApi.greenLine;
   Sap.formats = formats;
   Sap.serializeControlToAttributes = serializeControlToAttributes;

@@ -221,20 +221,6 @@
     }
     return parts.join(" > ");
   }
-  function teachForAttr(name) {
-    const n2 = name.toLowerCase();
-    if (/^x-text$|^x-html$/.test(n2)) return `use text="state.x" (Sap paints text only)`;
-    if (/^x-show$|^v-show$|^v-if$/.test(n2)) return `use show="expr" (toggles native hidden)`;
-    if (/^x-model$|^v-model$/.test(n2)) return `use bind="field"`;
-    if (/^@|^x-on:|^v-on:|^on:/.test(n2)) return `use native onclick + Sap(this) (no event directive)`;
-    if (/^:|^x-bind:class$|^v-bind:class$/.test(n2)) return `use class:NAME="expr" or attr:NAME="expr"`;
-    if (/^x-for$|^v-for$/.test(n2)) return `use items="name" on the container and item template on the row`;
-    if (/^x-data$/.test(n2)) return `declare state with state= / bind / items (no JS state object)`;
-    if (/^x-init$/.test(n2)) return `use a <script> or onclick + Sap(this)`;
-    if (/^bind:/.test(n2)) return `use bind="field"; one-way paint is attr:NAME="expr"`;
-    if (/^x-/.test(n2) || /^v-/.test(n2)) return `this is a foreign-dialect attribute; Sap has no x-/v- attributes`;
-    return null;
-  }
   var Diagnostics = class {
     constructor(appName) {
       this.appName = appName;
@@ -1712,6 +1698,9 @@ ${src}` : `"use strict"; return (${src});`;
     "save-freeze"
   ]);
   var extraChecks = [];
+  function addLintCheck(check) {
+    if (!extraChecks.includes(check)) extraChecks.push(check);
+  }
   function isControl(el) {
     return el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA";
   }
@@ -1753,20 +1742,12 @@ ${src}` : `"use strict"; return (${src});`;
       }
     }
     walkAll(root, (el) => {
-      for (const check of extraChecks) check(el, halt);
+      const claimed = /* @__PURE__ */ new Set();
+      for (const check of extraChecks) check(el, halt, (name) => claimed.add(name));
       const inDetail = el.closest && el.closest("[detail]");
       for (const a of [...el.attributes]) {
         const name = a.name;
-        const teach = teachForAttr(name);
-        if (teach) {
-          halt("E01", el, {
-            attr: name,
-            expr: a.value,
-            problem: `"${name}" is a foreign-dialect attribute; Sap has no ${name.split(/[:=]/)[0]} directive`,
-            fix: teach + " \u2014 or wrap the subtree in sap-ignore if intentional"
-          });
-          continue;
-        }
+        if (claimed.has(name)) continue;
         if (name.includes(":")) {
           const prefix = name.slice(0, name.indexOf(":"));
           if (!COLON_PREFIXES.has(prefix)) {
@@ -1972,18 +1953,6 @@ ${src}` : `"use strict"; return (${src});`;
     }
     return n2;
   }
-  function exprSources(root) {
-    const out = [];
-    const scan = (el) => {
-      for (const a of el.attributes) {
-        const n2 = a.name;
-        if (n2.startsWith("calc:") || n2 === "text" || n2.startsWith("text:") || n2 === "show" || n2.startsWith("attr:") || n2.startsWith("class:") || n2.startsWith("css:") || n2 === "effect" || n2 === "invalid" || n2.startsWith("set:") || n2 === "detail") out.push({ el, attr: n2, src: a.value });
-      }
-    };
-    scan(root);
-    for (const el of root.querySelectorAll("*")) scan(el);
-    return out;
-  }
   function createDebug(runtime2) {
     function appView(app) {
       const s = app._stats || {};
@@ -2032,100 +2001,20 @@ ${src}` : `"use strict"; return (${src});`;
       }
       return { ok: errors.length === 0, errors, warnings, counts: { errors: errors.length, warnings: warnings.length } };
     }
-    function resolveEl(elOrSel) {
-      if (!elOrSel) return null;
-      if (typeof elOrSel === "string") return document.querySelector(elOrSel);
-      return elOrSel.nodeType === 1 ? elOrSel : null;
-    }
-    function why(elOrSel, field) {
-      const el = resolveEl(elOrSel);
-      if (!el) {
-        console.warn("sap why: element not found");
-        return null;
-      }
-      const lines = [`sap why <${el.tagName.toLowerCase()}> \u2014 ${cssPath(el)}`];
-      const sapAttrs = [...el.attributes].filter((a) => /^(bind|text|show|effect|invalid|detail|calc:|text:|attr:|class:|css:|set:|state|items|scope)/.test(a.name));
-      for (const a of sapAttrs) lines.push(`  ${a.name}="${a.value}"`);
-      let scopeEl = el;
-      while (scopeEl && !scopeEl._sapScope) scopeEl = scopeEl.parentElement;
-      if (scopeEl && scopeEl._sapScope) {
-        const snap = scopeEl._sapScope;
-        const keys = field ? [field] : Object.keys(snap);
-        lines.push("  reads:");
-        for (const k of keys) {
-          const v = snap[k];
-          if (typeof v === "function") continue;
-          lines.push(`    ${k} = ${JSON.stringify(Array.isArray(v) ? `[${v.length} rows]` : v)}`);
-        }
-      }
-      lines.push("  serialization: textContent and value/checked attributes save with the file; reads live from properties");
-      console.log(lines.join("\n"));
-      return null;
-    }
     function debug(flag) {
       const on = flag === void 0 ? true : !!flag;
       for (const app of runtime2.apps()) app._debug = on;
       console.log(`sap debug ${on ? "on" : "off"} \u2014 per-pass headers will ${on ? "" : "no longer "}log`);
       return on;
     }
-    function doctor() {
-      const findings = [];
-      let checks = 0;
-      for (const app of runtime2.apps()) {
-        const root = app.root;
-        const label = rootLabel(root);
-        checks++;
-        const d2 = new Diagnostics(app.name);
-        lintApp(root, d2);
-        for (const e2 of d2.errors) findings.push({ code: e2.code, severity: "error", message: `${label}: ${e2.code} ${e2.slug} at ${e2.el}` });
-        for (const w2 of d2.warnings) findings.push({ code: w2.code, severity: "warn", message: `${label}: ${w2.code} ${w2.slug} at ${w2.el}` });
-        checks++;
-        runPass(app, { trigger: "doctor-dryrun" });
-        const w = app._stats ? app._stats.writes : 0;
-        if (w > 0) findings.push({ code: "W30", severity: "warn", message: `${label}: dry recompute wrote ${w} cells on a quiet page; an element is stale or non-idempotent` });
-        checks++;
-        const srcs = exprSources(root).map((s) => s.src).join(" \0 ");
-        const decls = [];
-        for (const el of [root, ...root.querySelectorAll("[state]")]) {
-          for (const d of parseStateDecl(el.getAttribute("state") || "")) decls.push(d.name);
-        }
-        for (const name of decls) {
-          const re = new RegExp(`(state|item)\\.${name}\\b`);
-          if (!re.test(srcs)) findings.push({ code: "I33", severity: "info", message: `${label}: field "${name}" is declared but read nowhere (dead state)` });
-        }
-        checks++;
-        const ids = /* @__PURE__ */ new Map();
-        for (const el of root.querySelectorAll("[id]")) ids.set(el.id, (ids.get(el.id) || 0) + 1);
-        for (const [id, n2] of ids) if (n2 > 1) findings.push({ code: "W32", severity: "warn", message: `${label}: duplicate id "${id}" (${n2} elements) \u2014 clone/edit collision` });
-        checks++;
-        for (const s of exprSources(root)) {
-          if (s.src.length > 120) findings.push({ code: "I33", severity: "info", message: `${label}: ${s.attr} expression is ${s.src.length} chars; consider a calc: field` });
-        }
-        checks++;
-        for (const el of root.querySelectorAll("[text], [text\\:num]")) {
-          const t = el.textContent || "";
-          if (/\.\d{5,}/.test(t)) findings.push({ code: "I33", severity: "info", message: `${label}: ${cssPath(el)} paints >4 decimals; consider text:FMT` });
-        }
-      }
-      const e = findings.filter((f) => f.severity === "error").length;
-      const wn = findings.filter((f) => f.severity === "warn").length;
-      const i = findings.filter((f) => f.severity === "info").length;
-      const ms = 0;
-      console.log(`sap doctor \xB7 ${runtime2.apps().map((a) => rootLabel(a.root)).join(", ")} \xB7 errors ${e} \xB7 warnings ${wn} \xB7 info ${i} \xB7 ${checks} checks \xB7 ${ms}ms`);
-      for (const f of findings) {
-        const fn = f.severity === "error" ? console.error : f.severity === "warn" ? console.warn : console.info;
-        fn(`  ${f.severity === "error" ? "\u2717" : f.severity === "warn" ? "\u26A0" : "\xB7"} ${f.message}`);
-      }
-      return findings;
-    }
-    return { status, report, why, debug, doctor, greenLine, printGreenLines, REGISTRY };
+    return { status, report, debug, greenLine, printGreenLines, REGISTRY };
   }
 
   // src/version.js
   var VERSION = "0.5.2";
 
   // src/runtime.js
-  function createSap({ createAccessor: createAccessor2, installInput }) {
+  function createSap({ createAccessor: createAccessor2, installInput, debugExtras }) {
     const registry = /* @__PURE__ */ new Map();
     const order = [];
     const scheduler = createScheduler(runPass);
@@ -2183,6 +2072,7 @@ ${src}` : `"use strict"; return (${src});`;
     };
     const accessor = createAccessor2(runtime2);
     const debugApi = createDebug(runtime2);
+    const extras = debugExtras ? debugExtras(runtime2, debugApi) : {};
     let installed2 = false;
     let disabled = false;
     let teardownBridges = null;
@@ -2241,9 +2131,9 @@ ${src}` : `"use strict"; return (${src});`;
     Sap2.batch = batch;
     Sap2.status = debugApi.status;
     Sap2.report = debugApi.report;
-    Sap2.why = debugApi.why;
+    Sap2.why = extras.why;
     Sap2.debug = debugApi.debug;
-    Sap2.doctor = debugApi.doctor;
+    Sap2.doctor = extras.doctor;
     Sap2.greenLine = debugApi.greenLine;
     Sap2.formats = formats;
     Sap2.serializeControlToAttributes = serializeControlToAttributes;
@@ -2905,6 +2795,119 @@ ${src}` : `"use strict"; return (${src});`;
     return { install, addRouter: (fn) => routers.push(fn) };
   }
 
+  // src/teach.js
+  function teachForAttr(name) {
+    const n2 = name.toLowerCase();
+    if (/^x-text$|^x-html$/.test(n2)) return `use text="state.x" (Sap paints text only)`;
+    if (/^x-show$|^v-show$|^v-if$/.test(n2)) return `use show="expr" (toggles native hidden)`;
+    if (/^x-model$|^v-model$/.test(n2)) return `use bind="field"`;
+    if (/^@|^x-on:|^v-on:|^on:/.test(n2)) return `use native onclick + Sap(this) (no event directive)`;
+    if (/^:|^x-bind:class$|^v-bind:class$/.test(n2)) return `use class:NAME="expr" or attr:NAME="expr"`;
+    if (/^x-for$|^v-for$/.test(n2)) return `use items="name" on the container and item template on the row`;
+    if (/^x-data$/.test(n2)) return `declare state with state= / bind / items (no JS state object)`;
+    if (/^x-init$/.test(n2)) return `use a <script> or onclick + Sap(this)`;
+    if (/^bind:/.test(n2)) return `use bind="field"; one-way paint is attr:NAME="expr"`;
+    if (/^x-/.test(n2) || /^v-/.test(n2)) return `this is a foreign-dialect attribute; Sap has no x-/v- attributes`;
+    return null;
+  }
+
+  // src/debug-full.js
+  function exprSources(root) {
+    const out = [];
+    const scan = (el) => {
+      for (const a of el.attributes) {
+        const n2 = a.name;
+        if (n2.startsWith("calc:") || n2 === "text" || n2.startsWith("text:") || n2 === "show" || n2.startsWith("attr:") || n2.startsWith("class:") || n2.startsWith("css:") || n2 === "effect" || n2 === "invalid" || n2.startsWith("set:") || n2 === "detail") out.push({ el, attr: n2, src: a.value });
+      }
+    };
+    scan(root);
+    for (const el of root.querySelectorAll("*")) scan(el);
+    return out;
+  }
+  function addFullDebug(runtime2) {
+    function resolveEl(elOrSel) {
+      if (!elOrSel) return null;
+      if (typeof elOrSel === "string") return document.querySelector(elOrSel);
+      return elOrSel.nodeType === 1 ? elOrSel : null;
+    }
+    function why(elOrSel, field) {
+      const el = resolveEl(elOrSel);
+      if (!el) {
+        console.warn("sap why: element not found");
+        return null;
+      }
+      const lines = [`sap why <${el.tagName.toLowerCase()}> \u2014 ${cssPath(el)}`];
+      const sapAttrs = [...el.attributes].filter((a) => /^(bind|text|show|effect|invalid|detail|calc:|text:|attr:|class:|css:|set:|state|items|scope)/.test(a.name));
+      for (const a of sapAttrs) lines.push(`  ${a.name}="${a.value}"`);
+      let scopeEl = el;
+      while (scopeEl && !scopeEl._sapScope) scopeEl = scopeEl.parentElement;
+      if (scopeEl && scopeEl._sapScope) {
+        const snap = scopeEl._sapScope;
+        const keys = field ? [field] : Object.keys(snap);
+        lines.push("  reads:");
+        for (const k of keys) {
+          const v = snap[k];
+          if (typeof v === "function") continue;
+          lines.push(`    ${k} = ${JSON.stringify(Array.isArray(v) ? `[${v.length} rows]` : v)}`);
+        }
+      }
+      lines.push("  serialization: textContent and value/checked attributes save with the file; reads live from properties");
+      console.log(lines.join("\n"));
+      return null;
+    }
+    function doctor() {
+      const findings = [];
+      let checks = 0;
+      for (const app of runtime2.apps()) {
+        const root = app.root;
+        const label = rootLabel(root);
+        checks++;
+        const d2 = new Diagnostics(app.name);
+        lintApp(root, d2);
+        for (const e2 of d2.errors) findings.push({ code: e2.code, severity: "error", message: `${label}: ${e2.code} ${e2.slug} at ${e2.el}` });
+        for (const w2 of d2.warnings) findings.push({ code: w2.code, severity: "warn", message: `${label}: ${w2.code} ${w2.slug} at ${w2.el}` });
+        checks++;
+        runPass(app, { trigger: "doctor-dryrun" });
+        const w = app._stats ? app._stats.writes : 0;
+        if (w > 0) findings.push({ code: "W30", severity: "warn", message: `${label}: dry recompute wrote ${w} cells on a quiet page; an element is stale or non-idempotent` });
+        checks++;
+        const srcs = exprSources(root).map((s) => s.src).join(" \0 ");
+        const decls = [];
+        for (const el of [root, ...root.querySelectorAll("[state]")]) {
+          for (const d of parseStateDecl(el.getAttribute("state") || "")) decls.push(d.name);
+        }
+        for (const name of decls) {
+          const re = new RegExp(`(state|item)\\.${name}\\b`);
+          if (!re.test(srcs)) findings.push({ code: "I33", severity: "info", message: `${label}: field "${name}" is declared but read nowhere (dead state)` });
+        }
+        checks++;
+        const ids = /* @__PURE__ */ new Map();
+        for (const el of root.querySelectorAll("[id]")) ids.set(el.id, (ids.get(el.id) || 0) + 1);
+        for (const [id, n2] of ids) if (n2 > 1) findings.push({ code: "W32", severity: "warn", message: `${label}: duplicate id "${id}" (${n2} elements) \u2014 clone/edit collision` });
+        checks++;
+        for (const s of exprSources(root)) {
+          if (s.src.length > 120) findings.push({ code: "I33", severity: "info", message: `${label}: ${s.attr} expression is ${s.src.length} chars; consider a calc: field` });
+        }
+        checks++;
+        for (const el of root.querySelectorAll("[text], [text\\:num]")) {
+          const t = el.textContent || "";
+          if (/\.\d{5,}/.test(t)) findings.push({ code: "I33", severity: "info", message: `${label}: ${cssPath(el)} paints >4 decimals; consider text:FMT` });
+        }
+      }
+      const e = findings.filter((f) => f.severity === "error").length;
+      const wn = findings.filter((f) => f.severity === "warn").length;
+      const i = findings.filter((f) => f.severity === "info").length;
+      const ms = 0;
+      console.log(`sap doctor \xB7 ${runtime2.apps().map((a) => rootLabel(a.root)).join(", ")} \xB7 errors ${e} \xB7 warnings ${wn} \xB7 info ${i} \xB7 ${checks} checks \xB7 ${ms}ms`);
+      for (const f of findings) {
+        const fn = f.severity === "error" ? console.error : f.severity === "warn" ? console.warn : console.info;
+        fn(`  ${f.severity === "error" ? "\u2717" : f.severity === "warn" ? "\u26A0" : "\xB7"} ${f.message}`);
+      }
+      return findings;
+    }
+    return { why, doctor };
+  }
+
   // src/features/detail.js
   function resolvePathValue(path, ctx) {
     const segs = String(path).split(".");
@@ -3284,8 +3287,22 @@ ${src}` : `"use strict"; return (${src});`;
 
   // src/sap.js
   registerFullFeatures();
+  addLintCheck((el, halt, claimed) => {
+    for (const a of el.attributes) {
+      const teach = teachForAttr(a.name);
+      if (!teach) continue;
+      halt("E01", el, {
+        attr: a.name,
+        expr: a.value,
+        problem: `"${a.name}" is a foreign-dialect attribute; Sap has no ${a.name.split(/[:=]/)[0]} directive`,
+        fix: teach + " \u2014 or wrap the subtree in sap-ignore if intentional"
+      });
+      claimed(a.name);
+    }
+  });
   var { Sap, mountAll, mount, runtime } = createSap({
     createAccessor,
+    debugExtras: addFullDebug,
     installInput(runtime2, accessor, doc) {
       const input = createInput(runtime2);
       const actions = createActions(runtime2, accessor);

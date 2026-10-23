@@ -3,9 +3,7 @@
 // warnings never halt. This is the agent-authorability gate.
 
 import { parseStateDecl, rowsOf, templateOf, sharedTemplate, isNativeBoolean } from "./dom.js";
-import {
-  teachForAttr, RESERVED, HTML_GLOBALS, NATIVE_BOOLEANS, didYouMean, setBeacon,
-} from "./errors.js";
+import { RESERVED, HTML_GLOBALS, NATIVE_BOOLEANS, didYouMean, setBeacon } from "./errors.js";
 
 const NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
 // `editmode` is a hyperclayjs platform prefix (editmode:onclick etc.), not a Sap
@@ -79,22 +77,13 @@ export function lintApp(root, diag) {
   }
 
   walkAll(root, (el) => {
-    for (const check of extraChecks) check(el, halt);
+    const claimed = new Set();
+    for (const check of extraChecks) check(el, halt, (name) => claimed.add(name));
     const inDetail = el.closest && el.closest("[detail]");
 
     for (const a of [...el.attributes]) {
       const name = a.name;
-
-      // foreign-dialect attributes
-      const teach = teachForAttr(name);
-      if (teach) {
-        halt("E01", el, {
-          attr: name, expr: a.value,
-          problem: `"${name}" is a foreign-dialect attribute; Sap has no ${name.split(/[:=]/)[0]} directive`,
-          fix: teach + " — or wrap the subtree in sap-ignore if intentional",
-        });
-        continue;
-      }
+      if (claimed.has(name)) continue;
 
       // colon-prefixed attribute checks
       if (name.includes(":")) {

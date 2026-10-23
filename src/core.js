@@ -63,8 +63,14 @@ function createAccessor() {
   return { Sap };
 }
 
+const fullOnly = (name) => () => {
+  console.warn(`Sap.${name} is full sapjs; load ${FULL_SAPJS}`);
+  return null;
+};
+
 const { Sap, mountAll, mount, runtime } = createSap({
   createAccessor,
+  debugExtras: () => ({ why: fullOnly("why"), doctor: fullOnly("doctor") }),
   installInput(runtime, accessor, doc) {
     createInput(runtime).install(doc);
   },
