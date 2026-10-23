@@ -368,9 +368,12 @@ Sap runs standalone in any HTML file. When `window.hyperclay` is present it ride
 - undo/redo replays heal derived paints,
 - `Sap.batch` labels grouped edits in the undo history,
 - a morph that replaces the `[sap]` element re-mounts itself,
-- with ClayJS (`window.clay`), Sap mounts once `clay.ready` settles, so `clay="freeze"` regions record their authored markup rather than Sap's first paint.
+- with ClayJS (`window.clay`), ClayJS mounts Sap in a boot phase after `clay="freeze"` regions record their authored markup and visitor drafts restore, then settles its boot baseline on the painted page; without that phase Sap mounts once `clay.ready` settles,
+- ClayJS treats painted output as derived (`clay.derived`): comparisons, the dirty check, undo and merges leave it out, and Sap repaints right after every merge, before ClayJS records a baseline. Ownership is read by `src/ownership.js`, which ClayJS vendors.
 
-**Where paints live in a malleable file.** A paint computed only from the records (a count, a total, a card's badge) is ordinary saved content: author the file pre-painted, and every tab computes the same value, so loading or merging writes nothing. A paint that differs per tab (today's date, the locale, the URL, the search box, runtime-loaded data) belongs in a `clay="freeze"` scratchpad: ClayJS saves and syncs the element but never its contents, and a scratchpad that arrives from a peer is empty. Fill it from an `effect` on the scratchpad, which runs on every pass:
+**The core build.** `dist/sap-core.min.js` (about 40 KB minified, 14 KB gzipped, against 64 KB and 22 KB for `dist/sap.min.js`) is the same source with records and paints only. ClayJS loads it by itself on any page with a `[sap]` root. `calc:`, `each`, `detail`, `effect`, `invalid`, the actions and `Sap(el)` halt with `E50` naming full sapjs, and loading `sap.js` takes the page over with no markup change. `Sap.why` and `Sap.doctor` are full-only.
+
+**Where paints live in a malleable file.** A paint computed only from the records (a count, a total, a card's badge) is ordinary saved content: author the file pre-painted, and under ClayJS a merge leaves painted values out and Sap repaints them from the merged records, so two tabs never conflict over a total. A paint that differs per tab (today's date, the locale, the URL, the search box, runtime-loaded data) belongs in a `clay="freeze"` scratchpad: ClayJS saves and syncs the element but never its contents, and a scratchpad that arrives from a peer is empty. Fill it from an `effect` on the scratchpad, which runs on every pass:
 
     <span class="due-slot" clay="freeze" effect="paintDue(el, item.$el)"></span>
 

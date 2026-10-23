@@ -262,11 +262,12 @@ Compute derived values with `calc:` or an inline expression, and show them with 
 
 `calc:total` computes a field named `total`. `text:usd2` formats it as dollars with two decimals. In the `<span>`, `count(item.checks, c => c.done)` counts the card's ticked checklist items, so a card with one of two items ticked shows `1/2`.
 
-Paint the computed values into the file. When the saved file already shows `$54.50`, the first pass changes nothing, and sapjs reports `mount writes 0`. When the file disagrees, sapjs paints the correct value at load and logs a `W30` warning. The app still works. Under ClayJS, that paint does not start an autosave and does not count as unsaved. The live page now differs from the file, and the painted value goes out with the next real save.
+Paint the computed values into the file. When the saved file already shows `$54.50`, the first pass changes nothing, and sapjs reports `mount writes 0`. When the file disagrees, sapjs paints the correct value at load. Under ClayJS, a painted value is derived: it never starts an autosave and never counts as unsaved. If the file's painted values still differ from the page after a repaint, for example because an agent wrote a record and left the old paint, one clean tab with autosave on saves the painted page. Without ClayJS, sapjs logs a `W30` warning and the value goes out with the next real save.
 
 Where a paint goes depends on whether every tab computes the same value:
 
-- A paint computed only from the records, such as a total or a count, is ordinary saved content. Every tab computes the same value, so a merge never fights over it.
+- A paint computed only from the records, such as a total or a count, is ordinary saved content. Under ClayJS a merge leaves painted values out and sapjs repaints them from the merged records, so two tabs that changed different records end with the right total and no conflict.
+- Agents and data API rules read and write records, never painted values. A painted value on disk can lag its record until a tab repaints and saves it.
 - A paint that differs per tab goes inside a `clay="freeze"` element (section 5). That covers anything computed from today's date, the browser's locale or the search box. Each tab fills its own copy. Section 7 explains why the wrapper is `clay="freeze"` and not `clay="editor-ui"`.
 
 ## 7. Edit one record in detail
@@ -339,7 +340,10 @@ With ClayJS loaded, a sapjs app saves, syncs and undoes as one file. Most of tha
 What happens by itself:
 
 - sapjs uses the ClayJS mutation hub, the single watcher ClayJS keeps for page changes. So its own paints never start an autosave and never enter the undo history.
-- A live sync merge, an undo and a redo each run a full pass.
+- A live sync merge, an undo and a redo each run a full pass. After a merge the pass runs before ClayJS records any baseline.
+- ClayJS treats what a paint writes as derived: the attribute an `attr:` names, the class token a `class:` names, the `--` property a `css:` names, the children of a `text` element, and `hidden` under `show`. Comparisons, the dirty check, undo and merges leave them out.
+- ClayJS loads the sapjs core by itself on any page with a `[sap]` root: records and paints, without `calc:`, `each`, `detail`, `effect`, `invalid`, the actions and `Sap(el)`. Those halt with `E50`, which names full sapjs. Add the `sap.js` tag for them; the markup stays the same, and full sapjs takes the page over from the core.
+- ClayJS mounts sapjs in a boot phase, after `clay="freeze"` regions record their markup and visitor drafts restore, and the boot baseline settles on the painted page.
 - A route change from the ClayJS router fires `clay:route`, and sapjs runs a pass on it.
 - `confirm=` uses `clay.confirm` when the `clay-ui.js` satellite is loaded. A satellite is an optional ClayJS script loaded beside `clay.js`.
 
