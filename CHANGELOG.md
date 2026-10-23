@@ -98,10 +98,24 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-23
+
+### Added
+- An ownership reader reports which attributes, class tokens, custom properties and text a paint owns, read from the element's own attributes.
+
 ### Changed
 - License: relicensed to MIT-0 (MIT No Attribution). Same rights, attribution no longer required. Covers everything in the repo, including src/control-serialize.js and its vendored copies downstream.
+- `Sap.why` and `Sap.doctor` now ship only in the full build. The core build warns when you call them.
+- The `E01` foreign-dialect check and its dictionary now ship only in the full build.
+- The core build is smaller: 44,579 to 40,585 bytes minified, 15,864 to 14,488 gzipped.
+- The core build keeps every correctness check.
 
-
+### Fixed
+- `attr:value`, `attr:checked` and `attr:selected` are owned unless a bind, a persist or a bound select owns that form state.
+- Every host repaint mounts roots a merge added.
+- The classic core bundle uses its own global, so it no longer replaces `window.Sap`.
+- A halted app runs no passes.
+- Full-only markup that arrives after mount halts the core app before it writes anything.
 
 ## [0.2.3] - 2026-08-14
 
