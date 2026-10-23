@@ -22,6 +22,8 @@ const workspace = path.join(rootDir, '..')
 
 const distFile = path.join(rootDir, 'dist', 'sap.min.js')
 const serializeSrc = path.join(rootDir, 'src', 'control-serialize.js')
+const coreDistFile = path.join(rootDir, 'dist', 'sap-core.min.js')
+const ownershipSrc = path.join(rootDir, 'src', 'ownership.js')
 
 // clayjs loads sap.js as a plain <script>, so this wrapper is CLASSIC-SAFE: it
 // must NOT contain export syntax, and the whole dist is wrapped in an outer IIFE
@@ -73,6 +75,15 @@ const SERIALIZE_HEADER = `// GENERATED — do not edit. Vendored from sapjs/src/
 // table. Edit the sapjs source and re-run.
 `
 
+const SAP_CORE_HEADER = `// GENERATED — do not edit. Vendored from sapjs/dist/sap-core.min.js via sapjs
+// \`npm run copy-to-clayjs\`. Edit the sapjs source and re-run.
+`
+
+const OWNERSHIP_HEADER = `// GENERATED — do not edit. Vendored from sapjs/src/ownership.js
+// via sapjs \`npm run propagate\`, which writes every client's copy from one
+// table. Edit the sapjs source and re-run.
+`
+
 function readDist() {
   return fs.readFileSync(distFile, 'utf8').trim()
 }
@@ -89,11 +100,21 @@ function buildSerializeVendor() {
   return SERIALIZE_HEADER + '\n' + fs.readFileSync(serializeSrc, 'utf8').trim() + '\n'
 }
 
+function buildSapCoreEsm() {
+  return SAP_CORE_HEADER + fs.readFileSync(coreDistFile, 'utf8').trim() + '\nexport default Sap.default;\n'
+}
+
+function buildOwnershipVendor() {
+  return OWNERSHIP_HEADER + '\n' + fs.readFileSync(ownershipSrc, 'utf8').trim() + '\n'
+}
+
 const DESTINATIONS = [
   { client: 'clayjs', path: 'clayjs/entries/sap.js', build: buildSapClassic },
   { client: 'hyperclayjs', path: 'hyperclayjs/src/vendor/sapjs.vendor.js', build: buildSapEsm },
   { client: 'clayjs', path: 'clayjs/src/vendor/control-serialize.vendor.js', build: buildSerializeVendor },
-  { client: 'hyperclayjs', path: 'hyperclayjs/src/vendor/control-serialize.vendor.js', build: buildSerializeVendor }
+  { client: 'hyperclayjs', path: 'hyperclayjs/src/vendor/control-serialize.vendor.js', build: buildSerializeVendor },
+  { client: 'clayjs', path: 'clayjs/src/vendor/sap-core.vendor.js', build: buildSapCoreEsm },
+  { client: 'clayjs', path: 'clayjs/src/vendor/sap-ownership.vendor.js', build: buildOwnershipVendor }
 ]
 
 const args = process.argv.slice(2)
