@@ -20,9 +20,9 @@ test("a record declaration wins over a paint of the same attribute", () => {
   expect(paintsOf($("#p"))).toBeNull();
 });
 
-test("identity, class, style and form state are never owned", () => {
+test("identity, class and style are never owned", () => {
   document.body.innerHTML = `<main sap><input id="i" attr:id="1" attr:data-id="1" attr:class="1" attr:style="1" attr:value="1" attr:checked="1"></main>`;
-  for (const name of ["id", "data-id", "class", "style", "value", "checked"]) expect(ownsAttr($("#i"), name)).toBe(false);
+  for (const name of ["id", "data-id", "class", "style"]) expect(ownsAttr($("#i"), name)).toBe(false);
 });
 
 test("show and the show-when family own hidden", () => {
@@ -82,4 +82,30 @@ test("a class or style left empty by the strip is removed", () => {
   stripPaints(clone);
   expect(clone.querySelector("#p").hasAttribute("class")).toBe(false);
   expect(clone.querySelector("#p").hasAttribute("style")).toBe(false);
+});
+
+test("an unbound form paint owns its attribute", () => {
+  document.body.innerHTML = `<main sap><progress id="p" attr:value="1" value="0.5"></progress><input id="i" attr:value="1"><input id="c" type="checkbox" attr:checked="1"></main>`;
+  expect(ownsAttr($("#p"), "value")).toBe(true);
+  expect(paintsOf($("#p")).attrs).toEqual(["value"]);
+  expect(ownsAttr($("#i"), "value")).toBe(true);
+  expect(ownsAttr($("#c"), "checked")).toBe(true);
+});
+
+test("a bind, a persist, or a bound select keeps form state from the paint", () => {
+  document.body.innerHTML = `<main sap><input id="b" bind="name" attr:value="1"><input id="p" type="checkbox" attr:checked="1" persist><select bind="pick"><option id="in" attr:selected="1"></option></select><select id="plain"><option id="out" attr:selected="1"></option></select></main>`;
+  expect(ownsAttr($("#b"), "value")).toBe(false);
+  expect(paintsOf($("#b"))).toBeNull();
+  expect(ownsAttr($("#p"), "checked")).toBe(false);
+  expect(ownsAttr($("#in"), "selected")).toBe(false);
+  expect(ownsAttr($("#out"), "selected")).toBe(true);
+});
+
+test("stripPaints removes an unbound form paint and keeps a bound value", () => {
+  document.body.innerHTML = `<main sap><progress id="p" attr:value="1" value="0.5"></progress><input id="b" bind="name" attr:value="1" value="saved"></main>`;
+  const clone = document.body.cloneNode(true);
+  stripPaints(clone);
+  expect(clone.querySelector("#p").hasAttribute("value")).toBe(false);
+  expect(clone.querySelector("#b").getAttribute("value")).toBe("saved");
+  expect($("#p").getAttribute("value")).toBe("0.5");
 });

@@ -22,8 +22,10 @@ const common = {
 await build({ ...common, outfile: "dist/sap.js" });
 await build({ ...common, minify: true, outfile: "dist/sap.min.js" });
 
-// The core sets window.Sap itself, and only when no other copy did.
-const core = { ...common, entryPoints: ["src/core.js"], footer: undefined };
+// The core sets window.Sap itself, and only when no other copy did. It needs its own
+// global: inheriting "Sap" would make a classic script's `var Sap` overwrite the
+// callable API src/core.js installs.
+const core = { ...common, entryPoints: ["src/core.js"], globalName: "SapCoreBundle", footer: undefined };
 await build({ ...core, outfile: "dist/sap-core.js" });
 await build({ ...core, minify: true, outfile: "dist/sap-core.min.js" });
 

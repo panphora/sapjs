@@ -103,10 +103,9 @@ export function installBridges(runtime) {
     }
     // A morph may have replaced a root wholesale: drop the dead app records (so they
     // don't pile up in order) and re-mount to pick up the replacement.
-    if (disconnected) {
-      runtime.pruneDisconnected();
-      runtime.remountIfPresent();
-    }
+    if (disconnected) runtime.pruneDisconnected();
+    // A merge can also add a root; mountAll skips the ones already registered.
+    runtime.remountIfPresent();
   };
 
   // A host that treats paints as derived repaints them itself, inside the merge and

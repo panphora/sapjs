@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import Sap from "../src/core.js";
+
+const dist = (name) => readFileSync(join(__dirname, "..", "dist", name), "utf8");
 
 const quiet = () => { jest.spyOn(console, "log").mockImplementation(() => {}); jest.spyOn(console, "error").mockImplementation(() => {}); jest.spyOn(console, "warn").mockImplementation(() => {}); };
 beforeEach(() => { Sap._reset(); document.body.innerHTML = ""; quiet(); });
@@ -57,4 +61,69 @@ test("Sap.why() names full sapjs, and a foreign-dialect attribute is not the cor
   const app = Sap.mount(document.querySelector("[sap]"));
   expect(app.halted).toBeFalsy();
   expect(app.diag.errors.map((e) => e.code)).not.toContain("E01");
+});
+
+test("the core bundle does not overwrite window.Sap when a classic script runs it", () => {
+  document.body.innerHTML = `<main sap><output text="'hi'"></output></main>`;
+  delete window.Sap;
+  window.eval(dist("sap-core.js"));
+  expect(typeof window.Sap).toBe("function");
+  expect(window.Sap.core).toBe(true);
+  expect(typeof window.Sap.refresh).toBe("function");
+  expect(document.querySelector("output").textContent).toBe("hi");
+});
+
+test("the core bundle leaves the full sapjs window.Sap in place", () => {
+  document.body.innerHTML = `<main sap><output text="'hi'"></output></main>`;
+  delete window.Sap;
+  window.eval(dist("sap.js"));
+  const full = window.Sap;
+  const refresh = full.refresh;
+  window.eval(dist("sap-core.js"));
+  expect(window.Sap).toBe(full);
+  expect(window.Sap.core).toBeFalsy();
+  expect(window.Sap.refresh).toBe(refresh);
+  expect(document.querySelector("output").textContent).toBe("hi");
+});
+
+test("a core app halted at mount runs no pass on refresh", () => {
+  document.body.innerHTML = `<main sap state="x" x="1"><button set:x="2">go</button><p text="state.x">stale</p></main>`;
+  const app = Sap.mount(document.querySelector("[sap]"));
+  expect(app.halted).toBe(true);
+  const p = document.querySelector("p");
+  expect(p.textContent).toBe("stale");
+  Sap.refresh();
+  expect(p.textContent).toBe("stale");
+  expect(app.diag.errors.map((e) => e.code)).toContain("E50");
+  expect(Sap.status().apps[0].passes).toBe(0);
+});
+
+test("full-only markup added after mount halts the core app", () => {
+  document.body.innerHTML = `<main sap state="x" x="1"><p text="state.x">1</p></main>`;
+  const app = Sap.mount(document.querySelector("[sap]"));
+  expect(app.halted).toBeFalsy();
+  const btn = document.createElement("button");
+  btn.setAttribute("set:x", "2");
+  document.querySelector("main").append(btn);
+  Sap.refresh();
+  expect(app.halted).toBe(true);
+  const e50 = app.diag.errors.find((e) => e.code === "E50");
+  expect(e50).toBeTruthy();
+  expect(e50.attr).toBe("set:x");
+  expect(btn.getAttribute("sap-error")).toBe("E50");
+});
+
+test("a pass that meets full-only markup writes nothing", () => {
+  document.body.innerHTML = `<main sap state="x" x="saved"><p text="state.x">saved</p></main>`;
+  const app = Sap.mount(document.querySelector("[sap]"));
+  expect(app.halted).toBeFalsy();
+  const p = document.querySelector("p");
+  expect(p.textContent).toBe("saved");
+  document.querySelector("main").setAttribute("x", "changed");
+  const out = document.createElement("output");
+  out.setAttribute("calc:y", "1");
+  document.querySelector("main").append(out);
+  Sap.refresh();
+  expect(app.diag.errors.map((e) => e.code)).toContain("E50");
+  expect(p.textContent).toBe("saved");
 });

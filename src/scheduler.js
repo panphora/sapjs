@@ -32,7 +32,7 @@ export function createScheduler(runPass) {
   }
 
   function runWithBreaker(app, full = false) {
-    if (app._broken) return;
+    if (app._broken || app.halted) return;
     app._passes = (app._passes || 0) + 1;
     if (app._passes > MAX_PASSES) {
       app._broken = true;

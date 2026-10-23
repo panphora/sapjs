@@ -1,4 +1,4 @@
-var Sap = (() => {
+var SapCoreBundle = (() => {
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -55,7 +55,7 @@ var Sap = (() => {
       for (const app of apps) runWithBreaker(app);
     }
     function runWithBreaker(app, full = false) {
-      if (app._broken) return;
+      if (app._broken || app.halted) return;
       app._passes = (app._passes || 0) + 1;
       if (app._passes > MAX_PASSES) {
         app._broken = true;
@@ -826,10 +826,8 @@ ${src}` : `"use strict"; return (${src});`;
         if (app.root.isConnected) runtime2.runNow(app, "platform");
         else disconnected = true;
       }
-      if (disconnected) {
-        runtime2.pruneDisconnected();
-        runtime2.remountIfPresent();
-      }
+      if (disconnected) runtime2.pruneDisconnected();
+      runtime2.remountIfPresent();
     };
     const derived = capability("derived");
     const offDerived = derived && typeof derived.register === "function" ? derived.register(refreshConnected) : null;
@@ -1297,6 +1295,7 @@ ${src}` : `"use strict"; return (${src});`;
     };
     for (const f of features) if (f.begin) f.begin(pass);
     enterScope(root, rootObj, rootCtx);
+    if (app.halted) return;
     for (const f of features) if (f.afterIntake) f.afterIntake(pass);
     if (pending.length && whenFields.size) {
       for (const w of pending) {
@@ -2078,6 +2077,7 @@ ${src}` : `"use strict"; return (${src});`;
       fix: `load ${FULL_SAPJS}; the markup stays as it is`
     });
     setBeacon(el, "E50");
+    pass.app.halted = true;
   }
   registerFeature({
     name: "core-only",
@@ -2085,6 +2085,13 @@ ${src}` : `"use strict"; return (${src});`;
       if (plan.calcs) unsupported(pass, el, "calc:" + plan.calcs[0].name);
       if (plan.effects) unsupported(pass, el, "effect");
       if (plan.invalids) unsupported(pass, el, "invalid");
+      for (const a of el.attributes) {
+        if (!needsFullSapjs(a.name)) continue;
+        if (a.name.startsWith("calc:") && plan.calcs) continue;
+        if (a.name === "effect" && plan.effects) continue;
+        if (a.name === "invalid" && plan.invalids) continue;
+        unsupported(pass, el, a.name);
+      }
     },
     boundary: {
       each(pass, el) {

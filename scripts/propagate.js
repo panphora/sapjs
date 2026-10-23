@@ -101,7 +101,7 @@ function buildSerializeVendor() {
 }
 
 function buildSapCoreEsm() {
-  return SAP_CORE_HEADER + fs.readFileSync(coreDistFile, 'utf8').trim() + '\nexport default Sap.default;\n'
+  return SAP_CORE_HEADER + fs.readFileSync(coreDistFile, 'utf8').trim() + '\nexport default SapCoreBundle.default;\n'
 }
 
 function buildOwnershipVendor() {

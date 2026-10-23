@@ -53,7 +53,7 @@ var Sap = (() => {
       for (const app of apps) runWithBreaker(app);
     }
     function runWithBreaker(app, full = false) {
-      if (app._broken) return;
+      if (app._broken || app.halted) return;
       app._passes = (app._passes || 0) + 1;
       if (app._passes > MAX_PASSES) {
         app._broken = true;
@@ -1001,10 +1001,8 @@ ${src}` : `"use strict"; return (${src});`;
         if (app.root.isConnected) runtime2.runNow(app, "platform");
         else disconnected = true;
       }
-      if (disconnected) {
-        runtime2.pruneDisconnected();
-        runtime2.remountIfPresent();
-      }
+      if (disconnected) runtime2.pruneDisconnected();
+      runtime2.remountIfPresent();
     };
     const derived = capability("derived");
     const offDerived = derived && typeof derived.register === "function" ? derived.register(refreshConnected) : null;
@@ -1476,6 +1474,7 @@ ${src}` : `"use strict"; return (${src});`;
     };
     for (const f of features) if (f.begin) f.begin(pass);
     enterScope(root, rootObj, rootCtx);
+    if (app.halted) return;
     for (const f of features) if (f.afterIntake) f.afterIntake(pass);
     if (pending.length && whenFields.size) {
       for (const w of pending) {

@@ -41,6 +41,7 @@ function unsupported(pass, el, what) {
     fix: `load ${FULL_SAPJS}; the markup stays as it is`,
   });
   setBeacon(el, "E50");
+  pass.app.halted = true;
 }
 
 registerFeature({
@@ -49,6 +50,13 @@ registerFeature({
     if (plan.calcs) unsupported(pass, el, "calc:" + plan.calcs[0].name);
     if (plan.effects) unsupported(pass, el, "effect");
     if (plan.invalids) unsupported(pass, el, "invalid");
+    for (const a of el.attributes) {
+      if (!needsFullSapjs(a.name)) continue;
+      if (a.name.startsWith("calc:") && plan.calcs) continue;
+      if (a.name === "effect" && plan.effects) continue;
+      if (a.name === "invalid" && plan.invalids) continue;
+      unsupported(pass, el, a.name);
+    }
   },
   boundary: {
     each(pass, el) { unsupported(pass, el, "each"); },

@@ -202,6 +202,10 @@ function runPassBody(app, opts) {
   // --- intake ---
   enterScope(root, rootObj, rootCtx);
 
+  // Collection can halt the app: the core flags full-only markup it meets here. A
+  // halted pass writes nothing, so stop before defaults, calcs, views or any paint.
+  if (app.halted) return;
+
   for (const f of features) if (f.afterIntake) f.afterIntake(pass);
 
   // --- materialize defaults a visibility verb references, so the CSS floor
