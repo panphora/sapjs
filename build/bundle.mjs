@@ -22,4 +22,9 @@ const common = {
 await build({ ...common, outfile: "dist/sap.js" });
 await build({ ...common, minify: true, outfile: "dist/sap.min.js" });
 
-console.log(`built dist/sap.js and dist/sap.min.js (v${version})`);
+// The core sets window.Sap itself, and only when no other copy did.
+const core = { ...common, entryPoints: ["src/core.js"], footer: undefined };
+await build({ ...core, outfile: "dist/sap-core.js" });
+await build({ ...core, minify: true, outfile: "dist/sap-core.min.js" });
+
+console.log(`built dist/sap.js, dist/sap.min.js, dist/sap-core.js and dist/sap-core.min.js (v${version})`);

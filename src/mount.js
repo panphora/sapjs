@@ -6,7 +6,7 @@ import { Diagnostics } from "./errors.js";
 import { lintApp } from "./lint.js";
 import { runPass } from "./pass.js";
 import { rehydrateControlFromAttributes } from "./control-serialize.js";
-import { draftsRestored } from "./platform.js";
+import { draftsRestored, capability } from "./platform.js";
 
 const STYLE_ID = "sap-styles";
 const STYLE_TEXT =
@@ -75,7 +75,7 @@ export function mountApp(root) {
   runPass(appRec, { trigger: "mount", full: true });
   appRec._mountMs = now() - t0;
   appRec._mountWrites = appRec._stats ? appRec._stats.writes : 0;
-  if (appRec._mountWrites > 0 && !draftsRestored()) {
+  if (appRec._mountWrites > 0 && !draftsRestored() && !capability("derived")) {
     diag.warn("W30", root, {
       problem: `${appRec._mountWrites} paint(s) ran at mount; the saved file was out of sync with its declared state`,
       fix: "re-save once so the file mounts clean (a settled file writes nothing)",

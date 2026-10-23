@@ -109,12 +109,16 @@ export function installBridges(runtime) {
     }
   };
 
-  // M2: livesync-applied must refresh synchronously inside the pause window.
-  onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
+  // A host that treats paints as derived repaints them itself, inside the merge and
+  // before it records any baseline. An older host only announces the merge, so
+  // livesync-applied must refresh synchronously inside the pause window (M2).
+  const derived = capability("derived");
+  const offDerived = derived && typeof derived.register === "function" ? derived.register(refreshConnected) : null;
+  const offApplied = typeof offDerived === "function" ? null : onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
 
   // A clay-router route change is not a DOM edit, but expressions read the route
   // (the open record, the active tab), so re-derive on it the same way.
-  onPlatformEvent(document, ROUTE_CHANGED, refreshConnected);
+  const offRoute = onPlatformEvent(document, ROUTE_CHANGED, refreshConnected);
 
   // Undo/redo replay attributes with no events; re-derive after. Mutation readiness
   // is only an early compatibility retry: it truthfully announces the Mutation hub
@@ -148,4 +152,11 @@ export function installBridges(runtime) {
     const ready = capability("ready");
     if (ready && typeof ready.then === "function") ready.then(bindUndo, () => {});
   }
+
+  return () => {
+    if (typeof offDerived === "function") offDerived();
+    if (offApplied) offApplied();
+    offRoute();
+    stopWaiting();
+  };
 }

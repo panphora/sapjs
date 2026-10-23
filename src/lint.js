@@ -28,6 +28,12 @@ const KNOWN_BARE = new Set([
   "no-trigger-autosave", "freeze", "mutations-ignore", "save-remove", "save-ignore", "save-freeze",
 ]);
 
+const extraChecks = [];
+
+export function addLintCheck(check) {
+  if (!extraChecks.includes(check)) extraChecks.push(check);
+}
+
 function isControl(el) {
   return el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA";
 }
@@ -73,6 +79,7 @@ export function lintApp(root, diag) {
   }
 
   walkAll(root, (el) => {
+    for (const check of extraChecks) check(el, halt);
     const inDetail = el.closest && el.closest("[detail]");
 
     for (const a of [...el.attributes]) {

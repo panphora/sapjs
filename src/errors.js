@@ -29,6 +29,7 @@ export const REGISTRY = {
   E41: { slug: "each-bad-key", behavior: "ERR" },
   E42: { slug: "each-template", behavior: "ERR" },
   E43: { slug: "bind-in-each-row", behavior: "ERR" },
+  E50: { slug: "needs-full-sapjs", behavior: "HALT" },
   W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
   W04: { slug: "expression-in-when", behavior: "WARN" },
   W30: { slug: "nonzero-mount-writes", behavior: "WARN" },

@@ -1,8 +1,7 @@
-// Delegated event handling, attached once at document. This is the entire input
-// surface: a control change schedules a pass (the keystroke -> recompute path),
-// a click on an action element runs one action (innermost wins), a form submit
-// runs trigger-add, native reset replays synthetic events, details toggle recomputes,
-// and a detail projection's edit writes through to its source row.
+// Delegated actions, attached once at document: a click on an action element runs
+// one action (innermost wins), a form submit runs trigger-add, a closed detail
+// dialog clears its key, and an edit inside an each= row or a detail projection
+// writes through to its source record (an input router, see input.js).
 
 import {
   nearestScopeEl, nearestItemEl, isInsideDetail, ownedBind, rowsOf,
@@ -10,9 +9,7 @@ import {
   writeDeclared, writeTransient,
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
-import { num } from "./helpers.js";
-import { serializeControlToAttributes } from "./control-serialize.js";
-import { regionSkipsSave, platformConsent } from "./platform.js";
+import { platformConsent } from "./platform.js";
 import { compile, run } from "./compile.js";
 
 const TRIGGER_WORDS = ["trigger-add", "trigger-remove", "trigger-reset"];
@@ -238,25 +235,6 @@ export function createActions(runtime, accessor) {
     gateThenRun(form, appRec, () => addFromForm(form, appRec, form.getAttribute("trigger-add")));
   }
 
-  function onReset(e) {
-    const form = e.target;
-    const appRec = runtime.appFor(form);
-    if (!appRec) return;
-    // native reset restores values BEFORE the event; defer so we read post-reset.
-    setTimeout(() => {
-      form.querySelectorAll("[bind]").forEach((c) => {
-        c.dispatchEvent(new Event("input", { bubbles: true }));
-        c.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-      runtime.schedule(appRec, "reset");
-    }, 0);
-  }
-
-  function onToggle(e) {
-    const appRec = runtime.appFor(e.target);
-    if (appRec) runtime.schedule(appRec, "toggle");
-  }
-
   // A detail dialog the user closes (Esc, method="dialog") clears a plain
   // state.NAME key, on the element that declares it. Closes the engine made
   // itself, and stale events for a dialog that is open again, are ignored.
@@ -282,22 +260,15 @@ export function createActions(runtime, accessor) {
     if (proxy && proxy[m[1]] !== "") proxy[m[1]] = "";
   }
 
-  function onInput(e) {
-    const t = e.target;
-    if (!t || t.nodeType !== 1) return;
-    const appRec = runtime.appFor(t);
-    if (!appRec) return;
-    // Opt-in durability: a [persist] control mirrors its live value to a
-    // serializable attribute on every edit, so a typed value survives a save
-    // even without the host platform. bind is reactivity; persist is durability.
-    // Skip in a no-save / frozen region: the platform strips those bytes anyway.
-    if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
+  // Claims an edit inside an each= row or a detail projection: it writes through
+  // to the record it shows instead of scheduling a pass of its own.
+  function routeInput(t, appRec) {
     const composer = t.hasAttribute("bind") && isComposer(t);
     if (!composer && t.hasAttribute("bind") && nearestViewRow(t)) {
       const field = t.getAttribute("bind");
       const target = t._sapViewBind ? accessor.writeTargetFor(t, field) : null;
       if (target) target[field] = carrierFor(t).read();
-      return;
+      return true;
     }
     const detailEl = isInsideDetail(t);
     if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind") && !composer) {
@@ -306,58 +277,21 @@ export function createActions(runtime, accessor) {
       const src = ownedBind(row, field);
       if (src && src !== t) {
         carrierFor(src).write(carrierFor(t).read());
-        return;
+        return true;
       }
       if (!src && parseStateDecl(row.getAttribute("state") || "").some((d) => d.name === field)) {
         accessor.writeField(row, appRec, field, carrierFor(t).read());
-        return;
+        return true;
       }
     }
-    runtime.schedule(appRec, e.type + " " + (t.id || t.tagName.toLowerCase()));
-  }
-
-  // A hyperclay `sortable` drag reorder announces itself with a dedicated event.
-  // Re-derive both lists it touched (same-list drag: from === to; cross-list: two
-  // apps). schedule() dedups per app, so overlapping targets are still one pass.
-  function onSorted(e) {
-    const d = e.detail || {};
-    for (const el of [d.from, d.to, e.target]) {
-      if (!el || el.nodeType !== 1) continue;
-      const appRec = runtime.appFor(el);
-      if (appRec) runtime.schedule(appRec, "sorted");
-    }
-  }
-
-  function onKeydown(e) {
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-    const t = e.target;
-    if (!t || t.nodeType !== 1 || t.tagName !== "INPUT") return;
-    if (!t.hasAttribute("bind") || !t.hasAttribute("step")) return;
-    const type = (t.getAttribute("type") || "text").toLowerCase();
-    if (type !== "text" && type !== "tel" && type !== "search") return; // native numeric types already step
-    const appRec = runtime.appFor(t);
-    if (!appRec) return;
-    e.preventDefault();
-    const step = num(t.getAttribute("step")) || 1;
-    const dir = e.key === "ArrowUp" ? 1 : -1;
-    let next = num(t.value) + step * (e.shiftKey ? 10 : 1) * dir;
-    const min = t.getAttribute("min"), max = t.getAttribute("max");
-    if (min !== null && min !== "" && next < num(min)) next = num(min);
-    if (max !== null && max !== "" && next > num(max)) next = num(max);
-    carrierFor(t).write(String(Number(next.toFixed(2))));
+    return false;
   }
 
   function install(doc = document) {
     doc.addEventListener("click", onClick);
     doc.addEventListener("submit", onSubmit);
-    doc.addEventListener("reset", onReset);
-    doc.addEventListener("toggle", onToggle, true);
     doc.addEventListener("close", onDialogClose, true);
-    doc.addEventListener("input", onInput);
-    doc.addEventListener("change", onInput);
-    doc.addEventListener("clay:sorted", onSorted);
-    doc.addEventListener("keydown", onKeydown);
   }
 
-  return { install };
+  return { install, routeInput };
 }

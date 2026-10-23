@@ -110,6 +110,7 @@ var Sap = (() => {
     E41: { slug: "each-bad-key", behavior: "ERR" },
     E42: { slug: "each-template", behavior: "ERR" },
     E43: { slug: "bind-in-each-row", behavior: "ERR" },
+    E50: { slug: "needs-full-sapjs", behavior: "HALT" },
     W03: { slug: "unknown-colon-attribute", behavior: "WARN" },
     W04: { slug: "expression-in-when", behavior: "WARN" },
     W30: { slug: "nonzero-mount-writes", behavior: "WARN" },
@@ -707,12 +708,12 @@ ${src}` : `"use strict"; return (${src});`;
   }
 
   // src/plan.js
-  var planGen = 0;
+  var planGen = {};
   var watcher = null;
   var canWatch = true;
   var cacheable = false;
   function dropPlans() {
-    planGen++;
+    planGen = {};
   }
   function beginPlans(root) {
     const prev = cacheable;
@@ -1019,8 +1020,10 @@ ${src}` : `"use strict"; return (${src});`;
         runtime2.remountIfPresent();
       }
     };
-    onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
-    onPlatformEvent(document, ROUTE_CHANGED, refreshConnected);
+    const derived = capability("derived");
+    const offDerived = derived && typeof derived.register === "function" ? derived.register(refreshConnected) : null;
+    const offApplied = typeof offDerived === "function" ? null : onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
+    const offRoute = onPlatformEvent(document, ROUTE_CHANGED, refreshConnected);
     let undoBound = false;
     let stopWaiting = () => {
     };
@@ -1050,6 +1053,12 @@ ${src}` : `"use strict"; return (${src});`;
       if (ready && typeof ready.then === "function") ready.then(bindUndo, () => {
       });
     }
+    return () => {
+      if (typeof offDerived === "function") offDerived();
+      if (offApplied) offApplied();
+      offRoute();
+      stopWaiting();
+    };
   }
 
   // src/carrier.js
@@ -1328,6 +1337,15 @@ ${src}` : `"use strict"; return (${src});`;
 
   // src/pass.js
   var NATIVE_BOOLEAN_SET2 = new Set(NATIVE_BOOLEANS);
+  var features = [];
+  var boundaries = {};
+  var paintKinds = {};
+  function registerFeature(feature) {
+    if (features.includes(feature)) return;
+    features.push(feature);
+    if (feature.boundary) Object.assign(boundaries, feature.boundary);
+    if (feature.paintKinds) Object.assign(paintKinds, feature.paintKinds);
+  }
   function runPass(app, opts = {}) {
     if (opts.breaker) {
       app.diag.error("E26", app.root, {
@@ -1351,13 +1369,8 @@ ${src}` : `"use strict"; return (${src});`;
   function runPassBody(app, opts) {
     const root = app.root;
     const rootObj = {};
-    const calcs = [];
     const paints = [];
-    const effects = [];
-    const invalids = [];
     const pending = [];
-    const deferredDetails = [];
-    const eachList = [];
     const whenFields = /* @__PURE__ */ new Set();
     app.diag.errors = [];
     const rootCtx = { root: rootObj, state: rootObj, item: null, ownerEl: root, projection: false };
@@ -1401,38 +1414,13 @@ ${src}` : `"use strict"; return (${src});`;
       }
     }
     function collectEl(el, plan, ctx) {
-      if (plan.calcs) {
-        const owner = ctx.item || ctx.state;
-        for (const def of plan.calcs) calcs.push({ owner, ownerEl: ctx.ownerEl, name: def.name, entry: def.entry, def, el, ctx });
-      }
       if (plan.paints) {
         for (const def of plan.paints) {
           if (def.kind === "when") whenFields.add(def.field);
           paints.push({ def, el, ctx });
         }
       }
-      if (plan.effects) for (const def of plan.effects) effects.push({ def, el, ctx });
-      if (plan.invalids) for (const def of plan.invalids) invalids.push({ def, el, ctx });
-      if (plan.bind != null && (ctx.view || ctx.projection) && !isComposer(el)) {
-        const field = plan.bind;
-        if (!ctx.view) {
-          paints.push({ def: { kind: "projection", field, from: null }, el, ctx });
-        } else if (ownsField(recordElOf(ctx.item), field)) {
-          el._sapViewBind = "item";
-          paints.push({ def: { kind: "projection", field, from: "item" }, el, ctx });
-        } else if (field in ctx.state || field in ctx.root) {
-          el._sapViewBind = "drawn";
-          paints.push({ def: { kind: "projection", field, from: "drawn" }, el, ctx });
-        } else {
-          el._sapViewBind = null;
-          app.diag.error("E43", el, {
-            attr: "bind",
-            expr: field,
-            problem: `bind="${field}" inside an each row matches no field of the row's record or of the scope the row is drawn in`,
-            fix: "bind a field the record owns (bind, state= or items= on the [item]), or declare it with state= where the list is drawn"
-          });
-        }
-      }
+      for (const f of features) if (f.collect) f.collect(pass, el, plan, ctx);
     }
     function defineRowMeta(rowObj, rowEl, i) {
       Object.defineProperty(rowObj, "$key", { value: keyOf(rowEl, "row"), enumerable: false });
@@ -1459,11 +1447,7 @@ ${src}` : `"use strict"; return (${src});`;
         else if (plan.boundary === "items") {
           collectEl(el, plan, ctx);
           handleItems(el, scopeObj, ctx);
-        } else if (plan.boundary === "detail") handleDetail(el, scopeObj, ctx);
-        else {
-          collectEl(el, plan, ctx);
-          eachList.push({ el, ctx });
-        }
+        } else boundaries[plan.boundary](pass, el, plan, scopeObj, ctx);
         return;
       }
       if (!ctx.projection && !ctx.view && plan.bind != null) readBindInto(el, plan, ctx);
@@ -1494,177 +1478,19 @@ ${src}` : `"use strict"; return (${src});`;
         i++;
       }
     }
-    function resolvePathValue(path, ctx) {
-      const segs = String(path).split(".");
-      const walk = (o2) => {
-        for (const s of segs) {
-          if (o2 == null) return void 0;
-          o2 = Array.isArray(o2) ? o2.flatMap((r) => r && r[s] != null ? r[s] : []) : o2[s];
-        }
-        return o2;
-      };
-      const o = walk(ctx.state);
-      return o === void 0 ? walk(ctx.root) : o;
-    }
-    function handleDetail(el, parentObj, ctx) {
-      for (const d of parseStateDecl(el.getAttribute("state") || "")) {
-        if (!(d.name in parentObj)) parentObj[d.name] = isPresenceDecl(el, d) ? el.hasAttribute(d.attr) : resolveDefault(el, d);
-      }
-      deferredDetails.push({ el, parentObj, ctx });
-    }
-    function resolveDetail(el, parentObj, ctx) {
-      el._sapScope = parentObj;
-      const spec = el.getAttribute("detail") || "";
-      const m = /^([\w.]+)\s+by\s+(.+)$/.exec(spec);
-      if (!m) {
-        el.hidden = true;
-        el._sapDetailRow = null;
-        return;
-      }
-      const listPath = m[1];
-      const keyExpr = m[2].trim();
-      const arr = resolvePathValue(listPath, ctx);
-      let keyVal;
-      try {
-        keyVal = run(compile(keyExpr), { state: parentObj, item: ctx.item, el, root: ctx.root });
-      } catch {
-        keyVal = void 0;
-      }
-      const row = Array.isArray(arr) && keyVal != null ? arr.find((r) => r && typeof r === "object" && r.$el && String(r.$key) === String(keyVal)) : null;
-      el._sapDetailRow = row ? row.$el : null;
-      if (el.tagName === "DIALOG") {
-        const k = row ? String(row.$key) : null;
-        if (k !== el._sapDetailKey) {
-          el._sapDetailKey = k;
-          el._sapDismissed = false;
-        }
-        if (!row) {
-          el._sapOpenedFor = null;
-          if (el.open && typeof el.close === "function") {
-            el._sapEngineClose = true;
-            el.close();
-          }
-          return;
-        }
-        if (el.open) {
-          el._sapOpenedFor = k;
-        } else {
-          if (el._sapOpenedFor === k) el._sapDismissed = true;
-          el._sapOpenedFor = null;
-          if (!el._sapDismissed && el.isConnected && typeof el.showModal === "function") {
-            if (el.hidden) el.hidden = false;
-            el.showModal();
-            el._sapOpenedFor = k;
-          }
-        }
-      } else {
-        if (!row) {
-          if (!el.hidden) el.hidden = true;
-          return;
-        }
-        if (el.hidden) el.hidden = false;
-      }
-      drainPlans();
-      const dctx = { root: ctx.root, state: parentObj, item: row, ownerEl: row.$el, projection: true };
-      collectEl(el, planOf(el), dctx);
-      walkScope(el, row, dctx);
-    }
-    function drawnElFor(el, stateObj) {
-      for (let cur = el.parentElement; cur; cur = cur.parentElement) {
-        if (cur._sapScope === stateObj && !cur.hasAttribute("detail")) return cur;
-        if (cur.hasAttribute("sap")) return cur;
-      }
-      return root;
-    }
-    function reconcileEach(el, ctx) {
-      el._sapDrawnEl = drawnElFor(el, ctx.state);
-      let tmpl = null;
-      for (let c = el.firstElementChild; c; c = c.nextElementSibling) if (c.tagName === "TEMPLATE") {
-        tmpl = c;
-        break;
-      }
-      const blueprint = tmpl && tmpl.content.children.length === 1 ? tmpl.content.firstElementChild : null;
-      if (!blueprint) {
-        app.diag.error("E42", el, { attr: "each", problem: "each needs one <template> child with exactly one element root" });
-        return 0;
-      }
-      const src = el.getAttribute("each");
-      let list;
-      try {
-        list = run(compile(src), { state: ctx.state, item: ctx.item, el, root: ctx.root });
-      } catch (err) {
-        app.diag.error("E24", el, { attr: "each", expr: src, problem: String(err.message) });
-        return 0;
-      }
-      if (!Array.isArray(list)) {
-        app.diag.error("E40", el, { attr: "each", expr: src, problem: "each must evaluate to an array; the list keeps its last good rows" });
-        return 0;
-      }
-      const keyEntry = compile(el.getAttribute("key") || "item.$key");
-      const keys = [];
-      const seen = /* @__PURE__ */ new Set();
-      for (const item of list) {
-        let k;
-        try {
-          k = runWith(keyEntry, ctx.state, item, el, ctx.root);
-        } catch {
-          k = void 0;
-        }
-        const ks = k == null ? "" : String(k);
-        if (ks === "" || seen.has(ks)) {
-          app.diag.error("E41", el, {
-            attr: "key",
-            expr: keyEntry.src,
-            problem: ks === "" ? "an item has no key; the list keeps its last good rows" : `duplicate key "${ks}"; the list keeps its last good rows`
-          });
-          return 0;
-        }
-        seen.add(ks);
-        keys.push(ks);
-      }
-      const prev = el._sapEach || /* @__PURE__ */ new Map();
-      const next = /* @__PURE__ */ new Map();
-      let changes = 0;
-      let after = tmpl;
-      keys.forEach((k, i) => {
-        let rowEl = prev.get(k);
-        if (!rowEl || rowEl.parentElement !== el) {
-          rowEl = el.ownerDocument.importNode(blueprint, true);
-          const clay = (rowEl.getAttribute("clay") || "").split(/\s+/).filter(Boolean);
-          if (!clay.includes("editor-ui")) rowEl.setAttribute("clay", [...clay, "editor-ui"].join(" "));
-          rowEl._sapEachRow = true;
-          changes++;
-        }
-        if (rowEl.getAttribute("data-key") !== k) rowEl.setAttribute("data-key", k);
-        if (after.nextElementSibling !== rowEl) {
-          placeAfter(el, rowEl, after);
-          changes++;
-        }
-        rowEl._sapEachItem = list[i];
-        next.set(k, rowEl);
-        after = rowEl;
-      });
-      for (const [k, rowEl] of prev) {
-        if (next.get(k) !== rowEl && rowEl.parentElement === el) {
-          rowEl.remove();
-          changes++;
-        }
-      }
-      el._sapEach = next;
-      drainPlans();
-      keys.forEach((k, i) => {
-        const rowEl = next.get(k);
-        const rctx = { root: ctx.root, state: ctx.state, item: list[i], ownerEl: rowEl, projection: false, view: true };
-        collectEl(rowEl, planOf(rowEl), rctx);
-        walkScope(rowEl, {}, rctx);
-      });
-      return changes;
-    }
+    const pass = {
+      app,
+      root,
+      rootObj,
+      paints,
+      stats: { calcs: 0, lists: 0 },
+      resolveDefault,
+      collectEl,
+      walkScope
+    };
+    for (const f of features) if (f.begin) f.begin(pass);
     enterScope(root, rootObj, rootCtx);
-    for (let i = 0; i < deferredDetails.length; i++) {
-      const { el, parentObj, ctx } = deferredDetails[i];
-      resolveDetail(el, parentObj, ctx);
-    }
+    for (const f of features) if (f.afterIntake) f.afterIntake(pass);
     if (pending.length && whenFields.size) {
       for (const w of pending) {
         if (whenFields.has(w.attr) && w.el.getAttribute(w.attr) == null) {
@@ -1672,37 +1498,9 @@ ${src}` : `"use strict"; return (${src});`;
         }
       }
     }
-    const groups = /* @__PURE__ */ new Map();
-    for (const c of calcs) {
-      let g = groups.get(c.owner);
-      if (!g) {
-        g = { ownerEl: c.ownerEl, list: [] };
-        groups.set(c.owner, g);
-      }
-      g.list.push(c);
-    }
-    const ordered = [...groups.values()].sort((a, b) => depth(b.ownerEl) - depth(a.ownerEl));
-    for (const g of ordered) {
-      let sorted;
-      try {
-        sorted = topoSort(g.list);
-      } catch (err) {
-        app.diag.error("E07", g.list[0].el, { problem: err.message });
-        sorted = g.list;
-      }
-      for (const c of sorted) {
-        try {
-          c.owner[c.name] = runWith(c.entry, c.ctx.state, c.ctx.item, c.el, c.ctx.root);
-          clearBeacon(c.el);
-        } catch (err) {
-          c.owner[c.name] = void 0;
-          app.diag.error("E24", c.el, { attr: "calc:" + c.name, expr: c.entry.src, problem: String(err.message) });
-          setBeacon(c.el, err.sapCode || "E24");
-        }
-      }
-    }
+    for (const f of features) if (f.compute) f.compute(pass);
     let viewChanges = 0;
-    for (let i = 0; i < eachList.length; i++) viewChanges += reconcileEach(eachList[i].el, eachList[i].ctx);
+    for (const f of features) if (f.reconcile) viewChanges += f.reconcile(pass);
     let writes = 0;
     let viewWrites = viewChanges;
     for (const p of paints) {
@@ -1710,14 +1508,13 @@ ${src}` : `"use strict"; return (${src});`;
       if (p.ctx.view) viewWrites += n2;
       else writes += n2;
     }
-    for (const e of effects) runEffect(e, app);
-    for (const iv of invalids) runInvalid(iv);
+    for (const f of features) if (f.afterPaint) f.afterPaint(pass);
     app._state = rootObj;
     app._stats = {
       fields: Object.keys(rootObj).filter((k) => typeof rootObj[k] !== "function").length,
-      calcs: calcs.length,
+      calcs: pass.stats.calcs,
       paints: paints.length,
-      lists: groups.size,
+      lists: pass.stats.lists,
       writes,
       viewWrites
     };
@@ -1746,33 +1543,11 @@ ${src}` : `"use strict"; return (${src});`;
     }
     return false;
   }
-  function applyProjection(el, v) {
-    if (el === el.ownerDocument.activeElement) return 0;
-    if (el.type === "radio") {
-      const want = v != null && String(el.value) === String(v);
-      if (el.checked === want) return 0;
-      el.checked = want;
-      return 1;
-    }
-    const kind = kindOf(el);
-    const cur = readControl(el, kind);
-    const nv = v == null ? "" : v;
-    if (String(cur) !== String(nv)) {
-      writeControl(el, kind, nv);
-      return 1;
-    }
-    return 0;
-  }
   function paintOne(p, app) {
     const def = p.def;
     const el = p.el;
-    if (def.kind === "projection") {
-      if (def.from === "drawn") {
-        const s = def.field in p.ctx.state ? p.ctx.state : p.ctx.root;
-        return applyProjection(el, s[def.field]);
-      }
-      return applyProjection(el, p.ctx.item ? p.ctx.item[def.field] : "");
-    }
+    const custom = paintKinds[def.kind];
+    if (custom) return custom(p, app);
     if (def.kind === "when") {
       return applyPaint(def, el, null);
     }
@@ -1885,46 +1660,6 @@ ${src}` : `"use strict"; return (${src});`;
         return 0;
     }
   }
-  function runEffect(e, app) {
-    try {
-      runWith(e.def.entry, e.ctx.state, e.ctx.item, e.el, e.ctx.root);
-      clearBeacon(e.el);
-    } catch (err) {
-      app.diag.error("E24", e.el, { attr: "effect", expr: e.def.entry && e.def.entry.src, problem: String(err.message) });
-      setBeacon(e.el, "E24");
-    }
-  }
-  function runInvalid(iv) {
-    let msg = "";
-    try {
-      const v = runWith(iv.def.entry, iv.ctx.state, iv.ctx.item, iv.el, iv.ctx.root);
-      msg = typeof v === "string" ? v : "";
-    } catch {
-      msg = "";
-    }
-    if (typeof iv.el.setCustomValidity === "function") iv.el.setCustomValidity(msg);
-  }
-  function depth(el) {
-    let d = 0;
-    let c = el;
-    while (c) {
-      if (c.hasAttribute && c.hasAttribute("sap")) break;
-      c = c.parentElement;
-      d++;
-    }
-    return d;
-  }
-  function placeAfter(parent, node, ref) {
-    const before = ref.nextSibling;
-    if (node.isConnected && parent.moveBefore) {
-      try {
-        parent.moveBefore(node, before);
-        return;
-      } catch {
-      }
-    }
-    parent.insertBefore(node, before);
-  }
 
   // src/lint.js
   var NATIVE_BOOLEAN_SET3 = new Set(NATIVE_BOOLEANS);
@@ -1965,6 +1700,7 @@ ${src}` : `"use strict"; return (${src});`;
     "save-ignore",
     "save-freeze"
   ]);
+  var extraChecks = [];
   function isControl(el) {
     return el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA";
   }
@@ -2006,6 +1742,7 @@ ${src}` : `"use strict"; return (${src});`;
       }
     }
     walkAll(root, (el) => {
+      for (const check of extraChecks) check(el, halt);
       const inDetail = el.closest && el.closest("[detail]");
       for (const a of [...el.attributes]) {
         const name = a.name;
@@ -2196,13 +1933,339 @@ ${src}` : `"use strict"; return (${src});`;
     runPass(appRec, { trigger: "mount", full: true });
     appRec._mountMs = now() - t0;
     appRec._mountWrites = appRec._stats ? appRec._stats.writes : 0;
-    if (appRec._mountWrites > 0 && !draftsRestored()) {
+    if (appRec._mountWrites > 0 && !draftsRestored() && !capability("derived")) {
       diag.warn("W30", root, {
         problem: `${appRec._mountWrites} paint(s) ran at mount; the saved file was out of sync with its declared state`,
         fix: "re-save once so the file mounts clean (a settled file writes nothing)"
       });
     }
     return appRec;
+  }
+
+  // src/debug.js
+  var ACTION_RE = /^(set:|move:|sort:|trigger-add$|trigger-remove$|trigger-reset$)/;
+  function rootLabel(root) {
+    return `${root.tagName.toLowerCase()}[sap]`;
+  }
+  function countActions(root) {
+    let n2 = 0;
+    for (const el of root.querySelectorAll("*")) {
+      for (const a of el.attributes) if (ACTION_RE.test(a.name)) {
+        n2++;
+        break;
+      }
+    }
+    for (const a of root.attributes) if (ACTION_RE.test(a.name)) {
+      n2++;
+      break;
+    }
+    return n2;
+  }
+  function exprSources(root) {
+    const out = [];
+    const scan = (el) => {
+      for (const a of el.attributes) {
+        const n2 = a.name;
+        if (n2.startsWith("calc:") || n2 === "text" || n2.startsWith("text:") || n2 === "show" || n2.startsWith("attr:") || n2.startsWith("class:") || n2.startsWith("css:") || n2 === "effect" || n2 === "invalid" || n2.startsWith("set:") || n2 === "detail") out.push({ el, attr: n2, src: a.value });
+      }
+    };
+    scan(root);
+    for (const el of root.querySelectorAll("*")) scan(el);
+    return out;
+  }
+  function createDebug(runtime2) {
+    function appView(app) {
+      const s = app._stats || {};
+      const root = app.root;
+      return {
+        root: rootLabel(root),
+        fields: s.fields || 0,
+        calcs: s.calcs || 0,
+        paints: s.paints || 0,
+        actions: countActions(root),
+        lists: (root.hasAttribute("items") ? 1 : 0) + root.querySelectorAll("[items]").length,
+        rows: root.querySelectorAll("[item]:not([template])").length,
+        warnings: app.diag.warnings.length,
+        errors: app.diag.errors.length,
+        mountWrites: app._mountWrites || 0,
+        ms: Math.round((app._mountMs || 0) * 10) / 10,
+        passes: app._passes || 0,
+        lastPass: app._lastPass || null,
+        ok: app.diag.errors.length === 0 && !app.halted
+      };
+    }
+    function status() {
+      const apps = runtime2.apps().map(appView);
+      return { ok: apps.every((a) => a.ok), apps };
+    }
+    function greenLine(app) {
+      const v = appView(app);
+      if (!v.ok) {
+        return `sap \u2717 ${v.root} \xB7 errors ${v.errors} \xB7 warnings ${v.warnings} \xB7 ${v.ms}ms`;
+      }
+      return `sap \u2713 ${v.root} \xB7 fields ${v.fields} \xB7 calcs ${v.calcs} \xB7 paints ${v.paints} \xB7 actions ${v.actions} \xB7 lists ${v.lists} \xB7 rows ${v.rows} \xB7 warnings ${v.warnings} \xB7 mount writes ${v.mountWrites} \xB7 ${v.ms}ms`;
+    }
+    function printGreenLines() {
+      for (const app of runtime2.apps()) {
+        const line = greenLine(app);
+        if (app.diag.errors.length || app.halted) console.error(line);
+        else console.log(line);
+      }
+    }
+    function report() {
+      const errors = [];
+      const warnings = [];
+      for (const app of runtime2.apps()) {
+        errors.push(...app.diag.errors);
+        warnings.push(...app.diag.warnings);
+      }
+      return { ok: errors.length === 0, errors, warnings, counts: { errors: errors.length, warnings: warnings.length } };
+    }
+    function resolveEl(elOrSel) {
+      if (!elOrSel) return null;
+      if (typeof elOrSel === "string") return document.querySelector(elOrSel);
+      return elOrSel.nodeType === 1 ? elOrSel : null;
+    }
+    function why(elOrSel, field) {
+      const el = resolveEl(elOrSel);
+      if (!el) {
+        console.warn("sap why: element not found");
+        return null;
+      }
+      const lines = [`sap why <${el.tagName.toLowerCase()}> \u2014 ${cssPath(el)}`];
+      const sapAttrs = [...el.attributes].filter((a) => /^(bind|text|show|effect|invalid|detail|calc:|text:|attr:|class:|css:|set:|state|items|scope)/.test(a.name));
+      for (const a of sapAttrs) lines.push(`  ${a.name}="${a.value}"`);
+      let scopeEl = el;
+      while (scopeEl && !scopeEl._sapScope) scopeEl = scopeEl.parentElement;
+      if (scopeEl && scopeEl._sapScope) {
+        const snap = scopeEl._sapScope;
+        const keys = field ? [field] : Object.keys(snap);
+        lines.push("  reads:");
+        for (const k of keys) {
+          const v = snap[k];
+          if (typeof v === "function") continue;
+          lines.push(`    ${k} = ${JSON.stringify(Array.isArray(v) ? `[${v.length} rows]` : v)}`);
+        }
+      }
+      lines.push("  serialization: textContent and value/checked attributes save with the file; reads live from properties");
+      console.log(lines.join("\n"));
+      return null;
+    }
+    function debug(flag) {
+      const on = flag === void 0 ? true : !!flag;
+      for (const app of runtime2.apps()) app._debug = on;
+      console.log(`sap debug ${on ? "on" : "off"} \u2014 per-pass headers will ${on ? "" : "no longer "}log`);
+      return on;
+    }
+    function doctor() {
+      const findings = [];
+      let checks = 0;
+      for (const app of runtime2.apps()) {
+        const root = app.root;
+        const label = rootLabel(root);
+        checks++;
+        const d2 = new Diagnostics(app.name);
+        lintApp(root, d2);
+        for (const e2 of d2.errors) findings.push({ code: e2.code, severity: "error", message: `${label}: ${e2.code} ${e2.slug} at ${e2.el}` });
+        for (const w2 of d2.warnings) findings.push({ code: w2.code, severity: "warn", message: `${label}: ${w2.code} ${w2.slug} at ${w2.el}` });
+        checks++;
+        runPass(app, { trigger: "doctor-dryrun" });
+        const w = app._stats ? app._stats.writes : 0;
+        if (w > 0) findings.push({ code: "W30", severity: "warn", message: `${label}: dry recompute wrote ${w} cells on a quiet page; an element is stale or non-idempotent` });
+        checks++;
+        const srcs = exprSources(root).map((s) => s.src).join(" \0 ");
+        const decls = [];
+        for (const el of [root, ...root.querySelectorAll("[state]")]) {
+          for (const d of parseStateDecl(el.getAttribute("state") || "")) decls.push(d.name);
+        }
+        for (const name of decls) {
+          const re = new RegExp(`(state|item)\\.${name}\\b`);
+          if (!re.test(srcs)) findings.push({ code: "I33", severity: "info", message: `${label}: field "${name}" is declared but read nowhere (dead state)` });
+        }
+        checks++;
+        const ids = /* @__PURE__ */ new Map();
+        for (const el of root.querySelectorAll("[id]")) ids.set(el.id, (ids.get(el.id) || 0) + 1);
+        for (const [id, n2] of ids) if (n2 > 1) findings.push({ code: "W32", severity: "warn", message: `${label}: duplicate id "${id}" (${n2} elements) \u2014 clone/edit collision` });
+        checks++;
+        for (const s of exprSources(root)) {
+          if (s.src.length > 120) findings.push({ code: "I33", severity: "info", message: `${label}: ${s.attr} expression is ${s.src.length} chars; consider a calc: field` });
+        }
+        checks++;
+        for (const el of root.querySelectorAll("[text], [text\\:num]")) {
+          const t = el.textContent || "";
+          if (/\.\d{5,}/.test(t)) findings.push({ code: "I33", severity: "info", message: `${label}: ${cssPath(el)} paints >4 decimals; consider text:FMT` });
+        }
+      }
+      const e = findings.filter((f) => f.severity === "error").length;
+      const wn = findings.filter((f) => f.severity === "warn").length;
+      const i = findings.filter((f) => f.severity === "info").length;
+      const ms = 0;
+      console.log(`sap doctor \xB7 ${runtime2.apps().map((a) => rootLabel(a.root)).join(", ")} \xB7 errors ${e} \xB7 warnings ${wn} \xB7 info ${i} \xB7 ${checks} checks \xB7 ${ms}ms`);
+      for (const f of findings) {
+        const fn = f.severity === "error" ? console.error : f.severity === "warn" ? console.warn : console.info;
+        fn(`  ${f.severity === "error" ? "\u2717" : f.severity === "warn" ? "\u26A0" : "\xB7"} ${f.message}`);
+      }
+      return findings;
+    }
+    return { status, report, why, debug, doctor, greenLine, printGreenLines, REGISTRY };
+  }
+
+  // src/version.js
+  var VERSION = "0.5.2";
+
+  // src/runtime.js
+  function createSap({ createAccessor: createAccessor2, installInput }) {
+    const registry = /* @__PURE__ */ new Map();
+    const order = [];
+    const scheduler = createScheduler(runPass);
+    function appFor(el) {
+      let cur = el;
+      while (cur) {
+        if (cur.nodeType === 1 && cur.hasAttribute && cur.hasAttribute("sap")) {
+          return registry.get(cur) || null;
+        }
+        cur = cur.parentNode && cur.parentNode.host ? cur.parentNode.host : cur.parentElement;
+      }
+      return null;
+    }
+    function pruneDisconnected() {
+      for (let i = order.length - 1; i >= 0; i--) {
+        const app = order[i];
+        if (!app.root.isConnected) {
+          registry.delete(app.root);
+          order.splice(i, 1);
+        }
+      }
+    }
+    function moveInto(parent, el) {
+      if (parent.moveBefore) {
+        try {
+          parent.moveBefore(el, null);
+          return;
+        } catch {
+        }
+      }
+      parent.appendChild(el);
+    }
+    function placeBefore(el, ref) {
+      const parent = ref.parentElement;
+      if (!parent) return;
+      if (parent.moveBefore) {
+        try {
+          parent.moveBefore(el, ref);
+          return;
+        } catch {
+        }
+      }
+      parent.insertBefore(el, ref);
+    }
+    const runtime2 = {
+      apps: () => order.slice(),
+      appFor,
+      isRegistered: (el) => registry.has(el),
+      pruneDisconnected,
+      schedule: (app, trigger) => scheduler.schedule(app, trigger),
+      runNow: (app, trigger) => scheduler.runNow(app, trigger),
+      moveInto,
+      placeBefore,
+      remountIfPresent: () => mountAll2()
+    };
+    const accessor = createAccessor2(runtime2);
+    const debugApi = createDebug(runtime2);
+    let installed2 = false;
+    let disabled = false;
+    let teardownBridges = null;
+    function installOnce() {
+      if (installed2) return;
+      installed2 = true;
+      installInput(runtime2, accessor, document);
+      teardownBridges = installBridges(runtime2);
+    }
+    function announceMounted() {
+      const derived = capability("derived");
+      if (derived && typeof derived.mounted === "function") derived.mounted();
+    }
+    function mountAll2(docRoot = document) {
+      if (disabled) return [];
+      installOnce();
+      installMutationBridge(runtime2);
+      const roots = docRoot.querySelectorAll("[sap]");
+      const fresh = [];
+      for (const root of roots) {
+        if (registry.has(root)) continue;
+        const appRec = mountApp(root);
+        registry.set(root, appRec);
+        order.push(appRec);
+        fresh.push(appRec);
+      }
+      for (const app of fresh) {
+        const line = debugApi.greenLine(app);
+        if (app.diag.errors.length || app.halted) console.error(line);
+        else console.log(line);
+      }
+      announceMounted();
+      return fresh;
+    }
+    function mount2(rootOrSel) {
+      if (disabled) return null;
+      installOnce();
+      installMutationBridge(runtime2);
+      if (!rootOrSel) return mountAll2();
+      const root = typeof rootOrSel === "string" ? document.querySelector(rootOrSel) : rootOrSel;
+      if (!root) return null;
+      if (registry.has(root)) return registry.get(root);
+      const appRec = mountApp(root);
+      registry.set(root, appRec);
+      order.push(appRec);
+      const line = debugApi.greenLine(appRec);
+      if (appRec.diag.errors.length || appRec.halted) console.error(line);
+      else console.log(line);
+      return appRec;
+    }
+    const Sap2 = accessor.Sap;
+    Sap2.version = VERSION;
+    Sap2.refresh = function refresh() {
+      for (const app of order) if (app.root.isConnected) scheduler.runNow(app, "refresh");
+    };
+    Sap2.batch = batch;
+    Sap2.status = debugApi.status;
+    Sap2.report = debugApi.report;
+    Sap2.why = debugApi.why;
+    Sap2.debug = debugApi.debug;
+    Sap2.doctor = debugApi.doctor;
+    Sap2.greenLine = debugApi.greenLine;
+    Sap2.formats = formats;
+    Sap2.serializeControlToAttributes = serializeControlToAttributes;
+    Sap2.finalizeControlForSave = finalizeControlForSave;
+    Sap2.rehydrateControlFromAttributes = rehydrateControlFromAttributes;
+    Sap2.mount = mount2;
+    Sap2.config = function config(options = {}) {
+      if (options.formats) Object.assign(formats, options.formats);
+      return Sap2;
+    };
+    Sap2._registry = registry;
+    Sap2._reset = function reset() {
+      registry.clear();
+      order.length = 0;
+      resetMutationBridge();
+    };
+    Sap2.unmount = function unmount() {
+      disabled = true;
+      registry.clear();
+      order.length = 0;
+      resetMutationBridge();
+      if (typeof teardownBridges === "function") teardownBridges();
+    };
+    return { Sap: Sap2, mountAll: mountAll2, mount: mount2, runtime: runtime2 };
+  }
+  function autoMount(mountAll2) {
+    if (typeof document === "undefined") return;
+    const go = () => whenPlatformReady(() => mountAll2());
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", go);
+    } else {
+      go();
+    }
   }
 
   // src/scope.js
@@ -2522,8 +2585,8 @@ ${src}` : `"use strict"; return (${src});`;
     }
     return null;
   }
-  function createActions(runtime2, accessor2) {
-    const { Sap: Sap2 } = accessor2;
+  function createActions(runtime2, accessor) {
+    const { Sap: Sap2 } = accessor;
     function actionCtx(el, appRec) {
       let item = null;
       const viewRow = nearestViewRow(el);
@@ -2584,7 +2647,7 @@ ${src}` : `"use strict"; return (${src});`;
           appRec.diag.error("E24", el, { attr: a.name, expr: a.value, problem: String(err.message) });
           continue;
         }
-        const proxy = accessor2.writeTargetFor(el, field);
+        const proxy = accessor.writeTargetFor(el, field);
         if (proxy) proxy[field] = value;
       }
     }
@@ -2713,22 +2776,6 @@ ${src}` : `"use strict"; return (${src});`;
       e.preventDefault();
       gateThenRun(form, appRec, () => addFromForm(form, appRec, form.getAttribute("trigger-add")));
     }
-    function onReset(e) {
-      const form = e.target;
-      const appRec = runtime2.appFor(form);
-      if (!appRec) return;
-      setTimeout(() => {
-        form.querySelectorAll("[bind]").forEach((c) => {
-          c.dispatchEvent(new Event("input", { bubbles: true }));
-          c.dispatchEvent(new Event("change", { bubbles: true }));
-        });
-        runtime2.schedule(appRec, "reset");
-      }, 0);
-    }
-    function onToggle(e) {
-      const appRec = runtime2.appFor(e.target);
-      if (appRec) runtime2.schedule(appRec, "toggle");
-    }
     function onDialogClose(e) {
       const dlg = e.target;
       if (!dlg || dlg.tagName !== "DIALOG" || !dlg.hasAttribute("detail")) return;
@@ -2750,18 +2797,13 @@ ${src}` : `"use strict"; return (${src});`;
       const proxy = Sap2(dlg.parentElement);
       if (proxy && proxy[m[1]] !== "") proxy[m[1]] = "";
     }
-    function onInput(e) {
-      const t = e.target;
-      if (!t || t.nodeType !== 1) return;
-      const appRec = runtime2.appFor(t);
-      if (!appRec) return;
-      if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
+    function routeInput(t, appRec) {
       const composer = t.hasAttribute("bind") && isComposer(t);
       if (!composer && t.hasAttribute("bind") && nearestViewRow(t)) {
         const field = t.getAttribute("bind");
-        const target = t._sapViewBind ? accessor2.writeTargetFor(t, field) : null;
+        const target = t._sapViewBind ? accessor.writeTargetFor(t, field) : null;
         if (target) target[field] = carrierFor(t).read();
-        return;
+        return true;
       }
       const detailEl = isInsideDetail(t);
       if (detailEl && detailEl._sapDetailRow && t.hasAttribute("bind") && !composer) {
@@ -2770,14 +2812,50 @@ ${src}` : `"use strict"; return (${src});`;
         const src = ownedBind(row, field);
         if (src && src !== t) {
           carrierFor(src).write(carrierFor(t).read());
-          return;
+          return true;
         }
         if (!src && parseStateDecl(row.getAttribute("state") || "").some((d) => d.name === field)) {
-          accessor2.writeField(row, appRec, field, carrierFor(t).read());
-          return;
+          accessor.writeField(row, appRec, field, carrierFor(t).read());
+          return true;
         }
       }
+      return false;
+    }
+    function install(doc = document) {
+      doc.addEventListener("click", onClick);
+      doc.addEventListener("submit", onSubmit);
+      doc.addEventListener("close", onDialogClose, true);
+    }
+    return { install, routeInput };
+  }
+
+  // src/input.js
+  function createInput(runtime2) {
+    const routers = [];
+    function onInput(e) {
+      const t = e.target;
+      if (!t || t.nodeType !== 1) return;
+      const appRec = runtime2.appFor(t);
+      if (!appRec) return;
+      if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
+      for (const route of routers) if (route(t, appRec)) return;
       runtime2.schedule(appRec, e.type + " " + (t.id || t.tagName.toLowerCase()));
+    }
+    function onReset(e) {
+      const form = e.target;
+      const appRec = runtime2.appFor(form);
+      if (!appRec) return;
+      setTimeout(() => {
+        form.querySelectorAll("[bind]").forEach((c) => {
+          c.dispatchEvent(new Event("input", { bubbles: true }));
+          c.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        runtime2.schedule(appRec, "reset");
+      }, 0);
+    }
+    function onToggle(e) {
+      const appRec = runtime2.appFor(e.target);
+      if (appRec) runtime2.schedule(appRec, "toggle");
     }
     function onSorted(e) {
       const d = e.detail || {};
@@ -2806,327 +2884,408 @@ ${src}` : `"use strict"; return (${src});`;
       carrierFor(t).write(String(Number(next.toFixed(2))));
     }
     function install(doc = document) {
-      doc.addEventListener("click", onClick);
-      doc.addEventListener("submit", onSubmit);
       doc.addEventListener("reset", onReset);
       doc.addEventListener("toggle", onToggle, true);
-      doc.addEventListener("close", onDialogClose, true);
       doc.addEventListener("input", onInput);
       doc.addEventListener("change", onInput);
       doc.addEventListener("clay:sorted", onSorted);
       doc.addEventListener("keydown", onKeydown);
     }
-    return { install };
+    return { install, addRouter: (fn) => routers.push(fn) };
   }
 
-  // src/debug.js
-  var ACTION_RE = /^(set:|move:|sort:|trigger-add$|trigger-remove$|trigger-reset$)/;
-  function rootLabel(root) {
-    return `${root.tagName.toLowerCase()}[sap]`;
+  // src/features/detail.js
+  function resolvePathValue(path, ctx) {
+    const segs = String(path).split(".");
+    const walk = (o2) => {
+      for (const s of segs) {
+        if (o2 == null) return void 0;
+        o2 = Array.isArray(o2) ? o2.flatMap((r) => r && r[s] != null ? r[s] : []) : o2[s];
+      }
+      return o2;
+    };
+    const o = walk(ctx.state);
+    return o === void 0 ? walk(ctx.root) : o;
   }
-  function countActions(root) {
-    let n2 = 0;
-    for (const el of root.querySelectorAll("*")) {
-      for (const a of el.attributes) if (ACTION_RE.test(a.name)) {
-        n2++;
-        break;
+  function resolveDetail(pass, el, parentObj, ctx) {
+    el._sapScope = parentObj;
+    const spec = el.getAttribute("detail") || "";
+    const m = /^([\w.]+)\s+by\s+(.+)$/.exec(spec);
+    if (!m) {
+      el.hidden = true;
+      el._sapDetailRow = null;
+      return;
+    }
+    const listPath = m[1];
+    const keyExpr = m[2].trim();
+    const arr = resolvePathValue(listPath, ctx);
+    let keyVal;
+    try {
+      keyVal = run(compile(keyExpr), { state: parentObj, item: ctx.item, el, root: ctx.root });
+    } catch {
+      keyVal = void 0;
+    }
+    const row = Array.isArray(arr) && keyVal != null ? arr.find((r) => r && typeof r === "object" && r.$el && String(r.$key) === String(keyVal)) : null;
+    el._sapDetailRow = row ? row.$el : null;
+    if (el.tagName === "DIALOG") {
+      const k = row ? String(row.$key) : null;
+      if (k !== el._sapDetailKey) {
+        el._sapDetailKey = k;
+        el._sapDismissed = false;
+      }
+      if (!row) {
+        el._sapOpenedFor = null;
+        if (el.open && typeof el.close === "function") {
+          el._sapEngineClose = true;
+          el.close();
+        }
+        return;
+      }
+      if (el.open) {
+        el._sapOpenedFor = k;
+      } else {
+        if (el._sapOpenedFor === k) el._sapDismissed = true;
+        el._sapOpenedFor = null;
+        if (!el._sapDismissed && el.isConnected && typeof el.showModal === "function") {
+          if (el.hidden) el.hidden = false;
+          el.showModal();
+          el._sapOpenedFor = k;
+        }
+      }
+    } else {
+      if (!row) {
+        if (!el.hidden) el.hidden = true;
+        return;
+      }
+      if (el.hidden) el.hidden = false;
+    }
+    drainPlans();
+    const dctx = { root: ctx.root, state: parentObj, item: row, ownerEl: row.$el, projection: true };
+    pass.collectEl(el, planOf(el), dctx);
+    pass.walkScope(el, row, dctx);
+  }
+  var detailFeature = {
+    name: "detail",
+    begin(pass) {
+      pass.deferredDetails = [];
+    },
+    boundary: {
+      detail(pass, el, plan, parentObj, ctx) {
+        for (const d of parseStateDecl(el.getAttribute("state") || "")) {
+          if (!(d.name in parentObj)) parentObj[d.name] = isPresenceDecl(el, d) ? el.hasAttribute(d.attr) : pass.resolveDefault(el, d);
+        }
+        pass.deferredDetails.push({ el, parentObj, ctx });
+      }
+    },
+    afterIntake(pass) {
+      for (let i = 0; i < pass.deferredDetails.length; i++) {
+        const { el, parentObj, ctx } = pass.deferredDetails[i];
+        resolveDetail(pass, el, parentObj, ctx);
       }
     }
-    for (const a of root.attributes) if (ACTION_RE.test(a.name)) {
-      n2++;
+  };
+
+  // src/features/calc.js
+  function depth(el) {
+    let d = 0;
+    let c = el;
+    while (c) {
+      if (c.hasAttribute && c.hasAttribute("sap")) break;
+      c = c.parentElement;
+      d++;
+    }
+    return d;
+  }
+  var calcFeature = {
+    name: "calc",
+    begin(pass) {
+      pass.calcs = [];
+    },
+    collect(pass, el, plan, ctx) {
+      if (!plan.calcs) return;
+      const owner = ctx.item || ctx.state;
+      for (const def of plan.calcs) pass.calcs.push({ owner, ownerEl: ctx.ownerEl, name: def.name, entry: def.entry, def, el, ctx });
+    },
+    compute(pass) {
+      const app = pass.app;
+      const groups = /* @__PURE__ */ new Map();
+      for (const c of pass.calcs) {
+        let g = groups.get(c.owner);
+        if (!g) {
+          g = { ownerEl: c.ownerEl, list: [] };
+          groups.set(c.owner, g);
+        }
+        g.list.push(c);
+      }
+      const ordered = [...groups.values()].sort((a, b) => depth(b.ownerEl) - depth(a.ownerEl));
+      for (const g of ordered) {
+        let sorted;
+        try {
+          sorted = topoSort(g.list);
+        } catch (err) {
+          app.diag.error("E07", g.list[0].el, { problem: err.message });
+          sorted = g.list;
+        }
+        for (const c of sorted) {
+          try {
+            c.owner[c.name] = runWith(c.entry, c.ctx.state, c.ctx.item, c.el, c.ctx.root);
+            clearBeacon(c.el);
+          } catch (err) {
+            c.owner[c.name] = void 0;
+            app.diag.error("E24", c.el, { attr: "calc:" + c.name, expr: c.entry.src, problem: String(err.message) });
+            setBeacon(c.el, err.sapCode || "E24");
+          }
+        }
+      }
+      pass.stats.calcs = pass.calcs.length;
+      pass.stats.lists = groups.size;
+    }
+  };
+
+  // src/features/each.js
+  function placeAfter(parent, node, ref) {
+    const before = ref.nextSibling;
+    if (node.isConnected && parent.moveBefore) {
+      try {
+        parent.moveBefore(node, before);
+        return;
+      } catch {
+      }
+    }
+    parent.insertBefore(node, before);
+  }
+  function drawnElFor(root, el, stateObj) {
+    for (let cur = el.parentElement; cur; cur = cur.parentElement) {
+      if (cur._sapScope === stateObj && !cur.hasAttribute("detail")) return cur;
+      if (cur.hasAttribute("sap")) return cur;
+    }
+    return root;
+  }
+  function reconcileEach(pass, el, ctx) {
+    const app = pass.app;
+    el._sapDrawnEl = drawnElFor(pass.root, el, ctx.state);
+    let tmpl = null;
+    for (let c = el.firstElementChild; c; c = c.nextElementSibling) if (c.tagName === "TEMPLATE") {
+      tmpl = c;
       break;
     }
-    return n2;
+    const blueprint = tmpl && tmpl.content.children.length === 1 ? tmpl.content.firstElementChild : null;
+    if (!blueprint) {
+      app.diag.error("E42", el, { attr: "each", problem: "each needs one <template> child with exactly one element root" });
+      return 0;
+    }
+    const src = el.getAttribute("each");
+    let list;
+    try {
+      list = run(compile(src), { state: ctx.state, item: ctx.item, el, root: ctx.root });
+    } catch (err) {
+      app.diag.error("E24", el, { attr: "each", expr: src, problem: String(err.message) });
+      return 0;
+    }
+    if (!Array.isArray(list)) {
+      app.diag.error("E40", el, { attr: "each", expr: src, problem: "each must evaluate to an array; the list keeps its last good rows" });
+      return 0;
+    }
+    const keyEntry = compile(el.getAttribute("key") || "item.$key");
+    const keys = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const item of list) {
+      let k;
+      try {
+        k = runWith(keyEntry, ctx.state, item, el, ctx.root);
+      } catch {
+        k = void 0;
+      }
+      const ks = k == null ? "" : String(k);
+      if (ks === "" || seen.has(ks)) {
+        app.diag.error("E41", el, {
+          attr: "key",
+          expr: keyEntry.src,
+          problem: ks === "" ? "an item has no key; the list keeps its last good rows" : `duplicate key "${ks}"; the list keeps its last good rows`
+        });
+        return 0;
+      }
+      seen.add(ks);
+      keys.push(ks);
+    }
+    const prev = el._sapEach || /* @__PURE__ */ new Map();
+    const next = /* @__PURE__ */ new Map();
+    let changes = 0;
+    let after = tmpl;
+    keys.forEach((k, i) => {
+      let rowEl = prev.get(k);
+      if (!rowEl || rowEl.parentElement !== el) {
+        rowEl = el.ownerDocument.importNode(blueprint, true);
+        const clay = (rowEl.getAttribute("clay") || "").split(/\s+/).filter(Boolean);
+        if (!clay.includes("editor-ui")) rowEl.setAttribute("clay", [...clay, "editor-ui"].join(" "));
+        rowEl._sapEachRow = true;
+        changes++;
+      }
+      if (rowEl.getAttribute("data-key") !== k) rowEl.setAttribute("data-key", k);
+      if (after.nextElementSibling !== rowEl) {
+        placeAfter(el, rowEl, after);
+        changes++;
+      }
+      rowEl._sapEachItem = list[i];
+      next.set(k, rowEl);
+      after = rowEl;
+    });
+    for (const [k, rowEl] of prev) {
+      if (next.get(k) !== rowEl && rowEl.parentElement === el) {
+        rowEl.remove();
+        changes++;
+      }
+    }
+    el._sapEach = next;
+    drainPlans();
+    keys.forEach((k, i) => {
+      const rowEl = next.get(k);
+      const rctx = { root: ctx.root, state: ctx.state, item: list[i], ownerEl: rowEl, projection: false, view: true };
+      pass.collectEl(rowEl, planOf(rowEl), rctx);
+      pass.walkScope(rowEl, {}, rctx);
+    });
+    return changes;
   }
-  function exprSources(root) {
-    const out = [];
-    const scan = (el) => {
-      for (const a of el.attributes) {
-        const n2 = a.name;
-        if (n2.startsWith("calc:") || n2 === "text" || n2.startsWith("text:") || n2 === "show" || n2.startsWith("attr:") || n2.startsWith("class:") || n2.startsWith("css:") || n2 === "effect" || n2 === "invalid" || n2.startsWith("set:") || n2 === "detail") out.push({ el, attr: n2, src: a.value });
+  var eachFeature = {
+    name: "each",
+    begin(pass) {
+      pass.eachList = [];
+    },
+    boundary: {
+      each(pass, el, plan, scopeObj, ctx) {
+        pass.collectEl(el, plan, ctx);
+        pass.eachList.push({ el, ctx });
       }
-    };
-    scan(root);
-    for (const el of root.querySelectorAll("*")) scan(el);
-    return out;
-  }
-  function createDebug(runtime2) {
-    function appView(app) {
-      const s = app._stats || {};
-      const root = app.root;
-      return {
-        root: rootLabel(root),
-        fields: s.fields || 0,
-        calcs: s.calcs || 0,
-        paints: s.paints || 0,
-        actions: countActions(root),
-        lists: (root.hasAttribute("items") ? 1 : 0) + root.querySelectorAll("[items]").length,
-        rows: root.querySelectorAll("[item]:not([template])").length,
-        warnings: app.diag.warnings.length,
-        errors: app.diag.errors.length,
-        mountWrites: app._mountWrites || 0,
-        ms: Math.round((app._mountMs || 0) * 10) / 10,
-        passes: app._passes || 0,
-        lastPass: app._lastPass || null,
-        ok: app.diag.errors.length === 0 && !app.halted
-      };
+    },
+    // Index loop: a nested each inside a row is pushed while the outer one is processed.
+    reconcile(pass) {
+      let changes = 0;
+      for (let i = 0; i < pass.eachList.length; i++) changes += reconcileEach(pass, pass.eachList[i].el, pass.eachList[i].ctx);
+      return changes;
     }
-    function status() {
-      const apps = runtime2.apps().map(appView);
-      return { ok: apps.every((a) => a.ok), apps };
-    }
-    function greenLine(app) {
-      const v = appView(app);
-      if (!v.ok) {
-        return `sap \u2717 ${v.root} \xB7 errors ${v.errors} \xB7 warnings ${v.warnings} \xB7 ${v.ms}ms`;
-      }
-      return `sap \u2713 ${v.root} \xB7 fields ${v.fields} \xB7 calcs ${v.calcs} \xB7 paints ${v.paints} \xB7 actions ${v.actions} \xB7 lists ${v.lists} \xB7 rows ${v.rows} \xB7 warnings ${v.warnings} \xB7 mount writes ${v.mountWrites} \xB7 ${v.ms}ms`;
-    }
-    function printGreenLines() {
-      for (const app of runtime2.apps()) {
-        const line = greenLine(app);
-        if (app.diag.errors.length || app.halted) console.error(line);
-        else console.log(line);
-      }
-    }
-    function report() {
-      const errors = [];
-      const warnings = [];
-      for (const app of runtime2.apps()) {
-        errors.push(...app.diag.errors);
-        warnings.push(...app.diag.warnings);
-      }
-      return { ok: errors.length === 0, errors, warnings, counts: { errors: errors.length, warnings: warnings.length } };
-    }
-    function resolveEl(elOrSel) {
-      if (!elOrSel) return null;
-      if (typeof elOrSel === "string") return document.querySelector(elOrSel);
-      return elOrSel.nodeType === 1 ? elOrSel : null;
-    }
-    function why(elOrSel, field) {
-      const el = resolveEl(elOrSel);
-      if (!el) {
-        console.warn("sap why: element not found");
-        return null;
-      }
-      const lines = [`sap why <${el.tagName.toLowerCase()}> \u2014 ${cssPath(el)}`];
-      const sapAttrs = [...el.attributes].filter((a) => /^(bind|text|show|effect|invalid|detail|calc:|text:|attr:|class:|css:|set:|state|items|scope)/.test(a.name));
-      for (const a of sapAttrs) lines.push(`  ${a.name}="${a.value}"`);
-      let scopeEl = el;
-      while (scopeEl && !scopeEl._sapScope) scopeEl = scopeEl.parentElement;
-      if (scopeEl && scopeEl._sapScope) {
-        const snap = scopeEl._sapScope;
-        const keys = field ? [field] : Object.keys(snap);
-        lines.push("  reads:");
-        for (const k of keys) {
-          const v = snap[k];
-          if (typeof v === "function") continue;
-          lines.push(`    ${k} = ${JSON.stringify(Array.isArray(v) ? `[${v.length} rows]` : v)}`);
-        }
-      }
-      lines.push("  serialization: textContent and value/checked attributes save with the file; reads live from properties");
-      console.log(lines.join("\n"));
-      return null;
-    }
-    function debug(flag) {
-      const on = flag === void 0 ? true : !!flag;
-      for (const app of runtime2.apps()) app._debug = on;
-      console.log(`sap debug ${on ? "on" : "off"} \u2014 per-pass headers will ${on ? "" : "no longer "}log`);
-      return on;
-    }
-    function doctor() {
-      const findings = [];
-      let checks = 0;
-      for (const app of runtime2.apps()) {
-        const root = app.root;
-        const label = rootLabel(root);
-        checks++;
-        const d2 = new Diagnostics(app.name);
-        lintApp(root, d2);
-        for (const e2 of d2.errors) findings.push({ code: e2.code, severity: "error", message: `${label}: ${e2.code} ${e2.slug} at ${e2.el}` });
-        for (const w2 of d2.warnings) findings.push({ code: w2.code, severity: "warn", message: `${label}: ${w2.code} ${w2.slug} at ${w2.el}` });
-        checks++;
-        runPass(app, { trigger: "doctor-dryrun" });
-        const w = app._stats ? app._stats.writes : 0;
-        if (w > 0) findings.push({ code: "W30", severity: "warn", message: `${label}: dry recompute wrote ${w} cells on a quiet page; an element is stale or non-idempotent` });
-        checks++;
-        const srcs = exprSources(root).map((s) => s.src).join(" \0 ");
-        const decls = [];
-        for (const el of [root, ...root.querySelectorAll("[state]")]) {
-          for (const d of parseStateDecl(el.getAttribute("state") || "")) decls.push(d.name);
-        }
-        for (const name of decls) {
-          const re = new RegExp(`(state|item)\\.${name}\\b`);
-          if (!re.test(srcs)) findings.push({ code: "I33", severity: "info", message: `${label}: field "${name}" is declared but read nowhere (dead state)` });
-        }
-        checks++;
-        const ids = /* @__PURE__ */ new Map();
-        for (const el of root.querySelectorAll("[id]")) ids.set(el.id, (ids.get(el.id) || 0) + 1);
-        for (const [id, n2] of ids) if (n2 > 1) findings.push({ code: "W32", severity: "warn", message: `${label}: duplicate id "${id}" (${n2} elements) \u2014 clone/edit collision` });
-        checks++;
-        for (const s of exprSources(root)) {
-          if (s.src.length > 120) findings.push({ code: "I33", severity: "info", message: `${label}: ${s.attr} expression is ${s.src.length} chars; consider a calc: field` });
-        }
-        checks++;
-        for (const el of root.querySelectorAll("[text], [text\\:num]")) {
-          const t = el.textContent || "";
-          if (/\.\d{5,}/.test(t)) findings.push({ code: "I33", severity: "info", message: `${label}: ${cssPath(el)} paints >4 decimals; consider text:FMT` });
-        }
-      }
-      const e = findings.filter((f) => f.severity === "error").length;
-      const wn = findings.filter((f) => f.severity === "warn").length;
-      const i = findings.filter((f) => f.severity === "info").length;
-      const ms = 0;
-      console.log(`sap doctor \xB7 ${runtime2.apps().map((a) => rootLabel(a.root)).join(", ")} \xB7 errors ${e} \xB7 warnings ${wn} \xB7 info ${i} \xB7 ${checks} checks \xB7 ${ms}ms`);
-      for (const f of findings) {
-        const fn = f.severity === "error" ? console.error : f.severity === "warn" ? console.warn : console.info;
-        fn(`  ${f.severity === "error" ? "\u2717" : f.severity === "warn" ? "\u26A0" : "\xB7"} ${f.message}`);
-      }
-      return findings;
-    }
-    return { status, report, why, debug, doctor, greenLine, printGreenLines, REGISTRY };
-  }
+  };
 
-  // src/version.js
-  var VERSION = "0.5.2";
+  // src/features/effect.js
+  function runEffect(e, app) {
+    try {
+      runWith(e.def.entry, e.ctx.state, e.ctx.item, e.el, e.ctx.root);
+      clearBeacon(e.el);
+    } catch (err) {
+      app.diag.error("E24", e.el, { attr: "effect", expr: e.def.entry && e.def.entry.src, problem: String(err.message) });
+      setBeacon(e.el, "E24");
+    }
+  }
+  var effectFeature = {
+    name: "effect",
+    begin(pass) {
+      pass.effects = [];
+    },
+    collect(pass, el, plan, ctx) {
+      if (plan.effects) for (const def of plan.effects) pass.effects.push({ def, el, ctx });
+    },
+    afterPaint(pass) {
+      for (const e of pass.effects) runEffect(e, pass.app);
+    }
+  };
+
+  // src/features/validation.js
+  function runInvalid(iv) {
+    let msg = "";
+    try {
+      const v = runWith(iv.def.entry, iv.ctx.state, iv.ctx.item, iv.el, iv.ctx.root);
+      msg = typeof v === "string" ? v : "";
+    } catch {
+      msg = "";
+    }
+    if (typeof iv.el.setCustomValidity === "function") iv.el.setCustomValidity(msg);
+  }
+  var validationFeature = {
+    name: "validation",
+    begin(pass) {
+      pass.invalids = [];
+    },
+    collect(pass, el, plan, ctx) {
+      if (plan.invalids) for (const def of plan.invalids) pass.invalids.push({ def, el, ctx });
+    },
+    afterPaint(pass) {
+      for (const iv of pass.invalids) runInvalid(iv);
+    }
+  };
+
+  // src/features/projection.js
+  function applyProjection(el, v) {
+    if (el === el.ownerDocument.activeElement) return 0;
+    if (el.type === "radio") {
+      const want = v != null && String(el.value) === String(v);
+      if (el.checked === want) return 0;
+      el.checked = want;
+      return 1;
+    }
+    const kind = kindOf(el);
+    const cur = readControl(el, kind);
+    const nv = v == null ? "" : v;
+    if (String(cur) !== String(nv)) {
+      writeControl(el, kind, nv);
+      return 1;
+    }
+    return 0;
+  }
+  var projectionFeature = {
+    name: "projection",
+    collect(pass, el, plan, ctx) {
+      if (!(plan.bind != null && (ctx.view || ctx.projection) && !isComposer(el))) return;
+      const field = plan.bind;
+      const paints = pass.paints;
+      if (!ctx.view) {
+        paints.push({ def: { kind: "projection", field, from: null }, el, ctx });
+      } else if (ownsField(recordElOf(ctx.item), field)) {
+        el._sapViewBind = "item";
+        paints.push({ def: { kind: "projection", field, from: "item" }, el, ctx });
+      } else if (field in ctx.state || field in ctx.root) {
+        el._sapViewBind = "drawn";
+        paints.push({ def: { kind: "projection", field, from: "drawn" }, el, ctx });
+      } else {
+        el._sapViewBind = null;
+        pass.app.diag.error("E43", el, {
+          attr: "bind",
+          expr: field,
+          problem: `bind="${field}" inside an each row matches no field of the row's record or of the scope the row is drawn in`,
+          fix: "bind a field the record owns (bind, state= or items= on the [item]), or declare it with state= where the list is drawn"
+        });
+      }
+    },
+    paintKinds: {
+      projection(p) {
+        const def = p.def;
+        if (def.from === "drawn") {
+          const s = def.field in p.ctx.state ? p.ctx.state : p.ctx.root;
+          return applyProjection(p.el, s[def.field]);
+        }
+        return applyProjection(p.el, p.ctx.item ? p.ctx.item[def.field] : "");
+      }
+    }
+  };
+
+  // src/features/index.js
+  function registerFullFeatures() {
+    for (const f of [detailFeature, calcFeature, eachFeature, effectFeature, validationFeature, projectionFeature]) registerFeature(f);
+  }
 
   // src/sap.js
-  var registry = /* @__PURE__ */ new Map();
-  var order = [];
-  var scheduler = createScheduler(runPass);
-  function appFor(el) {
-    let cur = el;
-    while (cur) {
-      if (cur.nodeType === 1 && cur.hasAttribute && cur.hasAttribute("sap")) {
-        return registry.get(cur) || null;
-      }
-      cur = cur.parentNode && cur.parentNode.host ? cur.parentNode.host : cur.parentElement;
+  registerFullFeatures();
+  var { Sap, mountAll, mount, runtime } = createSap({
+    createAccessor,
+    installInput(runtime2, accessor, doc) {
+      const input = createInput(runtime2);
+      const actions = createActions(runtime2, accessor);
+      input.addRouter(actions.routeInput);
+      input.install(doc);
+      actions.install(doc);
     }
-    return null;
-  }
-  function pruneDisconnected() {
-    for (let i = order.length - 1; i >= 0; i--) {
-      const app = order[i];
-      if (!app.root.isConnected) {
-        registry.delete(app.root);
-        order.splice(i, 1);
-      }
-    }
-  }
-  function moveInto(parent, el) {
-    if (parent.moveBefore) {
-      try {
-        parent.moveBefore(el, null);
-        return;
-      } catch {
-      }
-    }
-    parent.appendChild(el);
-  }
-  function placeBefore(el, ref) {
-    const parent = ref.parentElement;
-    if (!parent) return;
-    if (parent.moveBefore) {
-      try {
-        parent.moveBefore(el, ref);
-        return;
-      } catch {
-      }
-    }
-    parent.insertBefore(el, ref);
-  }
-  var runtime = {
-    apps: () => order.slice(),
-    appFor,
-    isRegistered: (el) => registry.has(el),
-    pruneDisconnected,
-    schedule: (app, trigger) => scheduler.schedule(app, trigger),
-    runNow: (app, trigger) => scheduler.runNow(app, trigger),
-    moveInto,
-    placeBefore,
-    remountIfPresent: () => mountAll()
-  };
-  var accessor = createAccessor(runtime);
-  var actions = createActions(runtime, accessor);
-  var debugApi = createDebug(runtime);
-  var installed2 = false;
-  function installOnce() {
-    if (installed2) return;
-    installed2 = true;
-    actions.install(document);
-    installBridges(runtime);
-  }
-  function mountAll(docRoot = document) {
-    installOnce();
-    installMutationBridge(runtime);
-    const roots = docRoot.querySelectorAll("[sap]");
-    const fresh = [];
-    for (const root of roots) {
-      if (registry.has(root)) continue;
-      const appRec = mountApp(root);
-      registry.set(root, appRec);
-      order.push(appRec);
-      fresh.push(appRec);
-    }
-    for (const app of fresh) {
-      const line = debugApi.greenLine(app);
-      if (app.diag.errors.length || app.halted) console.error(line);
-      else console.log(line);
-    }
-    return fresh;
-  }
-  function mount(rootOrSel) {
-    installOnce();
-    installMutationBridge(runtime);
-    if (!rootOrSel) return mountAll();
-    const root = typeof rootOrSel === "string" ? document.querySelector(rootOrSel) : rootOrSel;
-    if (!root) return null;
-    if (registry.has(root)) return registry.get(root);
-    const appRec = mountApp(root);
-    registry.set(root, appRec);
-    order.push(appRec);
-    const line = debugApi.greenLine(appRec);
-    if (appRec.diag.errors.length || appRec.halted) console.error(line);
-    else console.log(line);
-    return appRec;
-  }
-  var Sap = accessor.Sap;
-  Sap.version = VERSION;
-  Sap.refresh = function refresh() {
-    for (const app of order) if (app.root.isConnected) scheduler.runNow(app, "refresh");
-  };
-  Sap.batch = batch;
-  Sap.status = debugApi.status;
-  Sap.report = debugApi.report;
-  Sap.why = debugApi.why;
-  Sap.debug = debugApi.debug;
-  Sap.doctor = debugApi.doctor;
-  Sap.greenLine = debugApi.greenLine;
-  Sap.formats = formats;
-  Sap.serializeControlToAttributes = serializeControlToAttributes;
-  Sap.finalizeControlForSave = finalizeControlForSave;
-  Sap.rehydrateControlFromAttributes = rehydrateControlFromAttributes;
-  Sap.mount = mount;
-  Sap.config = function config(options = {}) {
-    if (options.formats) Object.assign(formats, options.formats);
-    return Sap;
-  };
-  Sap._registry = registry;
-  Sap._reset = function reset() {
-    registry.clear();
-    order.length = 0;
-    resetMutationBridge();
-  };
-  function autoMount() {
-    if (typeof document === "undefined") return;
-    const go = () => whenPlatformReady(() => mountAll());
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", go);
-    } else {
-      go();
-    }
-  }
-  autoMount();
+  });
+  var prior = typeof window !== "undefined" ? window.Sap : null;
+  if (prior && prior !== Sap && prior.core && typeof prior.unmount === "function") prior.unmount();
+  autoMount(mountAll);
   if (typeof window !== "undefined") window.Sap = Sap;
   var sap_default = Sap;
   return __toCommonJS(sap_exports);

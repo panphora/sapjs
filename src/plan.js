@@ -17,13 +17,13 @@
 import { parseStateDecl } from "./dom.js";
 import { compile } from "./compile.js";
 
-let planGen = 0;
+let planGen = {};
 let watcher = null;
 let canWatch = true;
 let cacheable = false;
 
 export function dropPlans() {
-  planGen++;
+  planGen = {};
 }
 
 // Called at the start of a pass over the app rooted at `root`; returns what endPlans
