@@ -2,7 +2,8 @@
 // microtask pass (the `queued` flag is the transaction). The circuit breaker
 // stops runaway recompute loops and names the culprit from a trigger ring.
 
-const MAX_PASSES = 50; // per macrotask, per app; a true loop trips this
+const MAX_PASSES = 50; // per macrotask, per app; a true loop trips this. A tripped app stays
+// halted against its own mutations and rearms on the next refresh or interaction.
 
 export function createScheduler(runPass) {
   let queued = false;
@@ -17,7 +18,10 @@ export function createScheduler(runPass) {
 
   function schedule(app, trigger) {
     note(trigger);
-    if (app._broken) return;
+    if (app._broken) {
+      if (trigger === "mutation") return;
+      rearm(app);
+    }
     dirty.add(app);
     if (queued) return;
     queued = true;
@@ -54,6 +58,7 @@ export function createScheduler(runPass) {
   // caller cannot say which elements changed, so every directive is re-read.
   function runNow(app, trigger) {
     note(trigger);
+    if (app._broken) rearm(app);
     runWithBreaker(app, true);
   }
 

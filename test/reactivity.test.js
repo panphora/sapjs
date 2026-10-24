@@ -155,4 +155,61 @@ describe("reactivity: calc, paint, and the one write path", () => {
     const codes = Sap.report().errors.map((e) => e.code);
     expect(codes).toContain("E26");
   });
+
+  // The loop fixture above: its paint dispatches the event that schedules its next pass.
+  const LOOPING = `
+      <main sap>
+        <input id="loop" bind="n" value="x" effect="el.dispatchEvent(new Event('input',{bubbles:true}))">
+        <input bind="qty" value="2">
+        <output calc:d="state.qty * 2" text="state.d"></output>
+      </main>`;
+
+  test("a tripped app stays halted against its own mutations", async () => {
+    window.__passes = 0;
+    const root = mount(`
+      <main sap>
+        <input id="loop" bind="n" value="x" effect="el.dispatchEvent(new Event('input',{bubbles:true}))">
+        <b id="c" effect="window.__passes = window.__passes + 1"></b>
+      </main>`);
+    root.querySelector("#loop").dispatchEvent(new Event("input", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(Sap.report().errors.map((e) => e.code)).toContain("E26");
+    const afterTrip = window.__passes;
+    root.querySelector("#c").setAttribute("data-x", "1");
+    await flush();
+    expect(window.__passes).toBe(afterTrip);
+  });
+
+  test("after the trip, Sap.refresh() paints a change made while broken", async () => {
+    const root = mount(LOOPING);
+    root.querySelector("#loop").dispatchEvent(new Event("input", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(Sap.report().errors.map((e) => e.code)).toContain("E26");
+    root.querySelector("[bind=qty]").setAttribute("value", "7");
+    Sap.refresh();
+    expect(root.querySelector("output").textContent).toBe("14");
+  });
+
+  test("after the trip, a user input event paints again", async () => {
+    const root = mount(LOOPING);
+    root.querySelector("#loop").dispatchEvent(new Event("input", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(Sap.report().errors.map((e) => e.code)).toContain("E26");
+    type(root.querySelector("[bind=qty]"), 5);
+    await flush();
+    expect(root.querySelector("output").textContent).toBe("10");
+  });
+
+  test("a 60-event burst in one task cannot starve the reset", async () => {
+    const root = mount(LOOPING);
+    const loop = root.querySelector("#loop");
+    // awaits yield microtasks only, so the setTimeout(0) that resets _passes never runs
+    for (let i = 0; i < 60; i++) {
+      loop.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+    }
+    root.querySelector("[bind=qty]").setAttribute("value", "9");
+    Sap.refresh();
+    expect(root.querySelector("output").textContent).toBe("18");
+  });
 });
