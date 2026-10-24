@@ -40,7 +40,10 @@ var Sap = (() => {
     }
     function schedule(app, trigger) {
       note(trigger);
-      if (app._broken) return;
+      if (app._broken) {
+        if (trigger === "mutation") return;
+        rearm(app);
+      }
       dirty.add(app);
       if (queued) return;
       queued = true;
@@ -72,6 +75,7 @@ var Sap = (() => {
     }
     function runNow(app, trigger) {
       note(trigger);
+      if (app._broken) rearm(app);
       runWithBreaker(app, true);
     }
     function rearm(app) {
