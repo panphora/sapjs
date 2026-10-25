@@ -12,6 +12,7 @@ import {
   serializeTyped, parseTyped, keyOf, readTransient, isPresenceDecl, defaultRaw,
 } from "./dom.js";
 import { planOf, dropPlans, beginPlans, endPlans } from "./plan.js";
+import { readAttr, readText, beginReads, endReads, dropReads } from "./read-cache.js";
 import { runWith } from "./compile.js";
 import { readControl, kindOf } from "./carrier.js";
 import { applyFormat } from "./helpers.js";
@@ -43,7 +44,10 @@ export function runPass(app, opts = {}) {
   // A pass the engine cannot attribute to specific elements (refresh, live sync,
   // undo, mount) re-reads every attribute: it drops every plan first. Every pass then
   // clears the plans of elements whose attributes changed since the last one.
-  if (opts.full) dropPlans();
+  if (opts.full) {
+    dropPlans();
+    dropReads();
+  }
   const plans = beginPlans(app.root);
   // The whole pass runs inside one DOM-mutation pause: every engine-derived write
   // (intake strips, id stamps, default materialization, paints, effects, validity,
@@ -76,9 +80,9 @@ function runPassBody(app, opts) {
   // after intake — but only if a visibility verb references the field, so the CSS
   // floor and show-when can match it before any write. Non-visibility fields are
   // never materialized, keeping this purely additive for existing apps.
-  function resolveDefault(el, d) {
+  function resolveDefault(el, d, cacheRecord = false) {
     const attr = d.attr || d.name;
-    let raw = el.getAttribute(attr);
+    let raw = cacheRecord ? readAttr(el, attr) : el.getAttribute(attr);
     if (raw == null) {
       raw = defaultRaw(d);
       pending.push({ el, name: d.name, attr, value: serializeTyped(parseTyped(raw, d.type), d.type) });
@@ -86,9 +90,10 @@ function runPassBody(app, opts) {
     return parseTyped(raw, d.type);
   }
 
-  function readState(el, plan, obj) {
+  function readState(el, plan, obj, ctx) {
     const decls = plan.decls;
     if (!decls) return;
+    const cacheRecord = !!ctx.item && !ctx.projection && !ctx.view;
     for (const d of decls) {
       if (d.transient) {
         obj[d.name] = readTransient(el, d); // runtime-only; never serialized
@@ -98,7 +103,7 @@ function runPassBody(app, opts) {
         obj[d.name] = el.hasAttribute(d.attr); // presence: <details open>, data-done
         continue;
       }
-      obj[d.name] = resolveDefault(el, d);
+      obj[d.name] = resolveDefault(el, d, cacheRecord);
     }
   }
 
@@ -109,6 +114,8 @@ function runPassBody(app, opts) {
     if (kind === "radio") {
       if (!(field in owner)) owner[field] = "";
       if (el.checked) owner[field] = el.value;
+    } else if (kind === "leaf" && ctx.item && !ctx.projection && !ctx.view) {
+      owner[field] = readText(el);
     } else {
       owner[field] = readControl(el, kind);
     }
@@ -136,7 +143,7 @@ function runPassBody(app, opts) {
 
   function enterScope(el, obj, ctx) {
     const plan = planOf(el);
-    readState(el, plan, obj);
+    readState(el, plan, obj, ctx);
     el._sapScope = obj;
     if (!ctx.projection && plan.bind != null) readBindInto(el, plan, ctx);
     collectEl(el, plan, ctx);
@@ -200,7 +207,12 @@ function runPassBody(app, opts) {
   for (const f of features) if (f.begin) f.begin(pass);
 
   // --- intake ---
-  enterScope(root, rootObj, rootCtx);
+  const reads = opts.cacheReads === false ? null : beginReads(root);
+  try {
+    enterScope(root, rootObj, rootCtx);
+  } finally {
+    if (opts.cacheReads !== false) endReads(reads);
+  }
 
   // Collection can halt the app: the core flags full-only markup it meets here. A
   // halted pass writes nothing, so stop before defaults, calcs, views or any paint.
