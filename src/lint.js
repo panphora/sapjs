@@ -6,11 +6,11 @@ import { parseStateDecl, rowsOf, templateOf, sharedTemplate, isNativeBoolean } f
 import { RESERVED, HTML_GLOBALS, NATIVE_BOOLEANS, didYouMean, setBeacon } from "./errors.js";
 
 const NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
-// `editmode` is a hyperclayjs platform prefix (editmode:onclick etc.), not a Sap
-// verb. It is allow-listed here so Sap stays quiet about it when co-loaded; the
-// single entry covers the whole editmode:* family, so new editmode: attributes in
-// hyperclayjs need no change. Sap has no engine branch for it (it is a no-op in Sap).
-const COLON_PREFIXES = new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode"]);
+// `editmode` and `viewmode` are platform prefixes (editmode:onclick etc.), not Sap
+// verbs. They are allow-listed here so Sap stays quiet about them when co-loaded;
+// each single entry covers its whole family, so new members in hyperclayjs need no
+// change. Sap has no engine branch for either (both are no-ops in Sap).
+const COLON_PREFIXES = new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode", "viewmode"]);
 // The show-when family compares against a literal attribute value (or `|`-list),
 // never a JS expression. An expression-shaped value means the author reached for
 // show= by mistake; catch it loudly instead of failing the match silently.

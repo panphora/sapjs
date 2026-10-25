@@ -69,6 +69,20 @@ export function regionSkipsSave(el) {
   return region.skipForPolicy(region.resolveRegionPolicy(el), undefined, ["no-save", "freeze"]);
 }
 
+export function modeSession() {
+  if (typeof window === "undefined") return null;
+  return window.clay?.modeLifecycle || null;
+}
+
+export function mayWriteRecord(node, { transient = false } = {}) {
+  if (transient) return true;
+  const lifecycle = typeof window === "undefined" ? null : window.clay?.modeLifecycle;
+  if (typeof lifecycle?.canWrite !== "function") return true;
+  const policy = capability("region")?.resolveRegionPolicy?.(node);
+  if (policy?.persist === "none") return true;
+  return lifecycle.canWrite();
+}
+
 // Themed confirmation dialog. When the platform's consent() is present (the
 // `everything` preset bundles both dialogs and sap), a confirm-gated action uses
 // it instead of the native window.confirm box. consent(msg, yesCallback) fires the

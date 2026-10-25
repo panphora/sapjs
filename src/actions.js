@@ -9,7 +9,7 @@ import {
   writeDeclared, writeTransient,
 } from "./dom.js";
 import { carrierFor } from "./carrier.js";
-import { platformConsent } from "./platform.js";
+import { mayWriteRecord, modeSession, platformConsent } from "./platform.js";
 import { compile, run } from "./compile.js";
 
 const TRIGGER_WORDS = ["trigger-add", "trigger-remove", "trigger-reset"];
@@ -73,12 +73,17 @@ export function createActions(runtime, accessor) {
         if (typeof v === "string" || typeof v === "number") msg = String(v);
       } catch { /* fall back to the literal string */ }
     }
+    const session = modeSession();
+    const proceedIfAdmitted = () => {
+      if (modeSession() !== session) return;
+      proceed();
+    };
     const consent = platformConsent();
-    if (!consent) { if (window.confirm(msg)) proceed(); return; }
+    if (!consent) { if (window.confirm(msg)) proceedIfAdmitted(); return; }
     if (el._sapGatePending) return;
     el._sapGatePending = true;
     const done = () => { el._sapGatePending = false; };
-    consent(msg, () => { done(); proceed(); }).catch(done);
+    consent(msg, () => { done(); proceedIfAdmitted(); }).catch(done);
   }
 
   function runSet(el, appRec) {
@@ -113,6 +118,7 @@ export function createActions(runtime, accessor) {
   function moveStep(el, dir) {
     const row = sourceRowOf(el);
     if (!row) return;
+    if (!mayWriteRecord(row) || !mayWriteRecord(row.parentElement)) return;
     const siblings = rowsOf(row.parentElement);
     const i = siblings.indexOf(row);
     if (dir === "up" && i > 0) runtime.placeBefore(row, siblings[i - 1]);
@@ -149,6 +155,7 @@ export function createActions(runtime, accessor) {
       appRec.diag.error("E17", el, { attr: "sort:" + field, problem: `no items list resolvable for sort:${field}` });
       return;
     }
+    if (!mayWriteRecord(listEl)) return;
     const rows = rowsOf(listEl);
     const valOf = (r) => (r._sapScope ? r._sapScope[field] : undefined);
     const asc = [...rows].sort((a, b) => cmp(valOf(a), valOf(b)));
@@ -251,6 +258,7 @@ export function createActions(runtime, accessor) {
     if (!m || !appRec) return;
     const own = parseStateDecl(dlg.getAttribute("state") || "").find((d) => d.name === m[1]);
     if (own) {
+      if (!mayWriteRecord(dlg, { transient: own.transient })) return;
       if (own.transient) writeTransient(dlg, own, "");
       else writeDeclared(dlg, own, "");
       runtime.schedule(appRec, "close");
@@ -276,6 +284,7 @@ export function createActions(runtime, accessor) {
       const field = t.getAttribute("bind");
       const src = ownedBind(row, field);
       if (src && src !== t) {
+        if (!mayWriteRecord(src)) return true;
         carrierFor(src).write(carrierFor(t).read());
         return true;
       }

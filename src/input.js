@@ -7,7 +7,7 @@
 import { carrierFor } from "./carrier.js";
 import { num } from "./helpers.js";
 import { serializeControlToAttributes } from "./control-serialize.js";
-import { regionSkipsSave } from "./platform.js";
+import { mayWriteRecord, regionSkipsSave } from "./platform.js";
 
 export function createInput(runtime) {
   const routers = [];
@@ -21,7 +21,7 @@ export function createInput(runtime) {
     // serializable attribute on every edit, so a typed value survives a save
     // even without the host platform. bind is reactivity; persist is durability.
     // Skip in a no-save / frozen region: the platform strips those bytes anyway.
-    if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
+    if (t.hasAttribute("persist") && !regionSkipsSave(t) && mayWriteRecord(t)) serializeControlToAttributes(t);
     for (const route of routers) if (route(t, appRec)) return;
     runtime.schedule(appRec, e.type + " " + (t.id || t.tagName.toLowerCase()));
   }
@@ -30,6 +30,7 @@ export function createInput(runtime) {
     const form = e.target;
     const appRec = runtime.appFor(form);
     if (!appRec) return;
+    if (![...form.querySelectorAll("[bind]")].every((c) => mayWriteRecord(c))) return;
     // native reset restores values BEFORE the event; defer so we read post-reset.
     setTimeout(() => {
       form.querySelectorAll("[bind]").forEach((c) => {
@@ -66,6 +67,7 @@ export function createInput(runtime) {
     if (type !== "text" && type !== "tel" && type !== "search") return; // native numeric types already step
     const appRec = runtime.appFor(t);
     if (!appRec) return;
+    if (!mayWriteRecord(t)) return;
     e.preventDefault();
     const step = num(t.getAttribute("step")) || 1;
     const dir = e.key === "ArrowUp" ? 1 : -1;

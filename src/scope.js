@@ -12,6 +12,7 @@ import {
 import { carrierFor } from "./carrier.js";
 import { walkOwned } from "./dom.js";
 import { RESERVED, HTML_GLOBALS, didYouMean } from "./errors.js";
+import { mayWriteRecord } from "./platform.js";
 
 const ID_REF_ATTRS = [
   "for", "form", "list", "headers", "popovertarget", "commandfor", "anchor",
@@ -133,6 +134,7 @@ export function createAccessor(runtime) {
   function writeField(ctxEl, appRec, field, value) {
     const control = ownedBind(ctxEl, field);
     if (control) {
+      if (!mayWriteRecord(control)) return;
       carrierFor(control).write(value);
       return;
     }
@@ -149,6 +151,7 @@ export function createAccessor(runtime) {
     }
     const decl = declarerOf(ctxEl, appRec.root, field);
     if (decl) {
+      if (!mayWriteRecord(decl.el, { transient: decl.decl.transient })) return;
       setStateAttr(decl.el, field, value, decl.decl, appRec);
       return;
     }
@@ -174,6 +177,7 @@ export function createAccessor(runtime) {
       return;
     }
     const root = appRec.root;
+    if (!mayWriteRecord(root)) return;
     const type = inferType(value);
     const decls = root.getAttribute("state") || "";
     const token = type === "string" ? field : `${field}:${type}`;
@@ -219,6 +223,7 @@ export function createAccessor(runtime) {
       appRec.diag.error("E17", ctxEl, { problem: `cannot resolve a list named "${name}" from here` });
       return null;
     }
+    if (!mayWriteRecord(listEl)) return null;
     const tmpl = templateOf(listEl);
     if (!tmpl) {
       appRec.diag.error("E17", listEl, { problem: `items="${name}" has no [item template] to clone` });
@@ -233,6 +238,15 @@ export function createAccessor(runtime) {
   }
 
   function doReset(ctxEl, appRec) {
+    const decls = parseStateDecl(ctxEl.getAttribute("state") || "");
+    let admitted = true;
+    walkOwned(ctxEl, (el) => {
+      if (el.hasAttribute("bind") && !mayWriteRecord(el)) admitted = false;
+    });
+    for (const d of decls) {
+      if (!mayWriteRecord(ctxEl, { transient: d.transient })) admitted = false;
+    }
+    if (!admitted) return;
     walkOwned(ctxEl, (el) => {
       if (el.hasAttribute("bind")) {
         const c = carrierFor(el);
@@ -244,7 +258,7 @@ export function createAccessor(runtime) {
         }
       }
     });
-    for (const d of parseStateDecl(ctxEl.getAttribute("state") || "")) {
+    for (const d of decls) {
       const value = declaredDefault(ctxEl, d);
       if (d.transient) writeTransient(ctxEl, d, value);
       else writeDeclared(ctxEl, d, value);
@@ -254,6 +268,7 @@ export function createAccessor(runtime) {
 
   function doRemove(ctxEl, appRec) {
     if (!ctxEl.isConnected) throw new Error("stale row handle: $remove() on a removed row");
+    if (!mayWriteRecord(ctxEl)) return;
     ctxEl.remove();
     runtime.schedule(appRec, "trigger-remove");
   }
@@ -267,6 +282,7 @@ export function createAccessor(runtime) {
       appRec.diag.error("E17", ctxEl, { problem: `$move() cannot resolve target "${target}"` });
       return;
     }
+    if (!mayWriteRecord(ctxEl) || !mayWriteRecord(listEl)) return;
     runtime.moveInto(listEl, ctxEl);
     runtime.schedule(appRec, "trigger-move");
   }
