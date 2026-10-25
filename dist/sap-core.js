@@ -847,6 +847,7 @@ ${src}` : `"use strict"; return (${src});`;
   var LIVESYNC_APPLIED = ["clay:sync-applied", "hyperclay:livesync-applied"];
   var PLATFORM_READY = ["clay:ready", "hyperclay:ready"];
   var ROUTE_CHANGED = ["clay:route"];
+  var MODE_CHANGED = ["clay:modechange"];
   function onPlatformEvent(target, names, handler) {
     let claimedBy = null;
     const wrapped = (event) => {
@@ -874,6 +875,18 @@ ${src}` : `"use strict"; return (${src});`;
     }
     return region.skipForPolicy(region.resolveRegionPolicy(el), void 0, ["no-save", "freeze"]);
   }
+  function modeSession() {
+    if (typeof window === "undefined") return null;
+    return window.clay?.modeLifecycle || null;
+  }
+  function mayWriteRecord(node, { transient = false } = {}) {
+    if (transient) return true;
+    const lifecycle = typeof window === "undefined" ? null : window.clay?.modeLifecycle;
+    if (typeof lifecycle?.canWrite !== "function") return true;
+    const policy = capability("region")?.resolveRegionPolicy?.(node);
+    if (policy?.persist === "none") return true;
+    return lifecycle.canWrite();
+  }
   function batch(label, fn) {
     if (typeof fn !== "function") throw new Error("Sap.batch(label, fn): fn must be a function");
     const u = capability("undo");
@@ -898,13 +911,29 @@ ${src}` : `"use strict"; return (${src});`;
     const offDerived = derived && typeof derived.register === "function" ? derived.register(refreshConnected) : null;
     const offApplied = typeof offDerived === "function" ? null : onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
     const offRoute = onPlatformEvent(document, ROUTE_CHANGED, refreshConnected);
-    let undoBound = false;
-    let stopWaiting = () => {
+    let undoHandles = null;
+    let disposed = false;
+    const modeGeneration = () => {
+      const state = modeSession()?.state;
+      return state ? state.generation : null;
+    };
+    const unbindUndo = () => {
+      const handles = undoHandles;
+      if (!handles) return;
+      undoHandles = null;
+      handles.offUndo();
+      handles.offRedo();
     };
     const bindUndo = () => {
-      if (undoBound) return true;
+      if (disposed) return false;
       const undo = capability("undo");
-      if (!undo || typeof undo.on !== "function") return false;
+      const generation = modeGeneration();
+      if (!undo || typeof undo.on !== "function") {
+        unbindUndo();
+        return false;
+      }
+      if (undoHandles && undoHandles.impl === undo && undoHandles.generation === generation) return true;
+      unbindUndo();
       const offUndo = undo.on("undo", refreshConnected);
       if (typeof offUndo !== "function") return false;
       const offRedo = undo.on("redo", refreshConnected);
@@ -912,26 +941,25 @@ ${src}` : `"use strict"; return (${src});`;
         offUndo();
         return false;
       }
-      undoBound = true;
-      stopWaiting();
+      undoHandles = { impl: undo, generation, offUndo, offRedo };
       return true;
     };
-    if (!bindUndo()) {
-      const offMutationReady = onPlatformEvent(document, MUTATION_READY, bindUndo);
-      const offPlatformReady = onPlatformEvent(document, PLATFORM_READY, bindUndo);
-      stopWaiting = () => {
-        offMutationReady();
-        offPlatformReady();
-      };
-      const ready = capability("ready");
-      if (ready && typeof ready.then === "function") ready.then(bindUndo, () => {
-      });
-    }
+    bindUndo();
+    const offMutationReady = onPlatformEvent(document, MUTATION_READY, bindUndo);
+    const offPlatformReady = onPlatformEvent(document, PLATFORM_READY, bindUndo);
+    const offModeChanged = onPlatformEvent(document, MODE_CHANGED, bindUndo);
+    const ready = capability("ready");
+    if (ready && typeof ready.then === "function") ready.then(() => bindUndo(), () => {
+    });
     return () => {
+      disposed = true;
       if (typeof offDerived === "function") offDerived();
       if (offApplied) offApplied();
       offRoute();
-      stopWaiting();
+      offMutationReady();
+      offPlatformReady();
+      offModeChanged();
+      unbindUndo();
     };
   }
 
@@ -1545,7 +1573,7 @@ ${src}` : `"use strict"; return (${src});`;
 
   // src/lint.js
   var NATIVE_BOOLEAN_SET3 = new Set(NATIVE_BOOLEANS);
-  var COLON_PREFIXES = /* @__PURE__ */ new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode"]);
+  var COLON_PREFIXES = /* @__PURE__ */ new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode", "viewmode"]);
   var WHEN_PREFIXES = /* @__PURE__ */ new Set(["show-when", "hide-when", "option", "option-not"]);
   var EXPR_SHAPED = /\b(?:state|item|root)\.|===|!==|&&|\|\||[()]|^\s*!/;
   var KNOWN_BARE = /* @__PURE__ */ new Set([
@@ -2062,7 +2090,7 @@ ${src}` : `"use strict"; return (${src});`;
       if (!t || t.nodeType !== 1) return;
       const appRec = runtime2.appFor(t);
       if (!appRec) return;
-      if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
+      if (t.hasAttribute("persist") && !regionSkipsSave(t) && mayWriteRecord(t)) serializeControlToAttributes(t);
       for (const route of routers) if (route(t, appRec)) return;
       runtime2.schedule(appRec, e.type + " " + (t.id || t.tagName.toLowerCase()));
     }
@@ -2070,6 +2098,7 @@ ${src}` : `"use strict"; return (${src});`;
       const form = e.target;
       const appRec = runtime2.appFor(form);
       if (!appRec) return;
+      if (![...form.querySelectorAll("[bind]")].every((c) => mayWriteRecord(c))) return;
       setTimeout(() => {
         form.querySelectorAll("[bind]").forEach((c) => {
           c.dispatchEvent(new Event("input", { bubbles: true }));
@@ -2099,6 +2128,7 @@ ${src}` : `"use strict"; return (${src});`;
       if (type !== "text" && type !== "tel" && type !== "search") return;
       const appRec = runtime2.appFor(t);
       if (!appRec) return;
+      if (!mayWriteRecord(t)) return;
       e.preventDefault();
       const step = num(t.getAttribute("step")) || 1;
       const dir = e.key === "ArrowUp" ? 1 : -1;

@@ -1018,6 +1018,7 @@ ${src}` : `"use strict"; return (${src});`;
   var LIVESYNC_APPLIED = ["clay:sync-applied", "hyperclay:livesync-applied"];
   var PLATFORM_READY = ["clay:ready", "hyperclay:ready"];
   var ROUTE_CHANGED = ["clay:route"];
+  var MODE_CHANGED = ["clay:modechange"];
   function onPlatformEvent(target, names, handler) {
     let claimedBy = null;
     const wrapped = (event) => {
@@ -1044,6 +1045,18 @@ ${src}` : `"use strict"; return (${src});`;
       return false;
     }
     return region.skipForPolicy(region.resolveRegionPolicy(el), void 0, ["no-save", "freeze"]);
+  }
+  function modeSession() {
+    if (typeof window === "undefined") return null;
+    return window.clay?.modeLifecycle || null;
+  }
+  function mayWriteRecord(node, { transient = false } = {}) {
+    if (transient) return true;
+    const lifecycle = typeof window === "undefined" ? null : window.clay?.modeLifecycle;
+    if (typeof lifecycle?.canWrite !== "function") return true;
+    const policy = capability("region")?.resolveRegionPolicy?.(node);
+    if (policy?.persist === "none") return true;
+    return lifecycle.canWrite();
   }
   function platformConsent() {
     const fn = capability("consent");
@@ -1073,13 +1086,29 @@ ${src}` : `"use strict"; return (${src});`;
     const offDerived = derived && typeof derived.register === "function" ? derived.register(refreshConnected) : null;
     const offApplied = typeof offDerived === "function" ? null : onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
     const offRoute = onPlatformEvent(document, ROUTE_CHANGED, refreshConnected);
-    let undoBound = false;
-    let stopWaiting = () => {
+    let undoHandles = null;
+    let disposed = false;
+    const modeGeneration = () => {
+      const state = modeSession()?.state;
+      return state ? state.generation : null;
+    };
+    const unbindUndo = () => {
+      const handles = undoHandles;
+      if (!handles) return;
+      undoHandles = null;
+      handles.offUndo();
+      handles.offRedo();
     };
     const bindUndo = () => {
-      if (undoBound) return true;
+      if (disposed) return false;
       const undo = capability("undo");
-      if (!undo || typeof undo.on !== "function") return false;
+      const generation = modeGeneration();
+      if (!undo || typeof undo.on !== "function") {
+        unbindUndo();
+        return false;
+      }
+      if (undoHandles && undoHandles.impl === undo && undoHandles.generation === generation) return true;
+      unbindUndo();
       const offUndo = undo.on("undo", refreshConnected);
       if (typeof offUndo !== "function") return false;
       const offRedo = undo.on("redo", refreshConnected);
@@ -1087,26 +1116,25 @@ ${src}` : `"use strict"; return (${src});`;
         offUndo();
         return false;
       }
-      undoBound = true;
-      stopWaiting();
+      undoHandles = { impl: undo, generation, offUndo, offRedo };
       return true;
     };
-    if (!bindUndo()) {
-      const offMutationReady = onPlatformEvent(document, MUTATION_READY, bindUndo);
-      const offPlatformReady = onPlatformEvent(document, PLATFORM_READY, bindUndo);
-      stopWaiting = () => {
-        offMutationReady();
-        offPlatformReady();
-      };
-      const ready = capability("ready");
-      if (ready && typeof ready.then === "function") ready.then(bindUndo, () => {
-      });
-    }
+    bindUndo();
+    const offMutationReady = onPlatformEvent(document, MUTATION_READY, bindUndo);
+    const offPlatformReady = onPlatformEvent(document, PLATFORM_READY, bindUndo);
+    const offModeChanged = onPlatformEvent(document, MODE_CHANGED, bindUndo);
+    const ready = capability("ready");
+    if (ready && typeof ready.then === "function") ready.then(() => bindUndo(), () => {
+    });
     return () => {
+      disposed = true;
       if (typeof offDerived === "function") offDerived();
       if (offApplied) offApplied();
       offRoute();
-      stopWaiting();
+      offMutationReady();
+      offPlatformReady();
+      offModeChanged();
+      unbindUndo();
     };
   }
 
@@ -1724,7 +1752,7 @@ ${src}` : `"use strict"; return (${src});`;
 
   // src/lint.js
   var NATIVE_BOOLEAN_SET3 = new Set(NATIVE_BOOLEANS);
-  var COLON_PREFIXES = /* @__PURE__ */ new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode"]);
+  var COLON_PREFIXES = /* @__PURE__ */ new Set(["calc", "text", "attr", "class", "css", "set", "move", "sort", "option", "option-not", "show-when", "hide-when", "editmode", "viewmode"]);
   var WHEN_PREFIXES = /* @__PURE__ */ new Set(["show-when", "hide-when", "option", "option-not"]);
   var EXPR_SHAPED = /\b(?:state|item|root)\.|===|!==|&&|\|\||[()]|^\s*!/;
   var KNOWN_BARE = /* @__PURE__ */ new Set([
@@ -2348,6 +2376,7 @@ ${src}` : `"use strict"; return (${src});`;
     function writeField(ctxEl, appRec, field, value) {
       const control = ownedBind(ctxEl, field);
       if (control) {
+        if (!mayWriteRecord(control)) return;
         carrierFor(control).write(value);
         return;
       }
@@ -2364,6 +2393,7 @@ ${src}` : `"use strict"; return (${src});`;
       }
       const decl = declarerOf(ctxEl, appRec.root, field);
       if (decl) {
+        if (!mayWriteRecord(decl.el, { transient: decl.decl.transient })) return;
         setStateAttr(decl.el, field, value, decl.decl, appRec);
         return;
       }
@@ -2383,6 +2413,7 @@ ${src}` : `"use strict"; return (${src});`;
         return;
       }
       const root = appRec.root;
+      if (!mayWriteRecord(root)) return;
       const type = inferType(value);
       const decls = root.getAttribute("state") || "";
       const token = type === "string" ? field : `${field}:${type}`;
@@ -2423,6 +2454,7 @@ ${src}` : `"use strict"; return (${src});`;
         appRec.diag.error("E17", ctxEl, { problem: `cannot resolve a list named "${name}" from here` });
         return null;
       }
+      if (!mayWriteRecord(listEl)) return null;
       const tmpl = templateOf(listEl);
       if (!tmpl) {
         appRec.diag.error("E17", listEl, { problem: `items="${name}" has no [item template] to clone` });
@@ -2436,6 +2468,15 @@ ${src}` : `"use strict"; return (${src});`;
       return makeProxy(clone, appRec, true);
     }
     function doReset(ctxEl, appRec) {
+      const decls = parseStateDecl(ctxEl.getAttribute("state") || "");
+      let admitted = true;
+      walkOwned(ctxEl, (el) => {
+        if (el.hasAttribute("bind") && !mayWriteRecord(el)) admitted = false;
+      });
+      for (const d of decls) {
+        if (!mayWriteRecord(ctxEl, { transient: d.transient })) admitted = false;
+      }
+      if (!admitted) return;
       walkOwned(ctxEl, (el) => {
         if (el.hasAttribute("bind")) {
           const c = carrierFor(el);
@@ -2447,7 +2488,7 @@ ${src}` : `"use strict"; return (${src});`;
           }
         }
       });
-      for (const d of parseStateDecl(ctxEl.getAttribute("state") || "")) {
+      for (const d of decls) {
         const value = declaredDefault(ctxEl, d);
         if (d.transient) writeTransient(ctxEl, d, value);
         else writeDeclared(ctxEl, d, value);
@@ -2456,6 +2497,7 @@ ${src}` : `"use strict"; return (${src});`;
     }
     function doRemove(ctxEl, appRec) {
       if (!ctxEl.isConnected) throw new Error("stale row handle: $remove() on a removed row");
+      if (!mayWriteRecord(ctxEl)) return;
       ctxEl.remove();
       runtime2.schedule(appRec, "trigger-remove");
     }
@@ -2468,6 +2510,7 @@ ${src}` : `"use strict"; return (${src});`;
         appRec.diag.error("E17", ctxEl, { problem: `$move() cannot resolve target "${target}"` });
         return;
       }
+      if (!mayWriteRecord(ctxEl) || !mayWriteRecord(listEl)) return;
       runtime2.moveInto(listEl, ctxEl);
       runtime2.schedule(appRec, "trigger-move");
     }
@@ -2581,9 +2624,14 @@ ${src}` : `"use strict"; return (${src});`;
         } catch {
         }
       }
+      const session = modeSession();
+      const proceedIfAdmitted = () => {
+        if (modeSession() !== session) return;
+        proceed();
+      };
       const consent = platformConsent();
       if (!consent) {
-        if (window.confirm(msg)) proceed();
+        if (window.confirm(msg)) proceedIfAdmitted();
         return;
       }
       if (el._sapGatePending) return;
@@ -2593,7 +2641,7 @@ ${src}` : `"use strict"; return (${src});`;
       };
       consent(msg, () => {
         done();
-        proceed();
+        proceedIfAdmitted();
       }).catch(done);
     }
     function runSet(el, appRec) {
@@ -2625,6 +2673,7 @@ ${src}` : `"use strict"; return (${src});`;
     function moveStep(el, dir) {
       const row = sourceRowOf(el);
       if (!row) return;
+      if (!mayWriteRecord(row) || !mayWriteRecord(row.parentElement)) return;
       const siblings = rowsOf(row.parentElement);
       const i = siblings.indexOf(row);
       if (dir === "up" && i > 0) runtime2.placeBefore(row, siblings[i - 1]);
@@ -2660,6 +2709,7 @@ ${src}` : `"use strict"; return (${src});`;
         appRec.diag.error("E17", el, { attr: "sort:" + field, problem: `no items list resolvable for sort:${field}` });
         return;
       }
+      if (!mayWriteRecord(listEl)) return;
       const rows = rowsOf(listEl);
       const valOf = (r) => r._sapScope ? r._sapScope[field] : void 0;
       const asc = [...rows].sort((a, b) => cmp(valOf(a), valOf(b)));
@@ -2754,6 +2804,7 @@ ${src}` : `"use strict"; return (${src});`;
       if (!m || !appRec) return;
       const own = parseStateDecl(dlg.getAttribute("state") || "").find((d) => d.name === m[1]);
       if (own) {
+        if (!mayWriteRecord(dlg, { transient: own.transient })) return;
         if (own.transient) writeTransient(dlg, own, "");
         else writeDeclared(dlg, own, "");
         runtime2.schedule(appRec, "close");
@@ -2776,6 +2827,7 @@ ${src}` : `"use strict"; return (${src});`;
         const field = t.getAttribute("bind");
         const src = ownedBind(row, field);
         if (src && src !== t) {
+          if (!mayWriteRecord(src)) return true;
           carrierFor(src).write(carrierFor(t).read());
           return true;
         }
@@ -2802,7 +2854,7 @@ ${src}` : `"use strict"; return (${src});`;
       if (!t || t.nodeType !== 1) return;
       const appRec = runtime2.appFor(t);
       if (!appRec) return;
-      if (t.hasAttribute("persist") && !regionSkipsSave(t)) serializeControlToAttributes(t);
+      if (t.hasAttribute("persist") && !regionSkipsSave(t) && mayWriteRecord(t)) serializeControlToAttributes(t);
       for (const route of routers) if (route(t, appRec)) return;
       runtime2.schedule(appRec, e.type + " " + (t.id || t.tagName.toLowerCase()));
     }
@@ -2810,6 +2862,7 @@ ${src}` : `"use strict"; return (${src});`;
       const form = e.target;
       const appRec = runtime2.appFor(form);
       if (!appRec) return;
+      if (![...form.querySelectorAll("[bind]")].every((c) => mayWriteRecord(c))) return;
       setTimeout(() => {
         form.querySelectorAll("[bind]").forEach((c) => {
           c.dispatchEvent(new Event("input", { bubbles: true }));
@@ -2839,6 +2892,7 @@ ${src}` : `"use strict"; return (${src});`;
       if (type !== "text" && type !== "tel" && type !== "search") return;
       const appRec = runtime2.appFor(t);
       if (!appRec) return;
+      if (!mayWriteRecord(t)) return;
       e.preventDefault();
       const step = num(t.getAttribute("step")) || 1;
       const dir = e.key === "ArrowUp" ? 1 : -1;
