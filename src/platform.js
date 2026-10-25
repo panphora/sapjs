@@ -77,7 +77,7 @@ export function modeSession() {
 
 export function mayWriteRecord(node, { transient = false } = {}) {
   if (transient) return true;
-  const lifecycle = typeof window === "undefined" ? null : window.clay?.modeLifecycle;
+  const lifecycle = modeSession();
   if (typeof lifecycle?.canWrite !== "function") return true;
   const policy = capability("region")?.resolveRegionPolicy?.(node);
   if (policy?.persist === "none") return true;
@@ -140,34 +140,25 @@ export function installBridges(runtime) {
   // such as undo are guaranteed to have been published. A committed mode change
   // starts a new session: the optional plugin may be republished under a fresh
   // implementation, and a stale subscription would keep refreshing a retired scope.
-  // So the pair is kept as handles and refreshed once whenever the implementation or
-  // the mode generation changes.
+  // So the pair is kept as [impl, generation, offUndo, offRedo] and refreshed once
+  // whenever the implementation or the mode generation changes. Each moment keeps its
+  // own listener set (the tick-claim is per set), but one bind serves all of them.
   let undoHandles = null;
-  let disposed = false;
+  let retired = false;
 
-  const modeGeneration = () => {
-    const state = modeSession()?.state;
-    return state ? state.generation : null;
-  };
-
-  const unbindUndo = () => {
-    const handles = undoHandles;
-    if (!handles) return;
+  const dropUndo = () => {
+    const old = undoHandles;
     undoHandles = null;
-    handles.offUndo();
-    handles.offRedo();
+    if (old) { old[2](); old[3](); }
   };
 
   const bindUndo = () => {
-    if (disposed) return false;
+    if (retired) return false;
     const undo = capability("undo");
-    const generation = modeGeneration();
-    if (!undo || typeof undo.on !== "function") {
-      unbindUndo();
-      return false;
-    }
-    if (undoHandles && undoHandles.impl === undo && undoHandles.generation === generation) return true;
-    unbindUndo();
+    const generation = modeSession()?.state?.generation;
+    if (undoHandles && undoHandles[0] === undo && undoHandles[1] === generation) return true;
+    dropUndo();
+    if (!undo || typeof undo.on !== "function") return false;
     // hyper-undo's delegator (src/index.js:142) returns undefined and silently drops
     // the subscription when on() is called before start(). A real subscription returns
     // its own unsubscribe function, so that return value is the only reliable proof the
@@ -176,25 +167,22 @@ export function installBridges(runtime) {
     if (typeof offUndo !== "function") return false;
     const offRedo = undo.on("redo", refreshConnected);
     if (typeof offRedo !== "function") { offUndo(); return false; }
-    undoHandles = { impl: undo, generation, offUndo, offRedo };
+    undoHandles = [undo, generation, offUndo, offRedo];
     return true;
   };
 
   bindUndo();
-  const offMutationReady = onPlatformEvent(document, MUTATION_READY, bindUndo);
-  const offPlatformReady = onPlatformEvent(document, PLATFORM_READY, bindUndo);
-  const offModeChanged = onPlatformEvent(document, MODE_CHANGED, bindUndo);
+  const offWake = [MUTATION_READY, PLATFORM_READY, MODE_CHANGED]
+    .map((names) => onPlatformEvent(document, names, bindUndo));
   const ready = capability("ready");
-  if (ready && typeof ready.then === "function") ready.then(() => bindUndo(), () => {});
+  if (ready && typeof ready.then === "function") ready.then(bindUndo, () => {});
 
   return () => {
-    disposed = true;
+    retired = true;
     if (typeof offDerived === "function") offDerived();
     if (offApplied) offApplied();
     offRoute();
-    offMutationReady();
-    offPlatformReady();
-    offModeChanged();
-    unbindUndo();
+    for (const off of offWake) off();
+    dropUndo();
   };
 }

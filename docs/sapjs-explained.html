@@ -1063,7 +1063,7 @@ ${src}` : `"use strict"; return (${src});`;
   }
   function mayWriteRecord(node, { transient = false } = {}) {
     if (transient) return true;
-    const lifecycle = typeof window === "undefined" ? null : window.clay?.modeLifecycle;
+    const lifecycle = modeSession();
     if (typeof lifecycle?.canWrite !== "function") return true;
     const policy = capability("region")?.resolveRegionPolicy?.(node);
     if (policy?.persist === "none") return true;
@@ -1098,28 +1098,22 @@ ${src}` : `"use strict"; return (${src});`;
     const offApplied = typeof offDerived === "function" ? null : onPlatformEvent(document, LIVESYNC_APPLIED, refreshConnected);
     const offRoute = onPlatformEvent(document, ROUTE_CHANGED, refreshConnected);
     let undoHandles = null;
-    let disposed = false;
-    const modeGeneration = () => {
-      const state = modeSession()?.state;
-      return state ? state.generation : null;
-    };
-    const unbindUndo = () => {
-      const handles = undoHandles;
-      if (!handles) return;
+    let retired = false;
+    const dropUndo = () => {
+      const old = undoHandles;
       undoHandles = null;
-      handles.offUndo();
-      handles.offRedo();
+      if (old) {
+        old[2]();
+        old[3]();
+      }
     };
     const bindUndo = () => {
-      if (disposed) return false;
+      if (retired) return false;
       const undo = capability("undo");
-      const generation = modeGeneration();
-      if (!undo || typeof undo.on !== "function") {
-        unbindUndo();
-        return false;
-      }
-      if (undoHandles && undoHandles.impl === undo && undoHandles.generation === generation) return true;
-      unbindUndo();
+      const generation = modeSession()?.state?.generation;
+      if (undoHandles && undoHandles[0] === undo && undoHandles[1] === generation) return true;
+      dropUndo();
+      if (!undo || typeof undo.on !== "function") return false;
       const offUndo = undo.on("undo", refreshConnected);
       if (typeof offUndo !== "function") return false;
       const offRedo = undo.on("redo", refreshConnected);
@@ -1127,25 +1121,21 @@ ${src}` : `"use strict"; return (${src});`;
         offUndo();
         return false;
       }
-      undoHandles = { impl: undo, generation, offUndo, offRedo };
+      undoHandles = [undo, generation, offUndo, offRedo];
       return true;
     };
     bindUndo();
-    const offMutationReady = onPlatformEvent(document, MUTATION_READY, bindUndo);
-    const offPlatformReady = onPlatformEvent(document, PLATFORM_READY, bindUndo);
-    const offModeChanged = onPlatformEvent(document, MODE_CHANGED, bindUndo);
+    const offWake = [MUTATION_READY, PLATFORM_READY, MODE_CHANGED].map((names) => onPlatformEvent(document, names, bindUndo));
     const ready = capability("ready");
-    if (ready && typeof ready.then === "function") ready.then(() => bindUndo(), () => {
+    if (ready && typeof ready.then === "function") ready.then(bindUndo, () => {
     });
     return () => {
-      disposed = true;
+      retired = true;
       if (typeof offDerived === "function") offDerived();
       if (offApplied) offApplied();
       offRoute();
-      offMutationReady();
-      offPlatformReady();
-      offModeChanged();
-      unbindUndo();
+      for (const off of offWake) off();
+      dropUndo();
     };
   }
 
