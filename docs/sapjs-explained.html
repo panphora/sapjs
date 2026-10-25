@@ -891,6 +891,67 @@ ${src}` : `"use strict"; return (${src});`;
     return !plan.inert && !plan.item && plan.boundary === null && plan.bind === null && !plan.transient && !plan.decls && !plan.calcs && !plan.paints && !plan.effects && !plan.invalids;
   }
 
+  // src/read-cache.js
+  var cells = /* @__PURE__ */ new WeakMap();
+  var observer = null;
+  var enabled = false;
+  function dropReads() {
+    cells = /* @__PURE__ */ new WeakMap();
+  }
+  function invalidate(records) {
+    for (const record of records) {
+      if (record.type === "attributes") {
+        cells.delete(record.target);
+        continue;
+      }
+      const parent = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+      for (let el = parent; el; el = el.parentElement) cells.delete(el);
+      for (const node of record.addedNodes || []) {
+        if (node.nodeType !== 1) continue;
+        cells.delete(node);
+        for (const el of node.querySelectorAll("*")) cells.delete(el);
+      }
+    }
+  }
+  function beginReads(root) {
+    const previous = enabled;
+    if (!observer && typeof MutationObserver === "function") {
+      observer = new MutationObserver(invalidate);
+      observer.observe(document, {
+        attributes: true,
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
+    }
+    if (observer) invalidate(observer.takeRecords());
+    enabled = !!observer && root.getRootNode() === document;
+    return previous;
+  }
+  function endReads(previous) {
+    enabled = previous;
+  }
+  function cell(el) {
+    let value = cells.get(el);
+    if (!value) cells.set(el, value = { attrs: /* @__PURE__ */ new Map(), hasText: false, text: "" });
+    return value;
+  }
+  function readAttr(el, name) {
+    if (!enabled) return el.getAttribute(name);
+    const hit = cell(el);
+    if (!hit.attrs.has(name)) hit.attrs.set(name, el.getAttribute(name));
+    return hit.attrs.get(name);
+  }
+  function readText(el) {
+    if (!enabled) return el.textContent;
+    const hit = cell(el);
+    if (!hit.hasText) {
+      hit.text = el.textContent;
+      hit.hasText = true;
+    }
+    return hit.text;
+  }
+
   // src/control-serialize.js
   function inputType(el) {
     return (el.getAttribute("type") || "text").toLowerCase();
@@ -1207,14 +1268,14 @@ ${src}` : `"use strict"; return (${src});`;
     };
   }
   function nativeSource() {
-    let observer = null;
+    let observer2 = null;
     return {
       kind: "native",
       subscribe(onChanges) {
-        observer = new MutationObserver((records) => onChanges(changesFromRecords(records)));
+        observer2 = new MutationObserver((records) => onChanges(changesFromRecords(records)));
         const target = typeof document !== "undefined" && document.body || typeof document !== "undefined" && document.documentElement;
         if (target) {
-          observer.observe(target, { childList: true, subtree: true, attributes: true, characterData: true });
+          observer2.observe(target, { childList: true, subtree: true, attributes: true, characterData: true });
         }
       },
       suppress(fn) {
@@ -1223,14 +1284,14 @@ ${src}` : `"use strict"; return (${src});`;
         try {
           return fn();
         } finally {
-          if (observer) observer.takeRecords();
+          if (observer2) observer2.takeRecords();
           if (u && u.resume) u.resume();
         }
       },
       teardown() {
-        if (observer) {
-          observer.disconnect();
-          observer = null;
+        if (observer2) {
+          observer2.disconnect();
+          observer2 = null;
         }
       }
     };
@@ -1353,7 +1414,10 @@ ${src}` : `"use strict"; return (${src});`;
       setBeacon(app.root, "loop");
       return;
     }
-    if (opts.full) dropPlans();
+    if (opts.full) {
+      dropPlans();
+      dropReads();
+    }
     const plans = beginPlans(app.root);
     try {
       withDomMutationPaused(() => runPassBody(app, opts));
@@ -1373,18 +1437,19 @@ ${src}` : `"use strict"; return (${src});`;
     const whenFields = /* @__PURE__ */ new Set();
     app.diag.errors = [];
     const rootCtx = { root: rootObj, state: rootObj, item: null, ownerEl: root, projection: false };
-    function resolveDefault(el, d) {
+    function resolveDefault(el, d, cacheRecord = false) {
       const attr = d.attr || d.name;
-      let raw = el.getAttribute(attr);
+      let raw = cacheRecord ? readAttr(el, attr) : el.getAttribute(attr);
       if (raw == null) {
         raw = defaultRaw(d);
         pending.push({ el, name: d.name, attr, value: serializeTyped(parseTyped(raw, d.type), d.type) });
       }
       return parseTyped(raw, d.type);
     }
-    function readState(el, plan, obj) {
+    function readState(el, plan, obj, ctx) {
       const decls = plan.decls;
       if (!decls) return;
+      const cacheRecord = !!ctx.item && !ctx.projection && !ctx.view;
       for (const d of decls) {
         if (d.transient) {
           obj[d.name] = readTransient(el, d);
@@ -1394,7 +1459,7 @@ ${src}` : `"use strict"; return (${src});`;
           obj[d.name] = el.hasAttribute(d.attr);
           continue;
         }
-        obj[d.name] = resolveDefault(el, d);
+        obj[d.name] = resolveDefault(el, d, cacheRecord);
       }
     }
     function readBindInto(el, plan, ctx) {
@@ -1404,6 +1469,8 @@ ${src}` : `"use strict"; return (${src});`;
       if (kind === "radio") {
         if (!(field in owner)) owner[field] = "";
         if (el.checked) owner[field] = el.value;
+      } else if (kind === "leaf" && ctx.item && !ctx.projection && !ctx.view) {
+        owner[field] = readText(el);
       } else {
         owner[field] = readControl(el, kind);
       }
@@ -1428,7 +1495,7 @@ ${src}` : `"use strict"; return (${src});`;
     }
     function enterScope(el, obj, ctx) {
       const plan = planOf(el);
-      readState(el, plan, obj);
+      readState(el, plan, obj, ctx);
       el._sapScope = obj;
       if (!ctx.projection && plan.bind != null) readBindInto(el, plan, ctx);
       collectEl(el, plan, ctx);
@@ -1488,7 +1555,12 @@ ${src}` : `"use strict"; return (${src});`;
       walkScope
     };
     for (const f of features) if (f.begin) f.begin(pass);
-    enterScope(root, rootObj, rootCtx);
+    const reads = opts.cacheReads === false ? null : beginReads(root);
+    try {
+      enterScope(root, rootObj, rootCtx);
+    } finally {
+      if (opts.cacheReads !== false) endReads(reads);
+    }
     if (app.halted) return;
     for (const f of features) if (f.afterIntake) f.afterIntake(pass);
     if (pending.length && whenFields.size) {
