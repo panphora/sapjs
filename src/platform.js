@@ -30,6 +30,7 @@ export const MUTATION_READY = ["clay:mutation-ready", "hyperclay:mutation-ready"
 export const LIVESYNC_APPLIED = ["clay:sync-applied", "hyperclay:livesync-applied"];
 export const PLATFORM_READY = ["clay:ready", "hyperclay:ready"];
 export const ROUTE_CHANGED = ["clay:route"];
+export const MODE_CHANGED = ["clay:modechange"];
 
 // The first name to arrive claims the tick, and only a DIFFERENT name is suppressed
 // while it holds the claim. Guarding on "have I run at all this tick" would collapse
@@ -136,14 +137,37 @@ export function installBridges(runtime) {
   // Undo/redo replay attributes with no events; re-derive after. Mutation readiness
   // is only an early compatibility retry: it truthfully announces the Mutation hub
   // and nothing else. Full platform readiness is the point at which optional plugins
-  // such as undo are guaranteed to have been published.
-  let undoBound = false;
-  let stopWaiting = () => {};
+  // such as undo are guaranteed to have been published. A committed mode change
+  // starts a new session: the optional plugin may be republished under a fresh
+  // implementation, and a stale subscription would keep refreshing a retired scope.
+  // So the pair is kept as handles and refreshed once whenever the implementation or
+  // the mode generation changes.
+  let undoHandles = null;
+  let disposed = false;
+
+  const modeGeneration = () => {
+    const state = modeSession()?.state;
+    return state ? state.generation : null;
+  };
+
+  const unbindUndo = () => {
+    const handles = undoHandles;
+    if (!handles) return;
+    undoHandles = null;
+    handles.offUndo();
+    handles.offRedo();
+  };
 
   const bindUndo = () => {
-    if (undoBound) return true;
+    if (disposed) return false;
     const undo = capability("undo");
-    if (!undo || typeof undo.on !== "function") return false;
+    const generation = modeGeneration();
+    if (!undo || typeof undo.on !== "function") {
+      unbindUndo();
+      return false;
+    }
+    if (undoHandles && undoHandles.impl === undo && undoHandles.generation === generation) return true;
+    unbindUndo();
     // hyper-undo's delegator (src/index.js:142) returns undefined and silently drops
     // the subscription when on() is called before start(). A real subscription returns
     // its own unsubscribe function, so that return value is the only reliable proof the
@@ -152,24 +176,25 @@ export function installBridges(runtime) {
     if (typeof offUndo !== "function") return false;
     const offRedo = undo.on("redo", refreshConnected);
     if (typeof offRedo !== "function") { offUndo(); return false; }
-    undoBound = true;
-    stopWaiting();
+    undoHandles = { impl: undo, generation, offUndo, offRedo };
     return true;
   };
 
-  if (!bindUndo()) {
-    const offMutationReady = onPlatformEvent(document, MUTATION_READY, bindUndo);
-    const offPlatformReady = onPlatformEvent(document, PLATFORM_READY, bindUndo);
-    stopWaiting = () => { offMutationReady(); offPlatformReady(); };
-
-    const ready = capability("ready");
-    if (ready && typeof ready.then === "function") ready.then(bindUndo, () => {});
-  }
+  bindUndo();
+  const offMutationReady = onPlatformEvent(document, MUTATION_READY, bindUndo);
+  const offPlatformReady = onPlatformEvent(document, PLATFORM_READY, bindUndo);
+  const offModeChanged = onPlatformEvent(document, MODE_CHANGED, bindUndo);
+  const ready = capability("ready");
+  if (ready && typeof ready.then === "function") ready.then(() => bindUndo(), () => {});
 
   return () => {
+    disposed = true;
     if (typeof offDerived === "function") offDerived();
     if (offApplied) offApplied();
     offRoute();
-    stopWaiting();
+    offMutationReady();
+    offPlatformReady();
+    offModeChanged();
+    unbindUndo();
   };
 }

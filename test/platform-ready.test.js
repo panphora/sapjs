@@ -5,10 +5,10 @@
 // hyperclay:ready. The handshake retries at every one of those signals and binds
 // exactly once.
 //
-// installBridges is process-scoped and its listeners live on `document`, so a bridge
-// that never binds keeps listening for the rest of the file. Every test here ends
-// with its bridge bound, which is also what removes its listeners, so no test can
-// pick up an earlier test's handshake.
+// installBridges's listeners live on `document` for the life of the session, so a
+// bridge that never binds keeps listening for the rest of the file. Every test here
+// disposes its bridge in afterEach, so no test can pick up an earlier test's
+// handshake and bind a second pair onto its own undo.
 
 import { installBridges } from "../src/platform.js";
 
@@ -40,7 +40,16 @@ const fakeUndo = ({ started = true } = {}) => {
   };
 };
 
+const bridges = [];
+
+const install = () => {
+  const off = installBridges(fakeRuntime());
+  if (typeof off === "function") bridges.push(off);
+  return off;
+};
+
 afterEach(() => {
+  for (const off of bridges.splice(0)) off();
   delete window.clay;
   delete window.hyperclay;
 });
@@ -48,7 +57,7 @@ afterEach(() => {
 describe("undo binds at full platform readiness", () => {
   test("clay:ready binds undo that mutation-ready was too early to see", () => {
     window.clay = { Mutation: {} };
-    installBridges(fakeRuntime());
+    install();
 
     // The hub is up; undo is not published yet, so there is nothing to bind to.
     document.dispatchEvent(new Event("clay:mutation-ready"));
@@ -67,7 +76,7 @@ describe("undo binds at full platform readiness", () => {
 
   test("hyperclay:ready is the same moment under the other client's name", () => {
     window.hyperclay = { Mutation: {} };
-    installBridges(fakeRuntime());
+    install();
 
     document.dispatchEvent(new Event("hyperclay:mutation-ready"));
 
@@ -80,7 +89,7 @@ describe("undo binds at full platform readiness", () => {
 
   test("both spellings in one tick bind one pair, not one pair per name", () => {
     window.clay = { Mutation: {} };
-    installBridges(fakeRuntime());
+    install();
 
     const undo = fakeUndo();
     window.clay.undo = undo;
@@ -93,7 +102,7 @@ describe("undo binds at full platform readiness", () => {
   test("a resolving clay.ready promise binds undo without any event", async () => {
     let settle;
     window.clay = { Mutation: {}, ready: new Promise((resolve) => { settle = resolve; }) };
-    installBridges(fakeRuntime());
+    install();
 
     const undo = fakeUndo();
     window.clay.undo = undo;
@@ -108,7 +117,7 @@ describe("undo binds at full platform readiness", () => {
   test("a resolving hyperclay.ready promise binds undo, and the event after it does not double it", async () => {
     let settle;
     window.hyperclay = { Mutation: {}, ready: new Promise((resolve) => { settle = resolve; }) };
-    installBridges(fakeRuntime());
+    install();
 
     const undo = fakeUndo();
     window.hyperclay.undo = undo;
@@ -127,7 +136,7 @@ describe("undo binds at full platform readiness", () => {
     const ready = new Promise((resolve, reject) => { fail = reject; });
     ready.catch(() => {});
     window.hyperclay = { Mutation: {}, ready };
-    installBridges(fakeRuntime());
+    install();
 
     fail(new Error("a module failed to load"));
     await Promise.resolve();
@@ -144,7 +153,7 @@ describe("undo binds at full platform readiness", () => {
   // floor. Marking itself bound there would leave undo/redo silently unwired forever.
   test("an on() that returns undefined leaves the handshake unbound, and a later signal rebinds", () => {
     window.hyperclay = { Mutation: {} };
-    installBridges(fakeRuntime());
+    install();
 
     const undo = fakeUndo({ started: false });
     window.hyperclay.undo = undo;
@@ -160,11 +169,11 @@ describe("undo binds at full platform readiness", () => {
     expect(undo.subscriptions).toEqual(["undo", "redo"]);
   });
 
-  test("undo already published at install time binds immediately, with no listeners left armed", () => {
+  test("undo already published at install time binds immediately, and later signals do not double it", () => {
     const undo = fakeUndo();
     window.clay = { undo };
 
-    installBridges(fakeRuntime());
+    install();
     expect(undo.subscriptions).toEqual(["undo", "redo"]);
 
     document.dispatchEvent(new Event("clay:ready"));
