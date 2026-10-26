@@ -14,6 +14,24 @@ test("attr: owns its attribute inside an app, and nothing outside one", () => {
   expect(appOf($("#out"))).toBeNull();
 });
 
+test("a subtree removed from an app is still read as painted when its host is given", () => {
+  document.body.innerHTML = `<main sap><ul id="list"><li id="card" attr:data-state="1" data-state="x"><b id="deep" show hidden></b></li></ul></main><div id="plain"></div><template id="tpl"><i></i></template>`;
+  const card = $("#card");
+  const deep = $("#deep");
+  const list = $("#list");
+  card.remove();
+  expect(ownsAttr(card, "data-state")).toBe(false);
+  expect(ownsAttr(card, "data-state", list)).toBe(true);
+  expect(ownsAttr(deep, "hidden", list)).toBe(true);
+  expect(appOf(deep, list)).toBe(document.querySelector("main"));
+  // A host outside every app, or inside an inert one, owns nothing.
+  expect(ownsAttr(card, "data-state", $("#plain"))).toBe(false);
+  expect(ownsAttr(card, "data-state", $("#tpl").content.firstChild)).toBe(false);
+  // An attached element is never re-homed by a host.
+  $("#plain").setAttribute("attr:data-state", "1");
+  expect(ownsAttr($("#plain"), "data-state", list)).toBe(false);
+});
+
 test("a record declaration wins over a paint of the same attribute", () => {
   document.body.innerHTML = `<main sap><p id="p" state="data-state" attr:data-state="1"></p></main>`;
   expect(ownsAttr($("#p"), "data-state")).toBe(false);
