@@ -750,6 +750,9 @@ ${src}` : `"use strict"; return (${src});`;
   function keepRow(el, entry) {
     if (enabled) rows.set(el, entry);
   }
+  function forgetRow(el) {
+    rows.delete(el);
+  }
   function beginReads(root) {
     const previous = enabled;
     if (!observer && typeof MutationObserver === "function") {
@@ -1397,7 +1400,7 @@ ${src}` : `"use strict"; return (${src});`;
         const rp = planOf(rowEl);
         if (!rp.item || rp.template || rp.cms) continue;
         const kept = keep ? keptRow(rowEl) : void 0;
-        arr.push(kept && kept.plan === rp && Object.isExtensible(kept.obj) ? reuseRow(kept, rowEl, i, ctx) : readRow(rowEl, rp, i, ctx, keep));
+        arr.push(kept && kept.plan === rp && Object.isExtensible(kept.obj) && reuseRow(kept, rowEl, i, ctx) || readRow(rowEl, rp, i, ctx, keep));
         i++;
       }
     }
@@ -1437,11 +1440,16 @@ ${src}` : `"use strict"; return (${src});`;
     }
     function reuseRow(rec, rowEl, i, ctx) {
       const obj = rec.obj;
-      if (obj.$index !== i) Object.defineProperty(obj, "$index", { value: i, enumerable: false, configurable: true });
-      const f = rec.fields;
-      for (let k = 0; k < f.length; k += 2) obj[f[k]] = f[k + 1];
-      const live = rec.presence;
-      for (let k = 0; k < live.length; k += 2) obj[live[k]] = rowEl.hasAttribute(live[k + 1]);
+      try {
+        if (obj.$index !== i) Object.defineProperty(obj, "$index", { value: i, enumerable: false, configurable: true });
+        const live = rec.presence;
+        for (let k = 0; k < live.length; k += 2) obj[live[k]] = rowEl.hasAttribute(live[k + 1]);
+        const f = rec.fields;
+        for (let k = 0; k < f.length; k += 2) obj[f[k]] = f[k + 1];
+      } catch {
+        forgetRow(rowEl);
+        return null;
+      }
       rowEl._sapScope = obj;
       const p = rec.pending;
       for (let k = 0; k < p.length; k++) pending.push(p[k]);

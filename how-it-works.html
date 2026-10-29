@@ -55,10 +55,10 @@ code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .86em;
 <p class="lede">When anything on the page changes, sapjs runs one pass over the app.</p>
 
 <div class="pass">
-  <div><i>1</i><span class="t">Intake</span><span>Read every field (<code>state=</code>, <code>bind</code>, <code>items=</code>) into fresh objects. A <code>state=</code> attribute declares a field on an element.</span></div>
+  <div><i>1</i><span class="t">Intake</span><span>Read every field (<code>state=</code>, <code>bind</code>, <code>items=</code>) into objects. A <code>state=</code> attribute declares a field on an element.</span></div>
   <div><i>2</i><span class="t">Compute</span><span>Run the <code>calc:</code> fields in dependency order.</span></div>
   <div><i>3</i><span class="t">Paint</span><span>Update <code>text</code>, <code>show</code>, <code>attr:</code> and <code>class:</code>. Write only what changed.</span></div>
-  <div><i>4</i><span class="t">Discard</span><span>Throw the objects away; the next pass rebuilds them, reading every saved field from the page.</span></div>
+  <div><i>4</i><span class="t">Discard</span><span>Throw the objects away (an unchanged list row keeps its object); the next pass reads every saved field from the page again.</span></div>
 </div>
 
 <p>Each pass rebuilds the app's data from the page, so no copy of the saved data in JavaScript can drift from it.</p>

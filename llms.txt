@@ -81,10 +81,12 @@ One change causes one pass, and a pass is the entire engine:
    each scope, so a calc that reads another calc evaluates after it.
 3. Paint. Evaluate `text`, `show`, `attr:`, `class:`, `css:`, then `effect=`, then
    `invalid=`. A paint writes only when the new value differs from what is already there.
-4. Discard. The objects are thrown away. Nothing is retained between passes except the
-   compiled-expression cache.
+4. Discard. The objects are replaced, except an unchanged plain `items` row: its declared
+   fields are written onto its kept object again, and properties a format added to it stay
+   until the row changes. Besides those rows only the compiled-expression, plan and read
+   caches are kept, and each is dropped when the page reports its element changed.
 
-Because nothing is retained, a devtools edit, a console paste, a live-sync morph and a
+Because every field is read from the page again, a devtools edit, a console paste, a live-sync morph and a
 keystroke are all the same thing: input to the next pass.
 
 Passes are batched. A burst of writes coalesces into one pass on the next microtask, so

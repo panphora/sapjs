@@ -5,6 +5,7 @@
 import { parseStateDecl, isPresenceDecl } from "../dom.js";
 import { planOf, drainPlans } from "../plan.js";
 import { compile, run } from "../compile.js";
+import { forgetRow } from "../read-cache.js";
 
 // A path segment applied to an array collects that field from every row, so
 // "lists.cards" is every card of every list.
@@ -43,6 +44,8 @@ function resolveDetail(pass, el, parentObj, ctx) {
     ? arr.find((r) => r && typeof r === "object" && r.$el && String(r.$key) === String(keyVal))
     : null;
   el._sapDetailRow = row ? row.$el : null;
+  // The panel walks with the row as its scope and may write onto it, so the shown row is read fresh next pass.
+  if (row) forgetRow(row.$el);
   if (el.tagName === "DIALOG") {
     // A dialog found closed while the key it was opened for still matches was
     // dismissed by the user; it stays closed until the key changes.

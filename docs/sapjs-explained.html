@@ -932,6 +932,9 @@ ${src}` : `"use strict"; return (${src});`;
   function keepRow(el, entry) {
     if (enabled) rows.set(el, entry);
   }
+  function forgetRow(el) {
+    rows.delete(el);
+  }
   function beginReads(root) {
     const previous = enabled;
     if (!observer && typeof MutationObserver === "function") {
@@ -1587,7 +1590,7 @@ ${src}` : `"use strict"; return (${src});`;
         const rp = planOf(rowEl);
         if (!rp.item || rp.template || rp.cms) continue;
         const kept = keep ? keptRow(rowEl) : void 0;
-        arr.push(kept && kept.plan === rp && Object.isExtensible(kept.obj) ? reuseRow(kept, rowEl, i, ctx) : readRow(rowEl, rp, i, ctx, keep));
+        arr.push(kept && kept.plan === rp && Object.isExtensible(kept.obj) && reuseRow(kept, rowEl, i, ctx) || readRow(rowEl, rp, i, ctx, keep));
         i++;
       }
     }
@@ -1627,11 +1630,16 @@ ${src}` : `"use strict"; return (${src});`;
     }
     function reuseRow(rec, rowEl, i, ctx) {
       const obj = rec.obj;
-      if (obj.$index !== i) Object.defineProperty(obj, "$index", { value: i, enumerable: false, configurable: true });
-      const f = rec.fields;
-      for (let k = 0; k < f.length; k += 2) obj[f[k]] = f[k + 1];
-      const live = rec.presence;
-      for (let k = 0; k < live.length; k += 2) obj[live[k]] = rowEl.hasAttribute(live[k + 1]);
+      try {
+        if (obj.$index !== i) Object.defineProperty(obj, "$index", { value: i, enumerable: false, configurable: true });
+        const live = rec.presence;
+        for (let k = 0; k < live.length; k += 2) obj[live[k]] = rowEl.hasAttribute(live[k + 1]);
+        const f = rec.fields;
+        for (let k = 0; k < f.length; k += 2) obj[f[k]] = f[k + 1];
+      } catch {
+        forgetRow(rowEl);
+        return null;
+      }
       rowEl._sapScope = obj;
       const p = rec.pending;
       for (let k = 0; k < p.length; k++) pending.push(p[k]);
@@ -3140,6 +3148,7 @@ ${src}` : `"use strict"; return (${src});`;
     }
     const row = Array.isArray(arr) && keyVal != null ? arr.find((r) => r && typeof r === "object" && r.$el && String(r.$key) === String(keyVal)) : null;
     el._sapDetailRow = row ? row.$el : null;
+    if (row) forgetRow(row.$el);
     if (el.tagName === "DIALOG") {
       const k = row ? String(row.$key) : null;
       if (k !== el._sapDetailKey) {
@@ -3864,7 +3873,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); }
 
   <div class="tldr">
     <h3>TL;DR</h3>
-    <p><b>The DOM is the only state store.</b> On every change sap throws away its in-memory state and rebuilds it by reading the live DOM top to bottom, computes, paints what changed, then discards the objects. The file you save <em>is</em> the app.</p>
+    <p><b>The DOM is the only state store.</b> On every change sap throws away its in-memory state and rebuilds it by reading the live DOM top to bottom, computes, paints what changed, then discards the objects (an unchanged list row keeps its object, its fields read again). The file you save <em>is</em> the app.</p>
     <p><b>The five answers, in one line each:</b></p>
     <p>1. <b>Transient</b> values live only in live DOM (a runtime expando or the control's live <code>.value</code>) and the serializable attribute is actively stripped every pass, so they never save. 2. <b>No rich text</b>: a bind is textContent only by design (HTML-valued state would break "one write path / view-source is correct"); to embed a real editor, wrap its subtree in <code>sap-ignore</code>. 3. <b>No plugin system</b>: the vocabulary is frozen on purpose; the one extension point is custom <code>Sap.formats</code>. 4. <b>Every way to set state</b> converges on the same recompute pass; control-backed programmatic writes use synthetic <code>input</code>/<code>change</code>, while attribute-state writes schedule directly. 5. <b>No modal coupling</b>: the <code>detail</code> lens projects a row into any container, including a native <code>&lt;dialog&gt;</code>.</p>
   </div>
@@ -3884,7 +3893,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); }
       <div class="flow-step">
         <div class="n">1 · intake</div>
         <h5>read the DOM</h5>
-        <p>Walk every <code>state=</code>, <code>bind</code>, <code>items</code> into fresh objects. Nothing retained from last pass. <span class="mono">(pass.js:34-147)</span></p>
+        <p>Walk every <code>state=</code>, <code>bind</code>, <code>items</code> into objects. Every value is read from the page again. <span class="mono">(pass.js:34-147)</span></p>
       </div>
       <div class="flow-arrow">→</div>
       <div class="flow-step">
@@ -3902,7 +3911,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); }
       <div class="flow-step">
         <div class="n">4 · discard</div>
         <h5>drop the objects</h5>
-        <p>Per-pass objects are replaced wholesale next pass. The last set is parked on <code>el._sapScope</code> only so <code>Sap(el)</code> can read between passes. <span class="mono">(pass.js:105, 239)</span></p>
+        <p>Per-pass objects are replaced next pass, except an unchanged list row, whose kept object gets its fields read again. The last set is parked on <code>el._sapScope</code> only so <code>Sap(el)</code> can read between passes. <span class="mono">(pass.js:105, 239)</span></p>
       </div>
     </div>
     <div class="flow-loop">a devtools edit · a console paste · a live-sync morph · a keystroke → all are just the next pass's input (README.md:109)</div>

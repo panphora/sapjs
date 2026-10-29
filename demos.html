@@ -436,7 +436,7 @@
       <div class="flow-step">
         <div class="n">1 · intake</div>
         <h5>read the DOM</h5>
-        <p>Walk every <code>state=</code>, <code>bind</code>, and <code>items</code> into fresh objects. Nothing is retained from the last pass.</p>
+        <p>Walk every <code>state=</code>, <code>bind</code>, and <code>items</code> into objects. Every value is read from the page again.</p>
       </div>
       <div class="flow-arrow">→</div>
       <div class="flow-step">
@@ -454,7 +454,7 @@
       <div class="flow-step">
         <div class="n">4 · discard</div>
         <h5>drop the objects</h5>
-        <p>Per-pass objects are replaced wholesale on the next pass. Nothing is cached, so nothing can drift.</p>
+        <p>Per-pass objects are replaced on the next pass; an unchanged list row keeps its object but its fields are read again. Every cache is dropped when the page reports a change, so nothing can drift.</p>
       </div>
     </div>
     <div class="flow-loop">a devtools edit · a console paste · a live-sync update · a keystroke → all are just the next pass's input</div>

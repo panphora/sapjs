@@ -12,7 +12,7 @@ import {
   serializeTyped, parseTyped, keyOf, readTransient, isPresenceDecl, defaultRaw,
 } from "./dom.js";
 import { planOf, dropPlans, beginPlans, endPlans } from "./plan.js";
-import { readAttr, readText, beginReads, endReads, dropReads, keepsRows, keptRow, keepRow } from "./read-cache.js";
+import { readAttr, readText, beginReads, endReads, dropReads, keepsRows, keptRow, keepRow, forgetRow } from "./read-cache.js";
 import { runWith } from "./compile.js";
 import { readControl, kindOf } from "./carrier.js";
 import { applyFormat } from "./helpers.js";
@@ -204,7 +204,7 @@ function runPassBody(app, opts) {
       const rp = planOf(rowEl);
       if (!rp.item || rp.template || rp.cms) continue;
       const kept = keep ? keptRow(rowEl) : undefined;
-      arr.push(kept && kept.plan === rp && Object.isExtensible(kept.obj) ? reuseRow(kept, rowEl, i, ctx) : readRow(rowEl, rp, i, ctx, keep));
+      arr.push((kept && kept.plan === rp && Object.isExtensible(kept.obj) && reuseRow(kept, rowEl, i, ctx)) || readRow(rowEl, rp, i, ctx, keep));
       i++;
     }
   }
@@ -244,11 +244,17 @@ function runPassBody(app, opts) {
 
   function reuseRow(rec, rowEl, i, ctx) {
     const obj = rec.obj;
-    if (obj.$index !== i) Object.defineProperty(obj, "$index", { value: i, enumerable: false, configurable: true });
-    const f = rec.fields;
-    for (let k = 0; k < f.length; k += 2) obj[f[k]] = f[k + 1];
-    const live = rec.presence;
-    for (let k = 0; k < live.length; k += 2) obj[live[k]] = rowEl.hasAttribute(live[k + 1]);
+    // A format may have made a field or $index read-only; then this row is read again.
+    try {
+      if (obj.$index !== i) Object.defineProperty(obj, "$index", { value: i, enumerable: false, configurable: true });
+      const live = rec.presence;
+      for (let k = 0; k < live.length; k += 2) obj[live[k]] = rowEl.hasAttribute(live[k + 1]);
+      const f = rec.fields;
+      for (let k = 0; k < f.length; k += 2) obj[f[k]] = f[k + 1];
+    } catch {
+      forgetRow(rowEl);
+      return null;
+    }
     rowEl._sapScope = obj;
     const p = rec.pending;
     for (let k = 0; k < p.length; k++) pending.push(p[k]);

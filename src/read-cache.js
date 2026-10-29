@@ -43,6 +43,7 @@ function invalidate(records) {
 export function keepsRows() { return enabled; }
 export function keptRow(el) { return enabled ? rows.get(el) : undefined; }
 export function keepRow(el, entry) { if (enabled) rows.set(el, entry); }
+export function forgetRow(el) { rows.delete(el); }
 
 export function beginReads(root) {
   const previous = enabled;
