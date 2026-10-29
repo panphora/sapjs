@@ -84,9 +84,10 @@ One change causes one pass, and a pass is the entire engine:
 4. Discard. The objects are replaced, except an unchanged plain `items` row: its declared
    fields are written onto its kept object again, and properties a format added to it stay
    until the row changes. Besides those rows only the compiled-expression, plan and read
-   caches are kept, and each is dropped when the page reports its element changed.
+   caches are kept; the plan and read caches drop an element's entry when the page reports it
+   changed, and the expression cache is keyed by expression text.
 
-Because every field is read from the page again, a devtools edit, a console paste, a live-sync morph and a
+Because every field comes from the page, and a kept row is dropped the moment its element changes, a devtools edit, a console paste, a live-sync morph and a
 keystroke are all the same thing: input to the next pass.
 
 Passes are batched. A burst of writes coalesces into one pass on the next microtask, so

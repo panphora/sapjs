@@ -86,7 +86,7 @@
 </ul>
 <p>sapjs fits this because every pass rebuilds its state from the page. Every change runs one pass:</p>
 <ol>
-<li>sapjs walks the app and reads every declared field, bound control and list from the live page into objects. An unchanged plain list row keeps its object, with its fields read again (see below).</li>
+<li>sapjs walks the app and reads every declared field, bound control and list from the live page into objects. An unchanged plain list row keeps its object, with the fields from its last read written back (see below).</li>
 <li>It runs the <code>calc:</code> expressions in dependency order.</li>
 <li>It paints the results back into the page. A paint is an attribute such as <code>text=</code>, <code>show=</code> or <code>class:</code> that sapjs evaluates on every pass, writing only when the value changed.</li>
 <li>It keeps those objects until the next pass replaces them, or, for an unchanged plain row, writes that row&#39;s fields onto its kept object again.</li>

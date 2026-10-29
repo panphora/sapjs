@@ -44,7 +44,7 @@ Three rules follow from it, and every later section applies them:
 
 sapjs fits this because every pass rebuilds its state from the page. Every change runs one pass:
 
-1. sapjs walks the app and reads every declared field, bound control and list from the live page into objects. An unchanged plain list row keeps its object, with its fields read again (see below).
+1. sapjs walks the app and reads every declared field, bound control and list from the live page into objects. An unchanged plain list row keeps its object, with the fields from its last read written back (see below).
 2. It runs the `calc:` expressions in dependency order.
 3. It paints the results back into the page. A paint is an attribute such as `text=`, `show=` or `class:` that sapjs evaluates on every pass, writing only when the value changed.
 4. It keeps those objects until the next pass replaces them, or, for an unchanged plain row, writes that row's fields onto its kept object again.

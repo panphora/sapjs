@@ -3873,7 +3873,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); }
 
   <div class="tldr">
     <h3>TL;DR</h3>
-    <p><b>The DOM is the only state store.</b> On every change sap throws away its in-memory state and rebuilds it by reading the live DOM top to bottom, computes, paints what changed, then discards the objects (an unchanged list row keeps its object, its fields read again). The file you save <em>is</em> the app.</p>
+    <p><b>The DOM is the only state store.</b> On every change sap throws away its in-memory state and rebuilds it by reading the live DOM top to bottom, computes, paints what changed, then discards the objects (an unchanged list row keeps its object and the fields from its last read). The file you save <em>is</em> the app.</p>
     <p><b>The five answers, in one line each:</b></p>
     <p>1. <b>Transient</b> values live only in live DOM (a runtime expando or the control's live <code>.value</code>) and the serializable attribute is actively stripped every pass, so they never save. 2. <b>No rich text</b>: a bind is textContent only by design (HTML-valued state would break "one write path / view-source is correct"); to embed a real editor, wrap its subtree in <code>sap-ignore</code>. 3. <b>No plugin system</b>: the vocabulary is frozen on purpose; the one extension point is custom <code>Sap.formats</code>. 4. <b>Every way to set state</b> converges on the same recompute pass; control-backed programmatic writes use synthetic <code>input</code>/<code>change</code>, while attribute-state writes schedule directly. 5. <b>No modal coupling</b>: the <code>detail</code> lens projects a row into any container, including a native <code>&lt;dialog&gt;</code>.</p>
   </div>
@@ -3893,7 +3893,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); }
       <div class="flow-step">
         <div class="n">1 · intake</div>
         <h5>read the DOM</h5>
-        <p>Walk every <code>state=</code>, <code>bind</code>, <code>items</code> into objects. Every value is read from the page again. <span class="mono">(pass.js:34-147)</span></p>
+        <p>Walk every <code>state=</code>, <code>bind</code>, <code>items</code> into objects. An unchanged list row keeps the values from its last read. <span class="mono">(pass.js:34-147)</span></p>
       </div>
       <div class="flow-arrow">→</div>
       <div class="flow-step">
@@ -3911,7 +3911,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); }
       <div class="flow-step">
         <div class="n">4 · discard</div>
         <h5>drop the objects</h5>
-        <p>Per-pass objects are replaced next pass, except an unchanged list row, whose kept object gets its fields read again. The last set is parked on <code>el._sapScope</code> only so <code>Sap(el)</code> can read between passes. <span class="mono">(pass.js:105, 239)</span></p>
+        <p>Per-pass objects are replaced next pass, except an unchanged list row, whose kept object gets the fields from its last read written back. The last set is parked on <code>el._sapScope</code> only so <code>Sap(el)</code> can read between passes. <span class="mono">(pass.js:105, 239)</span></p>
       </div>
     </div>
     <div class="flow-loop">a devtools edit · a console paste · a live-sync morph · a keystroke → all are just the next pass's input (README.md:109)</div>

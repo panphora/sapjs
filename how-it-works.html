@@ -58,7 +58,7 @@ code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .86em;
   <div><i>1</i><span class="t">Intake</span><span>Read every field (<code>state=</code>, <code>bind</code>, <code>items=</code>) into objects. A <code>state=</code> attribute declares a field on an element.</span></div>
   <div><i>2</i><span class="t">Compute</span><span>Run the <code>calc:</code> fields in dependency order.</span></div>
   <div><i>3</i><span class="t">Paint</span><span>Update <code>text</code>, <code>show</code>, <code>attr:</code> and <code>class:</code>. Write only what changed.</span></div>
-  <div><i>4</i><span class="t">Discard</span><span>Throw the objects away (an unchanged list row keeps its object); the next pass reads every saved field from the page again.</span></div>
+  <div><i>4</i><span class="t">Discard</span><span>Throw the objects away (an unchanged list row keeps its object and the fields from its last read); any change to a row makes the next pass read it from the page again.</span></div>
 </div>
 
 <p>Each pass rebuilds the app's data from the page, so no copy of the saved data in JavaScript can drift from it.</p>

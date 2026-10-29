@@ -132,4 +132,5 @@ test("S10 a format that deletes a declared field changes key order on a kept row
   Sap.formats.getter = (rows) => rows.map((r) => { const d = r.d; delete r.d; r.d = d; return Object.keys(r).join("+"); }).join(",");
   const html = `<main sap><section items="entries"><article item data-id="a" state="data-d data-e" data-d="1" data-e="2"></article></section><output id="o" text="fmt.getter(state.entries)"></output><output id="k" text="state.entries.map(r => Object.keys(r).join('+')).join()"></output></main>`;
   const r = await both(html, [() => {}, () => {}], (root, app) => Object.keys(app._state.entries[0]).join("+"));
+  expect(r.cached).toEqual(r.fresh);
 });

@@ -265,7 +265,7 @@ pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: anyw
 </svg>
 </figure>
 
-  <p>The count is a formula in an attribute on that <code>&lt;output&gt;</code>. Add a book or change a date, and sapjs re-reads the page and updates the count. Change a date by hand in devtools and the count updates, the same as after a click. Each change reads the books fresh from the rows, so there is no JavaScript copy to drift from the page. <a href="./how-it-works.html">How it works</a> shows each step of that re-read.</p>
+  <p>The count is a formula in an attribute on that <code>&lt;output&gt;</code>. Add a book or change a date, and sapjs re-reads the page and updates the count. Change a date by hand in devtools and the count updates, the same as after a click. A changed book is read from its row again, and an unchanged one keeps exactly what its row says, so there is no JavaScript copy to drift from the page. <a href="./how-it-works.html">How it works</a> shows each step of that re-read.</p>
 
   <figure class="vis" id="vis-2">
 <svg viewBox="0 0 680 222" role="img" aria-label="Before: two of three books finished and the page shows 2 finished. Step 1, Middlemarch is finished. Then sapjs reads every row, counts 3 finished and paints the count. After: the page shows 3 finished.">
