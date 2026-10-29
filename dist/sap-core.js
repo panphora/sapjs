@@ -317,11 +317,11 @@ var SapCoreBundle = (() => {
     return key;
   }
   function rowsOf(listEl) {
-    const rows = [];
+    const rows2 = [];
     for (let c = listEl.firstElementChild; c; c = c.nextElementSibling) {
-      if (c.hasAttribute("item") && !c.hasAttribute("template") && !c.hasAttribute("cms-template")) rows.push(c);
+      if (c.hasAttribute("item") && !c.hasAttribute("template") && !c.hasAttribute("cms-template")) rows2.push(c);
     }
-    return rows;
+    return rows2;
   }
   function sharedTemplate(appRoot, name) {
     if (!appRoot || !name) return null;
@@ -404,34 +404,34 @@ var SapCoreBundle = (() => {
     const n2 = Number(typeof v === "string" ? v.replace(/[$,%\s]/g, "") : v);
     return Number.isNaN(n2) ? 0 : n2;
   }
-  function values(rows, k) {
-    if (!Array.isArray(rows)) return [];
-    if (k == null) return rows;
-    return rows.map((r) => typeof k === "function" ? k(r) : r == null ? void 0 : r[k]);
+  function values(rows2, k) {
+    if (!Array.isArray(rows2)) return [];
+    if (k == null) return rows2;
+    return rows2.map((r) => typeof k === "function" ? k(r) : r == null ? void 0 : r[k]);
   }
-  function sum(rows, k) {
-    return values(rows, k).reduce((a, v) => a + num(v), 0);
+  function sum(rows2, k) {
+    return values(rows2, k).reduce((a, v) => a + num(v), 0);
   }
-  function count(rows, pred) {
-    if (!Array.isArray(rows)) return 0;
-    if (pred == null) return rows.length;
-    return rows.reduce((a, r) => a + (pred(r) ? 1 : 0), 0);
+  function count(rows2, pred) {
+    if (!Array.isArray(rows2)) return 0;
+    if (pred == null) return rows2.length;
+    return rows2.reduce((a, r) => a + (pred(r) ? 1 : 0), 0);
   }
-  function avg(rows, k) {
-    const v = values(rows, k);
+  function avg(rows2, k) {
+    const v = values(rows2, k);
     if (!v.length) return 0;
-    return sum(rows, k) / v.length;
+    return sum(rows2, k) / v.length;
   }
-  function min(rows, k) {
-    const v = values(rows, k).filter((x) => x != null && x !== "");
+  function min(rows2, k) {
+    const v = values(rows2, k).filter((x) => x != null && x !== "");
     if (!v.length) return 0;
     if (v.every((x) => typeof x === "number" || !Number.isNaN(Number(x)))) {
       return Math.min(...v.map(Number));
     }
     return v.reduce((a, b) => String(a) <= String(b) ? a : b);
   }
-  function max(rows, k) {
-    const v = values(rows, k).filter((x) => x != null && x !== "");
+  function max(rows2, k) {
+    const v = values(rows2, k).filter((x) => x != null && x !== "");
     if (!v.length) return 0;
     if (v.every((x) => typeof x === "number" || !Number.isNaN(Number(x)))) {
       return Math.max(...v.map(Number));
@@ -579,6 +579,7 @@ ${src}` : `"use strict"; return (${src});`;
       gen: planGen,
       inert: el.tagName === "TEMPLATE",
       template: false,
+      cms: false,
       item: false,
       scope: false,
       items: false,
@@ -604,6 +605,7 @@ ${src}` : `"use strict"; return (${src});`;
             break;
           case "cms-template":
             plan.inert = true;
+            plan.cms = true;
             break;
           case "template":
             plan.inert = true;
@@ -688,6 +690,7 @@ ${src}` : `"use strict"; return (${src});`;
         gen: planGen,
         inert: false,
         template: false,
+        cms: false,
         item: false,
         scope: false,
         items: false,
@@ -711,25 +714,41 @@ ${src}` : `"use strict"; return (${src});`;
 
   // src/read-cache.js
   var cells = /* @__PURE__ */ new WeakMap();
+  var rows = /* @__PURE__ */ new WeakMap();
   var observer = null;
   var enabled = false;
   function dropReads() {
     cells = /* @__PURE__ */ new WeakMap();
+    rows = /* @__PURE__ */ new WeakMap();
   }
   function invalidate(records) {
     for (const record of records) {
+      const parent = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+      for (let el = parent; el; el = el.parentElement) rows.delete(el);
       if (record.type === "attributes") {
         cells.delete(record.target);
         continue;
       }
-      const parent = record.target.nodeType === 1 ? record.target : record.target.parentElement;
       for (let el = parent; el; el = el.parentElement) cells.delete(el);
       for (const node of record.addedNodes || []) {
         if (node.nodeType !== 1) continue;
         cells.delete(node);
-        for (const el of node.querySelectorAll("*")) cells.delete(el);
+        rows.delete(node);
+        for (const el of node.querySelectorAll("*")) {
+          cells.delete(el);
+          rows.delete(el);
+        }
       }
     }
+  }
+  function keepsRows() {
+    return enabled;
+  }
+  function keptRow(el) {
+    return enabled ? rows.get(el) : void 0;
+  }
+  function keepRow(el, entry) {
+    if (enabled) rows.set(el, entry);
   }
   function beginReads(root) {
     const previous = enabled;
@@ -1225,6 +1244,7 @@ ${src}` : `"use strict"; return (${src});`;
 
   // src/pass.js
   var NATIVE_BOOLEAN_SET2 = new Set(NATIVE_BOOLEANS);
+  var NONE = Object.freeze([]);
   var features = [];
   var boundaries = {};
   var paintKinds = {};
@@ -1265,6 +1285,7 @@ ${src}` : `"use strict"; return (${src});`;
     const whenFields = /* @__PURE__ */ new Set();
     app.diag.errors = [];
     const rootCtx = { root: rootObj, state: rootObj, item: null, ownerEl: root, projection: false };
+    let recording = null;
     function resolveDefault(el, d, cacheRecord = false) {
       const attr = d.attr || d.name;
       let raw = cacheRecord ? readAttr(el, attr) : el.getAttribute(attr);
@@ -1280,6 +1301,7 @@ ${src}` : `"use strict"; return (${src});`;
       const cacheRecord = !!ctx.item && !ctx.projection && !ctx.view;
       for (const d of decls) {
         if (d.transient) {
+          if (recording) recording.pure = false;
           obj[d.name] = readTransient(el, d);
           continue;
         }
@@ -1294,6 +1316,7 @@ ${src}` : `"use strict"; return (${src});`;
       const field = plan.bind;
       const owner = ctx.item || ctx.state;
       const kind = kindOf(el);
+      if (recording && (kind !== "leaf" || plan.transient)) recording.pure = false;
       if (kind === "radio") {
         if (!(field in owner)) owner[field] = "";
         if (el.checked) owner[field] = el.value;
@@ -1308,17 +1331,23 @@ ${src}` : `"use strict"; return (${src});`;
       }
     }
     function collectEl(el, plan, ctx) {
+      let kept = false;
       if (plan.paints) {
+        kept = true;
         for (const def of plan.paints) {
           if (def.kind === "when") whenFields.add(def.field);
           paints.push({ def, el, ctx });
         }
       }
-      for (const f of features) if (f.collect) f.collect(pass, el, plan, ctx);
+      for (const f of features) if (f.collect && f.collect(pass, el, plan, ctx) !== false) kept = true;
+      if (recording && kept) {
+        if (plan.calcs) recording.pure = false;
+        recording.collects.push(el, plan);
+      }
     }
     function defineRowMeta(rowObj, rowEl, i) {
       Object.defineProperty(rowObj, "$key", { value: keyOf(rowEl, "row"), enumerable: false });
-      Object.defineProperty(rowObj, "$index", { value: i, enumerable: false });
+      Object.defineProperty(rowObj, "$index", { value: i, enumerable: false, configurable: true });
       Object.defineProperty(rowObj, "$el", { value: rowEl, enumerable: false });
     }
     function enterScope(el, obj, ctx) {
@@ -1337,6 +1366,7 @@ ${src}` : `"use strict"; return (${src});`;
       const plan = planOf(el);
       if (plan.inert) return;
       if (plan.boundary) {
+        if (recording) recording.pure = false;
         if (plan.boundary === "scope") handleScope(el, scopeObj, ctx);
         else if (plan.boundary === "items") {
           collectEl(el, plan, ctx);
@@ -1356,21 +1386,71 @@ ${src}` : `"use strict"; return (${src});`;
       enterScope(el, childObj, cctx);
     }
     function handleItems(listEl, parentObj, ctx) {
+      if (recording) recording.pure = false;
       const name = listEl.getAttribute("items");
       const arr = [];
       parentObj[name] = arr;
       listEl._sapList = arr;
+      const keep = !ctx.projection && !ctx.view && keepsRows();
       let i = 0;
       for (let rowEl = listEl.firstElementChild; rowEl; rowEl = rowEl.nextElementSibling) {
         const rp = planOf(rowEl);
-        if (!rp.item || rp.template || rowEl.hasAttribute("cms-template")) continue;
-        const rowObj = {};
-        defineRowMeta(rowObj, rowEl, i);
-        const rctx = { root: ctx.root, state: ctx.state, item: rowObj, ownerEl: rowEl, projection: ctx.projection };
-        enterScope(rowEl, rowObj, rctx);
-        arr.push(rowObj);
+        if (!rp.item || rp.template || rp.cms) continue;
+        const kept = keep ? keptRow(rowEl) : void 0;
+        arr.push(kept && kept.plan === rp && Object.isExtensible(kept.obj) ? reuseRow(kept, rowEl, i, ctx) : readRow(rowEl, rp, i, ctx, keep));
         i++;
       }
+    }
+    function readRow(rowEl, rp, i, ctx, keep) {
+      const rowObj = {};
+      defineRowMeta(rowObj, rowEl, i);
+      const rctx = { root: ctx.root, state: ctx.state, item: rowObj, ownerEl: rowEl, projection: ctx.projection };
+      if (!keep) {
+        enterScope(rowEl, rowObj, rctx);
+        return rowObj;
+      }
+      const outer = recording;
+      const rec = { plan: rp, obj: rowObj, fields: null, presence: NONE, pending: NONE, collects: [], pure: true };
+      const p0 = pending.length;
+      const e0 = app.diag.errors.length;
+      recording = rec;
+      try {
+        enterScope(rowEl, rowObj, rctx);
+      } finally {
+        recording = outer;
+      }
+      if (!rec.pure || app.halted || app.diag.errors.length !== e0) return rowObj;
+      const fields = [];
+      for (const k of Object.keys(rowObj)) {
+        const v = rowObj[k];
+        if (v !== null && typeof v === "object") return rowObj;
+        fields.push(k, v);
+      }
+      if (rp.decls) {
+        for (const d of rp.decls) if (isPresenceDecl(rowEl, d)) (rec.presence === NONE ? rec.presence = [] : rec.presence).push(d.name, d.attr);
+      }
+      if (pending.length > p0) rec.pending = pending.slice(p0);
+      if (!rec.collects.length) rec.collects = NONE;
+      rec.fields = fields;
+      keepRow(rowEl, rec);
+      return rowObj;
+    }
+    function reuseRow(rec, rowEl, i, ctx) {
+      const obj = rec.obj;
+      if (obj.$index !== i) Object.defineProperty(obj, "$index", { value: i, enumerable: false, configurable: true });
+      const f = rec.fields;
+      for (let k = 0; k < f.length; k += 2) obj[f[k]] = f[k + 1];
+      const live = rec.presence;
+      for (let k = 0; k < live.length; k += 2) obj[live[k]] = rowEl.hasAttribute(live[k + 1]);
+      rowEl._sapScope = obj;
+      const p = rec.pending;
+      for (let k = 0; k < p.length; k++) pending.push(p[k]);
+      const c = rec.collects;
+      if (c.length) {
+        const rctx = { root: ctx.root, state: ctx.state, item: obj, ownerEl: rowEl, projection: ctx.projection };
+        for (let k = 0; k < c.length; k += 2) collectEl(c[k], c[k + 1], rctx);
+      }
+      return obj;
     }
     const pass = {
       app,
@@ -2188,6 +2268,7 @@ ${src}` : `"use strict"; return (${src});`;
         if (a.name === "invalid" && plan.invalids) continue;
         unsupported(pass, el, a.name);
       }
+      return false;
     },
     boundary: {
       each(pass, el) {

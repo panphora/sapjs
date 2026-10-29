@@ -21,7 +21,7 @@ export const calcFeature = {
     pass.calcs = [];
   },
   collect(pass, el, plan, ctx) {
-    if (!plan.calcs) return;
+    if (!plan.calcs) return false;
     const owner = ctx.item || ctx.state;
     for (const def of plan.calcs) pass.calcs.push({ owner, ownerEl: ctx.ownerEl, name: def.name, entry: def.entry, def, el, ctx });
   },

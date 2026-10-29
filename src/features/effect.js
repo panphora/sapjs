@@ -19,7 +19,8 @@ export const effectFeature = {
     pass.effects = [];
   },
   collect(pass, el, plan, ctx) {
-    if (plan.effects) for (const def of plan.effects) pass.effects.push({ def, el, ctx });
+    if (!plan.effects) return false;
+    for (const def of plan.effects) pass.effects.push({ def, el, ctx });
   },
   afterPaint(pass) {
     for (const e of pass.effects) runEffect(e, pass.app);

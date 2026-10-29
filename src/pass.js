@@ -12,7 +12,7 @@ import {
   serializeTyped, parseTyped, keyOf, readTransient, isPresenceDecl, defaultRaw,
 } from "./dom.js";
 import { planOf, dropPlans, beginPlans, endPlans } from "./plan.js";
-import { readAttr, readText, beginReads, endReads, dropReads } from "./read-cache.js";
+import { readAttr, readText, beginReads, endReads, dropReads, keepsRows, keptRow, keepRow } from "./read-cache.js";
 import { runWith } from "./compile.js";
 import { readControl, kindOf } from "./carrier.js";
 import { applyFormat } from "./helpers.js";
@@ -21,6 +21,7 @@ import { withDomMutationPaused } from "./mutation-bridge.js";
 import { capability } from "./platform.js";
 
 const NATIVE_BOOLEAN_SET = new Set(NATIVE_BOOLEANS);
+const NONE = Object.freeze([]);
 
 const features = [];
 const boundaries = {};
@@ -74,6 +75,7 @@ function runPassBody(app, opts) {
   app.diag.errors = [];
 
   const rootCtx = { root: rootObj, state: rootObj, item: null, ownerEl: root, projection: false };
+  let recording = null;
 
   // Read a declared field's value, falling back to its default. When the bare
   // attribute is absent, record the default so it can be materialized to the DOM
@@ -96,6 +98,7 @@ function runPassBody(app, opts) {
     const cacheRecord = !!ctx.item && !ctx.projection && !ctx.view;
     for (const d of decls) {
       if (d.transient) {
+        if (recording) recording.pure = false;
         obj[d.name] = readTransient(el, d); // runtime-only; never serialized
         continue;
       }
@@ -111,6 +114,7 @@ function runPassBody(app, opts) {
     const field = plan.bind;
     const owner = ctx.item || ctx.state;
     const kind = kindOf(el);
+    if (recording && (kind !== "leaf" || plan.transient)) recording.pure = false;
     if (kind === "radio") {
       if (!(field in owner)) owner[field] = "";
       if (el.checked) owner[field] = el.value;
@@ -126,18 +130,24 @@ function runPassBody(app, opts) {
   }
 
   function collectEl(el, plan, ctx) {
+    let kept = false;
     if (plan.paints) {
+      kept = true;
       for (const def of plan.paints) {
         if (def.kind === "when") whenFields.add(def.field);
         paints.push({ def, el, ctx });
       }
     }
-    for (const f of features) if (f.collect) f.collect(pass, el, plan, ctx);
+    for (const f of features) if (f.collect && f.collect(pass, el, plan, ctx) !== false) kept = true;
+    if (recording && kept) {
+      if (plan.calcs) recording.pure = false;
+      recording.collects.push(el, plan);
+    }
   }
 
   function defineRowMeta(rowObj, rowEl, i) {
     Object.defineProperty(rowObj, "$key", { value: keyOf(rowEl, "row"), enumerable: false });
-    Object.defineProperty(rowObj, "$index", { value: i, enumerable: false });
+    Object.defineProperty(rowObj, "$index", { value: i, enumerable: false, configurable: true });
     Object.defineProperty(rowObj, "$el", { value: rowEl, enumerable: false });
   }
 
@@ -161,6 +171,7 @@ function runPassBody(app, opts) {
     const plan = planOf(el);
     if (plan.inert) return;
     if (plan.boundary) {
+      if (recording) recording.pure = false;
       if (plan.boundary === "scope") handleScope(el, scopeObj, ctx);
       else if (plan.boundary === "items") {
         collectEl(el, plan, ctx);
@@ -182,21 +193,71 @@ function runPassBody(app, opts) {
   }
 
   function handleItems(listEl, parentObj, ctx) {
+    if (recording) recording.pure = false;
     const name = listEl.getAttribute("items");
     const arr = [];
     parentObj[name] = arr;
     listEl._sapList = arr;
+    const keep = !ctx.projection && !ctx.view && keepsRows();
     let i = 0;
     for (let rowEl = listEl.firstElementChild; rowEl; rowEl = rowEl.nextElementSibling) {
       const rp = planOf(rowEl);
-      if (!rp.item || rp.template || rowEl.hasAttribute("cms-template")) continue;
-      const rowObj = {};
-      defineRowMeta(rowObj, rowEl, i);
-      const rctx = { root: ctx.root, state: ctx.state, item: rowObj, ownerEl: rowEl, projection: ctx.projection };
-      enterScope(rowEl, rowObj, rctx);
-      arr.push(rowObj);
+      if (!rp.item || rp.template || rp.cms) continue;
+      const kept = keep ? keptRow(rowEl) : undefined;
+      arr.push(kept && kept.plan === rp && Object.isExtensible(kept.obj) ? reuseRow(kept, rowEl, i, ctx) : readRow(rowEl, rp, i, ctx, keep));
       i++;
     }
+  }
+
+  function readRow(rowEl, rp, i, ctx, keep) {
+    const rowObj = {};
+    defineRowMeta(rowObj, rowEl, i);
+    const rctx = { root: ctx.root, state: ctx.state, item: rowObj, ownerEl: rowEl, projection: ctx.projection };
+    if (!keep) {
+      enterScope(rowEl, rowObj, rctx);
+      return rowObj;
+    }
+    const outer = recording;
+    const rec = { plan: rp, obj: rowObj, fields: null, presence: NONE, pending: NONE, collects: [], pure: true };
+    const p0 = pending.length;
+    const e0 = app.diag.errors.length;
+    recording = rec;
+    try {
+      enterScope(rowEl, rowObj, rctx);
+    } finally {
+      recording = outer;
+    }
+    if (!rec.pure || app.halted || app.diag.errors.length !== e0) return rowObj;
+    const fields = [];
+    for (const k of Object.keys(rowObj)) {
+      const v = rowObj[k];
+      if (v !== null && typeof v === "object") return rowObj;
+      fields.push(k, v);
+    }
+    if (rp.decls) for (const d of rp.decls) if (isPresenceDecl(rowEl, d)) (rec.presence === NONE ? (rec.presence = []) : rec.presence).push(d.name, d.attr);
+    if (pending.length > p0) rec.pending = pending.slice(p0);
+    if (!rec.collects.length) rec.collects = NONE;
+    rec.fields = fields;
+    keepRow(rowEl, rec);
+    return rowObj;
+  }
+
+  function reuseRow(rec, rowEl, i, ctx) {
+    const obj = rec.obj;
+    if (obj.$index !== i) Object.defineProperty(obj, "$index", { value: i, enumerable: false, configurable: true });
+    const f = rec.fields;
+    for (let k = 0; k < f.length; k += 2) obj[f[k]] = f[k + 1];
+    const live = rec.presence;
+    for (let k = 0; k < live.length; k += 2) obj[live[k]] = rowEl.hasAttribute(live[k + 1]);
+    rowEl._sapScope = obj;
+    const p = rec.pending;
+    for (let k = 0; k < p.length; k++) pending.push(p[k]);
+    const c = rec.collects;
+    if (c.length) {
+      const rctx = { root: ctx.root, state: ctx.state, item: obj, ownerEl: rowEl, projection: ctx.projection };
+      for (let k = 0; k < c.length; k += 2) collectEl(c[k], c[k + 1], rctx);
+    }
+    return obj;
   }
 
   const pass = {

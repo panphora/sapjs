@@ -57,6 +57,7 @@ registerFeature({
       if (a.name === "invalid" && plan.invalids) continue;
       unsupported(pass, el, a.name);
     }
+    return false;
   },
   boundary: {
     each(pass, el) { unsupported(pass, el, "each"); },

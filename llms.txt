@@ -75,7 +75,8 @@ warning telling you to save once so the file settles.
 One change causes one pass, and a pass is the entire engine:
 
 1. Intake. Walk the app root top to bottom, reading every `state=` declaration, every
-   `bind` control and every `items` list into fresh plain objects.
+   `bind` control and every `items` list into plain objects. An unchanged plain `items`
+   row keeps its object between passes; a changed row gets a new one.
 2. Compute. Run `calc:` expressions, deepest scope first, and in dependency order inside
    each scope, so a calc that reads another calc evaluates after it.
 3. Paint. Evaluate `text`, `show`, `attr:`, `class:`, `css:`, then `effect=`, then

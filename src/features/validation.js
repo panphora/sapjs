@@ -19,7 +19,8 @@ export const validationFeature = {
     pass.invalids = [];
   },
   collect(pass, el, plan, ctx) {
-    if (plan.invalids) for (const def of plan.invalids) pass.invalids.push({ def, el, ctx });
+    if (!plan.invalids) return false;
+    for (const def of plan.invalids) pass.invalids.push({ def, el, ctx });
   },
   afterPaint(pass) {
     for (const iv of pass.invalids) runInvalid(iv);

@@ -1,5 +1,7 @@
 // A bounded cache of the raw reads an intake pass makes on one item record: its
-// canonical attributes and a bound leaf's text. Nothing derived is kept: every value
+// canonical attributes and a bound leaf's text, plus each plain item row's kept object
+// (pass.js handleItems), dropped on any record at or below that row. Apart from those
+// rows nothing derived is kept: every value
 // is a string or null straight from the DOM, and typed parsing runs again each pass,
 // so a caller that mutates a parsed JSON array cannot poison the next state, and a
 // control's live property is never cached. Like the directive plan cache it has its
@@ -14,26 +16,33 @@
 // or a missing MutationObserver reads straight through.
 
 let cells = new WeakMap();
+let rows = new WeakMap();
 let observer = null;
 let enabled = false;
 
-export function dropReads() { cells = new WeakMap(); }
+export function dropReads() { cells = new WeakMap(); rows = new WeakMap(); }
 
 function invalidate(records) {
   for (const record of records) {
+    const parent = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+    for (let el = parent; el; el = el.parentElement) rows.delete(el);
     if (record.type === "attributes") {
       cells.delete(record.target);
       continue;
     }
-    const parent = record.target.nodeType === 1 ? record.target : record.target.parentElement;
     for (let el = parent; el; el = el.parentElement) cells.delete(el);
     for (const node of record.addedNodes || []) {
       if (node.nodeType !== 1) continue;
       cells.delete(node);
-      for (const el of node.querySelectorAll("*")) cells.delete(el);
+      rows.delete(node);
+      for (const el of node.querySelectorAll("*")) { cells.delete(el); rows.delete(el); }
     }
   }
 }
+
+export function keepsRows() { return enabled; }
+export function keptRow(el) { return enabled ? rows.get(el) : undefined; }
+export function keepRow(el, entry) { if (enabled) rows.set(el, entry); }
 
 export function beginReads(root) {
   const previous = enabled;

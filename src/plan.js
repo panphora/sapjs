@@ -80,6 +80,7 @@ function buildPlan(el) {
     gen: planGen,
     inert: el.tagName === "TEMPLATE",
     template: false,
+    cms: false,
     item: false,
     scope: false, items: false, detail: false, each: false,
     boundary: null,
@@ -98,7 +99,7 @@ function buildPlan(el) {
     if (colon < 0) {
       switch (name) {
         case "sap-ignore": plan.inert = true; break;
-        case "cms-template": plan.inert = true; break;
+        case "cms-template": plan.inert = true; plan.cms = true; break;
         case "template": plan.inert = true; plan.template = true; break;
         case "item": plan.item = true; break;
         case "scope": plan.scope = true; break;
@@ -140,7 +141,7 @@ function emptyPlan() {
   if (!empty || empty.gen !== planGen) {
     empty = Object.freeze({
       gen: planGen,
-      inert: false, template: false, item: false,
+      inert: false, template: false, cms: false, item: false,
       scope: false, items: false, detail: false, each: false,
       boundary: null, bind: null, transient: false,
       decls: null, calcs: null, paints: null, effects: null, invalids: null,

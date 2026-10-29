@@ -25,7 +25,7 @@ function applyProjection(el, v) {
 export const projectionFeature = {
   name: "projection",
   collect(pass, el, plan, ctx) {
-    if (!(plan.bind != null && (ctx.view || ctx.projection) && !isComposer(el))) return;
+    if (!(plan.bind != null && (ctx.view || ctx.projection) && !isComposer(el))) return false;
     const field = plan.bind;
     const paints = pass.paints;
     if (!ctx.view) {
