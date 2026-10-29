@@ -208,8 +208,9 @@ describe("reactivity: calc, paint, and the one write path", () => {
       loop.dispatchEvent(new Event("input", { bubbles: true }));
       await flush();
     }
-    root.querySelector("[bind=qty]").setAttribute("value", "9");
-    Sap.refresh();
+    // the burst left the app tripped; one more user event must still paint it
+    type(root.querySelector("[bind=qty]"), 9);
+    await flush();
     expect(root.querySelector("output").textContent).toBe("18");
   });
 });
