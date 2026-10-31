@@ -2181,7 +2181,7 @@ ${src}` : `"use strict"; return (${src});`;
   }
 
   // src/version.js
-  var VERSION = "0.6.0";
+  var VERSION = "0.7.0";
 
   // src/runtime.js
   function createSap({ createAccessor: createAccessor2, installInput, debugExtras }) {

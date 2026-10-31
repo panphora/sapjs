@@ -98,6 +98,23 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-30
+
+### Added
+- `appOf` and `ownsAttr` take an optional host element, so a subtree just removed from the page keeps walking ancestors from the element it left, and a host can ask whether a detached node's attribute was painted.
+
+### Changed
+- A pass reuses the raw record reads it already made instead of reading every record again, so pages with many records re-render faster.
+- A plain row that nothing changed keeps its object between passes, saving about 17 ms per keystroke on a 5,000-row Journal. Its fields are written back from that row's last read, and `$key`, `$index` and `$el` stay own and hidden, with `$index` now configurable.
+- Sap refuses record writes at their real destinations while ClayJS write admission is closed. Standalone Sap is unchanged.
+
+### Fixed
+- A row shown in a `detail=` panel is read fresh on each pass, since the panel may write state onto it.
+- A kept row whose field or `$index` a format made read-only is read again instead of throwing.
+- Presence fields are restored before declared fields, so a same-name bind still wins.
+- A loop guard that halts a runaway render re-arms on the next refresh or interaction, so a burst of typing no longer leaves the app frozen.
+- Undo is rebound once per editing session, and a retired scope no longer receives undo callbacks.
+
 ## [0.6.0] - 2026-10-23
 
 ### Added
